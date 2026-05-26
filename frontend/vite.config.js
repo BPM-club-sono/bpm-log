@@ -69,6 +69,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // Permet l'accès depuis le réseau local (Wi-Fi smartphone)
+    allowedHosts: true, // Autorise localtunnel et tout autre tunnel temporaire
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

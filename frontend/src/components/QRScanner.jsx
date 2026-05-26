@@ -2,8 +2,31 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Camera, CameraOff, AlertCircle } from 'lucide-react';
 
+const REAR_CAMERA_LABELS = [/back/i, /rear/i, /environment/i, /arrière/i, /arriere/i];
+
+function getCameraErrorMessage(error) {
+  if (!window.isSecureContext) {
+    return "Le navigateur ne peut demander l'accès caméra que depuis HTTPS. Relancez l'app en HTTPS et ouvrez cette URL sur le téléphone.";
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return "Ce navigateur ne donne pas accès à la caméra depuis cette page.";
+  }
+
+  if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+    return "Permission caméra refusée. Autorisez la caméra dans les réglages du navigateur puis réessayez.";
+  }
+
+  if (error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError') {
+    return "Aucune caméra arrière n'a été détectée. La caméra disponible sera utilisée si possible.";
+  }
+
+  return "Impossible d'afficher la caméra. Vérifiez les permissions du navigateur puis réessayez.";
+}
+
 export function QRScanner({ onScanSuccess, selectedAction }) {
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const [selectedMockQR, setSelectedMockQR] = useState('');
   const html5QrCodeRef = useRef(null);
 
@@ -22,40 +45,57 @@ export function QRScanner({ onScanSuccess, selectedAction }) {
     }
   };
 
-  const startCamera = () => {
+  const startCamera = async () => {
+    setCameraError('');
+
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(getCameraErrorMessage());
+      return;
+    }
+
     setIsCameraActive(true);
-    setTimeout(() => {
-      try {
-        const html5QrCode = new Html5Qrcode('reader-element');
-        html5QrCodeRef.current = html5QrCode;
 
-        const config = {
-          fps: 10,
-          qrbox: { width: 230, height: 230 },
-          aspectRatio: 1.0
-        };
+    try {
+      await new Promise(resolve => setTimeout(resolve, 200));
 
-        html5QrCode.start(
-          { facingMode: 'environment' },
-          config,
-          (decodedText) => {
-            triggerHaptics([80, 50, 80]);
-            onScanSuccess(decodedText);
-            stopCamera();
-          },
-          () => {
-            // Frame error, ignorée pour ne pas polluer la console
-          }
-        ).catch(err => {
-          console.error('Accès caméra échoué:', err);
-          setIsCameraActive(false);
-          alert("Impossible d'accéder à la caméra arrière (vérifiez les permissions). Utilisez le simulateur de QR codes !");
-        });
-      } catch (err) {
-        console.error('Erreur init scanner:', err);
-        setIsCameraActive(false);
-      }
-    }, 200);
+      const permissionStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      permissionStream.getTracks().forEach(track => track.stop());
+
+      const cameras = await Html5Qrcode.getCameras();
+      const rearCamera = cameras.find(camera =>
+        REAR_CAMERA_LABELS.some(pattern => pattern.test(camera.label))
+      );
+
+      const html5QrCode = new Html5Qrcode('reader-element');
+      html5QrCodeRef.current = html5QrCode;
+
+      const config = {
+        fps: 10,
+        qrbox: { width: 230, height: 230 },
+        aspectRatio: 1.0
+      };
+
+      await html5QrCode.start(
+        rearCamera?.id || { facingMode: { ideal: 'environment' } },
+        config,
+        (decodedText) => {
+          triggerHaptics([80, 50, 80]);
+          onScanSuccess(decodedText);
+          stopCamera();
+        },
+        () => {
+          // Frame error, ignorée pour ne pas polluer la console
+        }
+      );
+    } catch (err) {
+      console.error('Accès caméra échoué:', err);
+      setIsCameraActive(false);
+      html5QrCodeRef.current = null;
+      setCameraError(getCameraErrorMessage(err));
+    }
   };
 
   const stopCamera = () => {
@@ -97,6 +137,15 @@ export function QRScanner({ onScanSuccess, selectedAction }) {
             <p class="text-xs font-semibold max-w-[200px]">Caméra inactive</p>
             <p class="text-[10px] text-slate-600 mt-1">
               Activez la caméra physique ou utilisez le simulateur ci-dessous pour tester.
+            </p>
+          </div>
+        )}
+
+        {cameraError && (
+          <div class="absolute inset-x-3 bottom-3 rounded-xl border border-bpm-red/30 bg-bpm-red/15 p-3 text-left backdrop-blur-sm">
+            <p class="text-[10px] leading-relaxed text-red-100 flex gap-2">
+              <AlertCircle class="w-3.5 h-3.5 shrink-0 text-bpm-red" />
+              <span>{cameraError}</span>
             </p>
           </div>
         )}
