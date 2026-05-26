@@ -1,0 +1,95 @@
+# ==============================================================================
+# BPM-Log : Fichier .gitignore global
+# ==============================================================================
+
+# 🖥️ Environnement & Systèmes
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# 💻 Éditeurs & IDEs (VS Code, WebStorm, PyCharm)
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# 📦 FRONTEND (React / Vite / Node)
+# ------------------------------------------------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+frontend/.env
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/.env.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/.eslintcache
+
+# 🐍 BACKEND (Python / FastAPI / VirtualEnv)
+# ------------------------------------------------------------------------------
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/build/
+backend/develop-eggs/
+backend/dist/
+backend/downloads/
+backend/eggs/
+backend/.eggs/
+backend/lib/
+backend/lib64/
+backend/parts/
+backend/sdist/
+backend/var/
+backend/wheels/
+backend/share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 🧪 Tests & Qualité de code
+# ------------------------------------------------------------------------------
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.htmlcov/
+.directory
+.mypy_cache/
+.pyre/
+.pytype/
+
+# 💾 Bases de données locales & Secrets
+# ------------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+backend/bpm_log.db
+.env
+.env.local
+docker-compose.override.yml

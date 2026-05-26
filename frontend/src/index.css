@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0c071a;
+    color: #f3f4f6;
+    font-family: 'Inter', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0c071a;
+}
+::-webkit-scrollbar-thumb {
+  background: #2d1c5c;
+  border-radius: 3px;
+}
+
+/* Scan laser line animation */
+@keyframes laser {
+  0%, 100% { top: 0%; opacity: 0.8; }
+  50% { top: 100%; opacity: 0.8; }
+}
+
+.laser-line {
+  animation: laser 2.5s infinite ease-in-out;
+}
+
+/* Slide up drawer animation for mobile */
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Custom premium classes */
+.glass {
+  background: rgba(21, 14, 45, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glow-neon {
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+}
