@@ -1,0 +1,178 @@
+{
+  "version": "2.0.0",
+  "darkMode": false,
+  "gridEnabling": false,
+  "currentViewName": null,
+  "defaultView": {
+    "detailLevel": "All",
+    "tablePositions": [
+      {
+        "name": "membres",
+        "schemaName": "public",
+        "x": 12,
+        "y": 12
+      },
+      {
+        "name": "categories",
+        "schemaName": "public",
+        "x": 1059.0039242295293,
+        "y": 184.0001149367106
+      },
+      {
+        "name": "emplacements",
+        "schemaName": "public",
+        "x": 1059.0039242295293,
+        "y": 356.9997799782967
+      },
+      {
+        "name": "equipments",
+        "schemaName": "public",
+        "x": 562.2360459876126,
+        "y": 88.00011493671059
+      },
+      {
+        "name": "tickets_reparation",
+        "schemaName": "public",
+        "x": 552.9175745509166,
+        "y": -211.00073231104207
+      },
+      {
+        "name": "logs_scans",
+        "schemaName": "public",
+        "x": 538.8522569251126,
+        "y": 436.0002955515416
+      },
+      {
+        "name": "equipments_vrac",
+        "schemaName": "public",
+        "x": 1059.0039242295293,
+        "y": 55.99814787700575
+      }
+    ],
+    "tableGroupCollapseStates": [],
+    "stickyNoteLayouts": [],
+    "referencePaths": [
+      {
+        "firstFieldNames": [
+          "categorie_id"
+        ],
+        "firstTableName": "equipments",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "categories",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "emplacement_id"
+        ],
+        "firstTableName": "equipments",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "emplacements",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "tickets_reparation",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "declare_par_membre_id"
+        ],
+        "firstTableName": "tickets_reparation",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "logs_scans",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "logs_scans",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "emplacement_destination_id"
+        ],
+        "firstTableName": "logs_scans",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "emplacements",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "equipments_vrac",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      }
+    ]
+  },
+  "views": {}
+}

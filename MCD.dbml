@@ -1,0 +1,74 @@
+// --- BASE DE DONNÉES LOGISTIQUE BPM ---
+
+Table membres {
+  id integer [primary key, increment]
+  nom varchar
+  prenom varchar
+  email varchar [unique]
+  role varchar // ex: 'Admin', 'Staff', 'Tech'
+  mandat integer [note: 'Numero du mandat dans lequel le membre à fait son entrée dans l\'association (ex: 28)']
+}
+
+Table categories {
+  id integer [primary key, increment]
+  nom varchar // ex: 'Lumière', 'Son', 'Structure', 'Câblage'
+  description text
+}
+
+Table emplacements {
+  id integer [primary key, increment]
+  nom varchar // ex: 'Étagère A', 'Bac Câbles XLR', 'Dépôt Principal'
+  zone_stockage varchar
+}
+
+Table equipments {
+  id integer [primary key, increment]
+  barcode_uid varchar [unique, note: 'Le contenu unique du QR Code']
+  nom varchar // ex: 'Lyre Beam 7R', 'Ampli Crown XTi'
+  categorie_id integer
+  emplacement_id integer
+  statut_actuel varchar // 'Fonctionnel', 'En Panne', 'En Réparation', 'Perdu'
+  created_at timestamp
+}
+
+// Entité dépendante (spécialisation) — n'existe que si l'équipement est une caisse de vrac
+// Sa PK est aussi FK vers equipments, ce qui en fait une entité faible au sens MCD
+Table equipments_vrac {
+  equipment_id integer [primary key, note: 'FK et PK — dépend de equipments']
+  quantite_theorique integer [note: 'Nombre théorique d\'unités dans la caisse (ex: 20 câbles XLR)']
+}
+
+Table tickets_reparation {
+  id integer [primary key, increment]
+  equipment_id integer
+  declare_par_membre_id integer
+  description_panne text
+  avancement varchar // 'A faire', 'En cours', 'En attente de pièce', 'Résolu'
+  cout_estime float
+  date_declaration timestamp
+  date_resolution timestamp
+}
+
+Table logs_scans {
+  id integer [primary key, increment]
+  equipment_id integer
+  membre_id integer
+  type_action varchar // 'Scan Entrée', 'Scan Sortie', 'Changement Statut'
+  emplacement_destination_id integer
+  date_scan timestamp
+}
+
+// --- RELATIONS (LIENS ENTRE LES TABLES) ---
+
+Ref: equipments.categorie_id > categories.id
+Ref: equipments.emplacement_id > emplacements.id
+
+// Relation faible : equipments_vrac dépend totalement de equipments
+Ref: equipments_vrac.equipment_id - equipments.id
+
+Ref: tickets_reparation.equipment_id > equipments.id
+Ref: tickets_reparation.declare_par_membre_id > membres.id
+
+Ref: logs_scans.equipment_id > equipments.id
+Ref: logs_scans.membre_id > membres.id
+Ref: logs_scans.emplacement_destination_id > emplacements.id
