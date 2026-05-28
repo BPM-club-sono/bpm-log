@@ -1,12 +1,88 @@
 // --- BASE DE DONNÉES LOGISTIQUE BPM ---
 
+// --- ENUMS (cohérence & validation forte) ---
+
+Enum role_membre {
+  Admin
+  Staff
+  Tech
+}
+
+Enum statut_equipment {
+  Fonctionnel
+  En_Panne
+  En_Reparation
+  Perdu
+  Reforme [note: 'Sorti officiellement du parc, conservé pour historique']
+}
+
+Enum type_action_scan {
+  Scan_Entree
+  Scan_Sortie
+  Changement_Statut
+  Inventaire_Vrac
+}
+
+Enum avancement_ticket {
+  A_faire
+  En_cours
+  En_attente_de_piece
+  Resolu
+}
+
+Enum type_prestation {
+  Interne
+  Externe
+}
+
+Enum statut_prestation {
+  En_preparation
+  En_cours
+  Terminee
+}
+
+Enum statut_allocation {
+  Planifie
+  Sorti
+  Retourne
+}
+
 Table membres {
   id integer [primary key, increment]
   nom varchar
   prenom varchar
   email varchar [unique]
-  role varchar // ex: 'Admin', 'Staff', 'Tech'
+  role role_membre
   mandat integer [note: 'Numero du mandat dans lequel le membre à fait son entrée dans l\'association (ex: 28)']
+}
+
+// Identité technique (compte de connexion) séparée de l'identité métier (membre asso)
+Table users_auth {
+  membre_id integer [primary key, note: 'FK et PK — un compte par membre']
+  password_hash varchar [note: 'Argon2']
+  last_login timestamp
+  is_active boolean [default: true]
+}
+
+// Une ou plusieurs Passkeys WebAuthn par membre (téléphone perso, laptop perso...)
+Table webauthn_credentials {
+  id integer [primary key, increment]
+  membre_id integer
+  credential_id bytea [unique]
+  public_key bytea
+  sign_count integer [default: 0]
+  device_name varchar
+  created_at timestamp
+}
+
+// Abonnements Web-Push (VAPID) — un par appareil
+Table push_subscriptions {
+  id integer [primary key, increment]
+  membre_id integer
+  endpoint varchar
+  p256dh varchar
+  auth varchar
+  created_at timestamp
 }
 
 Table categories {
@@ -23,11 +99,11 @@ Table emplacements {
 
 Table equipments {
   id integer [primary key, increment]
-  barcode_uid varchar [unique, note: 'Le contenu unique du QR Code']
+  barcode_uid varchar [unique, note: 'Le contenu unique du QR Code — stable et réimprimable à l\'identique']
   nom varchar // ex: 'Lyre Beam 7R', 'Ampli Crown XTi'
   categorie_id integer
   emplacement_id integer
-  statut_actuel varchar // 'Fonctionnel', 'En Panne', 'En Réparation', 'Perdu'
+  statut_actuel statut_equipment
   created_at timestamp
   created_by_membre_id integer
 }
@@ -39,23 +115,65 @@ Table equipments_vrac {
   quantite_theorique integer [note: 'Nombre théorique d\'unités dans la caisse (ex: 20 câbles XLR)']
 }
 
+// Inventaires vrac historisés — qui a constaté quoi, quand (état réel ≠ théorique)
+// stock_actuel = quantite_theorique + Σ deltas, mais on garde chaque constat
+Table inventaires_vrac {
+  id integer [primary key, increment]
+  equipment_id integer [note: 'La caisse de vrac concernée']
+  membre_id integer
+  delta integer [note: 'Variation unitaire constatée (ex: -2). Commutatif pour la sync']
+  presta_id integer [note: 'Nullable — contexte de presta si applicable']
+  note text
+  date timestamp
+}
+
+// Lock d'inventaire vrac : une seule session ouverte à la fois par caisse
+Table inventory_locks {
+  equipment_id integer [primary key, note: 'FK et PK — une caisse = au plus un lock']
+  membre_id integer
+  acquired_at timestamp
+  expires_at timestamp [note: 'TTL 2h, libération auto']
+}
+
+// Entité dépendante (spécialisation) — consommables (gaffer, piles, scotch...)
+Table equipments_consommable {
+  equipment_id integer [primary key, note: 'FK et PK — dépend de equipments']
+  stock_actuel integer
+  seuil_alerte integer [note: 'Déclenche une alerte visuelle / push sous ce seuil']
+  unite varchar [note: 'ex: rouleau, pile, mètre']
+}
+
 Table tickets_reparation {
   id integer [primary key, increment]
+  uuid_client uuid [unique, note: 'Généré côté client au moment de la déclaration — idempotence sync offline']
   equipment_id integer
   declare_par_membre_id integer
   description_panne text
-  avancement varchar // 'A faire', 'En cours', 'En attente de pièce', 'Résolu'
+  avancement avancement_ticket
   cout_estime float
+  offline_created_at timestamp [note: 'Heure du téléphone (UTC) — ordre chronologique du replay']
   date_declaration timestamp
   date_resolution timestamp
 }
 
+// Photos jointes à un ticket de réparation (preuve de panne avant/après)
+// Fichiers stockés sur le filesystem du VPS, servis par nginx
+Table photos_panne {
+  id integer [primary key, increment]
+  ticket_id integer
+  membre_id integer
+  chemin varchar [note: 'Chemin relatif du fichier sur le VPS']
+  created_at timestamp
+}
+
 Table logs_scans {
   id integer [primary key, increment]
+  uuid_client uuid [unique, note: 'Généré côté client au scan — idempotence sync offline (ON CONFLICT DO NOTHING)']
   equipment_id integer
   membre_id integer
-  type_action varchar // 'Scan Entrée', 'Scan Sortie', 'Changement Statut'
+  type_action type_action_scan
   emplacement_destination_id integer
+  offline_created_at timestamp [note: 'Heure du téléphone (UTC) — ordre chronologique du replay, first-write-wins']
   date_scan timestamp
 }
 
@@ -78,11 +196,11 @@ Table equipments_location {
 Table prestations {
   id integer [primary key, increment]
   nom varchar // ex: 'Mariage Dupont', 'Nuketown 2024'
-  type varchar // 'Interne', 'Externe'
+  type type_prestation
   client_nom varchar [note: 'Nullable — uniquement pour les prestas externes']
   date_debut timestamp
   date_fin timestamp
-  statut varchar // 'En préparation', 'En cours', 'Terminée'
+  statut statut_prestation
   responsable_membre_id integer
 }
 
@@ -92,7 +210,8 @@ Table allocations_presta {
   id integer [primary key, increment]
   presta_id integer
   equipment_id integer
-  statut varchar // 'Planifié', 'Sorti', 'Retourné'
+  quantite integer [default: 1, note: 'Utile pour consommables / vrac alloués en lot']
+  statut statut_allocation
 }
 
 // --- RELATIONS (LIENS ENTRE LES TABLES) ---
@@ -104,8 +223,24 @@ Ref: equipments.created_by_membre_id > membres.id
 // Relation faible : equipments_vrac dépend totalement de equipments
 Ref: equipments_vrac.equipment_id - equipments.id
 
+// Relation faible : equipments_consommable dépend totalement de equipments
+Ref: equipments_consommable.equipment_id - equipments.id
+
+// Inventaires vrac : historisation des constats sur une caisse
+Ref: inventaires_vrac.equipment_id > equipments_vrac.equipment_id
+Ref: inventaires_vrac.membre_id > membres.id
+Ref: inventaires_vrac.presta_id > prestations.id
+
+// Lock d'inventaire (relation faible vers la caisse vrac)
+Ref: inventory_locks.equipment_id - equipments_vrac.equipment_id
+Ref: inventory_locks.membre_id > membres.id
+
 Ref: tickets_reparation.equipment_id > equipments.id
 Ref: tickets_reparation.declare_par_membre_id > membres.id
+
+// Photos de panne rattachées à un ticket
+Ref: photos_panne.ticket_id > tickets_reparation.id
+Ref: photos_panne.membre_id > membres.id
 
 Ref: logs_scans.equipment_id > equipments.id
 Ref: logs_scans.membre_id > membres.id
@@ -119,3 +254,8 @@ Ref: prestations.responsable_membre_id > membres.id
 
 Ref: allocations_presta.presta_id > prestations.id
 Ref: allocations_presta.equipment_id > equipments.id
+
+// Identité technique & sécurité
+Ref: users_auth.membre_id - membres.id
+Ref: webauthn_credentials.membre_id > membres.id
+Ref: push_subscriptions.membre_id > membres.id

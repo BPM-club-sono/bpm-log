@@ -33,44 +33,86 @@
       {
         "name": "tickets_reparation",
         "schemaName": "public",
-        "x": 523.6648243485256,
-        "y": -275.5585258611464
+        "x": 565.5698579243189,
+        "y": -295.8351550107238
       },
       {
         "name": "logs_scans",
         "schemaName": "public",
-        "x": 538.8522569251126,
-        "y": 436.0002955515416
+        "x": 547.2397080969876,
+        "y": 445.4627224880113
       },
       {
         "name": "equipments_vrac",
         "schemaName": "public",
-        "x": 1059.0039242295293,
-        "y": 55.99814787700575
+        "x": 1035.7800472764043,
+        "y": 66.81235009011368
       },
       {
         "name": "fournisseurs",
         "schemaName": "public",
-        "x": 12,
-        "y": 719.0787352695252
+        "x": 1480.0279504294035,
+        "y": -194.72135173809585
       },
       {
         "name": "equipments_location",
         "schemaName": "public",
-        "x": 12,
-        "y": 550.6232427247216
+        "x": 1092.0684460341558,
+        "y": -225.2957660657732
       },
       {
         "name": "prestations",
         "schemaName": "public",
-        "x": 562.2360459876126,
+        "x": 549.968017578125,
         "y": 786.6626753922903
       },
       {
         "name": "allocations_presta",
         "schemaName": "public",
-        "x": 1008.8992401760664,
-        "y": 799.7759772071554
+        "x": 1003.4921390695125,
+        "y": 882.6626753922903
+      },
+      {
+        "name": "photos_panne",
+        "schemaName": "public",
+        "x": 32.27662914957773,
+        "y": -383.9185333362677
+      },
+      {
+        "name": "inventaires_vrac",
+        "schemaName": "public",
+        "x": 1654.4069611157684,
+        "y": 516.3960263866783
+      },
+      {
+        "name": "inventory_locks",
+        "schemaName": "public",
+        "x": 591.0793077063626,
+        "y": -516.3602849651304
+      },
+      {
+        "name": "equipments_consommable",
+        "schemaName": "public",
+        "x": 564.1328125,
+        "y": 1366.6626753922903
+      },
+      {
+        "name": "users_auth",
+        "schemaName": "public",
+        "x": -541.706854866288,
+        "y": 44
+      },
+      {
+        "name": "webauthn_credentials",
+        "schemaName": "public",
+        "x": -526.768866585038,
+        "y": -254.9688690942005
+      },
+      {
+        "name": "push_subscriptions",
+        "schemaName": "public",
+        "x": -509.66193299128804,
+        "y": 287.0930168378354
       }
     ],
     "tableGroupCollapseStates": [],
@@ -282,6 +324,171 @@
           "id"
         ],
         "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "equipments_consommable",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "inventaires_vrac",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "equipment_id"
+        ],
+        "secondTableName": "equipments_vrac",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "inventaires_vrac",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "presta_id"
+        ],
+        "firstTableName": "inventaires_vrac",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "prestations",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "inventory_locks",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "equipment_id"
+        ],
+        "secondTableName": "equipments_vrac",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "inventory_locks",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "ticket_id"
+        ],
+        "firstTableName": "photos_panne",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "tickets_reparation",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "photos_panne",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "users_auth",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "webauthn_credentials",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "push_subscriptions",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
         "secondSchemaName": "public",
         "secondRelation": "1",
         "checkPoints": []
