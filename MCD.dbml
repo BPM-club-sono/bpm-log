@@ -29,6 +29,7 @@ Table equipments {
   emplacement_id integer
   statut_actuel varchar // 'Fonctionnel', 'En Panne', 'En Réparation', 'Perdu'
   created_at timestamp
+  created_by_membre_id integer
 }
 
 // Entité dépendante (spécialisation) — n'existe que si l'équipement est une caisse de vrac
@@ -58,10 +59,47 @@ Table logs_scans {
   date_scan timestamp
 }
 
+// --- SECTION PRESTATIONS & LOCATIONS ---
+
+Table fournisseurs {
+  id integer [primary key, increment]
+  nom varchar // ex: 'Impact Sonorisation', 'Novelty'
+  contact varchar
+}
+
+// Entité dépendante (spécialisation) — n'existe que si l'équipement est du matériel loué à l'externe
+// Sa PK est aussi FK vers equipments, même pattern que equipments_vrac
+Table equipments_location {
+  equipment_id integer [primary key, note: 'FK et PK — dépend de equipments']
+  fournisseur_id integer
+  reference_devis varchar [note: 'Référence du devis ou bon de commande fournisseur (ex: BDC-Impact-042)']
+}
+
+Table prestations {
+  id integer [primary key, increment]
+  nom varchar // ex: 'Mariage Dupont', 'Nuketown 2024'
+  type varchar // 'Interne', 'Externe'
+  client_nom varchar [note: 'Nullable — uniquement pour les prestas externes']
+  date_debut timestamp
+  date_fin timestamp
+  statut varchar // 'En préparation', 'En cours', 'Terminée'
+  responsable_membre_id integer
+}
+
+// Table de liaison équipement <-> prestation
+// Couvre le stock BPM ET le matériel loué (les deux sont dans equipments)
+Table allocations_presta {
+  id integer [primary key, increment]
+  presta_id integer
+  equipment_id integer
+  statut varchar // 'Planifié', 'Sorti', 'Retourné'
+}
+
 // --- RELATIONS (LIENS ENTRE LES TABLES) ---
 
 Ref: equipments.categorie_id > categories.id
 Ref: equipments.emplacement_id > emplacements.id
+Ref: equipments.created_by_membre_id > membres.id
 
 // Relation faible : equipments_vrac dépend totalement de equipments
 Ref: equipments_vrac.equipment_id - equipments.id
@@ -72,3 +110,12 @@ Ref: tickets_reparation.declare_par_membre_id > membres.id
 Ref: logs_scans.equipment_id > equipments.id
 Ref: logs_scans.membre_id > membres.id
 Ref: logs_scans.emplacement_destination_id > emplacements.id
+
+// Relation faible : equipments_location dépend totalement de equipments
+Ref: equipments_location.equipment_id - equipments.id
+Ref: equipments_location.fournisseur_id > fournisseurs.id
+
+Ref: prestations.responsable_membre_id > membres.id
+
+Ref: allocations_presta.presta_id > prestations.id
+Ref: allocations_presta.equipment_id > equipments.id

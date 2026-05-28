@@ -33,8 +33,8 @@
       {
         "name": "tickets_reparation",
         "schemaName": "public",
-        "x": 552.9175745509166,
-        "y": -211.00073231104207
+        "x": 523.6648243485256,
+        "y": -275.5585258611464
       },
       {
         "name": "logs_scans",
@@ -47,6 +47,30 @@
         "schemaName": "public",
         "x": 1059.0039242295293,
         "y": 55.99814787700575
+      },
+      {
+        "name": "fournisseurs",
+        "schemaName": "public",
+        "x": 12,
+        "y": 719.0787352695252
+      },
+      {
+        "name": "equipments_location",
+        "schemaName": "public",
+        "x": 12,
+        "y": 550.6232427247216
+      },
+      {
+        "name": "prestations",
+        "schemaName": "public",
+        "x": 562.2360459876126,
+        "y": 786.6626753922903
+      },
+      {
+        "name": "allocations_presta",
+        "schemaName": "public",
+        "x": 1008.8992401760664,
+        "y": 799.7759772071554
       }
     ],
     "tableGroupCollapseStates": [],
@@ -164,6 +188,96 @@
         "firstTableName": "equipments_vrac",
         "firstSchemaName": "public",
         "firstRelation": "1",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "created_by_membre_id"
+        ],
+        "firstTableName": "equipments",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "equipments_location",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "fournisseur_id"
+        ],
+        "firstTableName": "equipments_location",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "fournisseurs",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "responsable_membre_id"
+        ],
+        "firstTableName": "prestations",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "presta_id"
+        ],
+        "firstTableName": "allocations_presta",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "prestations",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "equipment_id"
+        ],
+        "firstTableName": "allocations_presta",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
         "secondFieldNames": [
           "id"
         ],
