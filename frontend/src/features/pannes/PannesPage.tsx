@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { syncEngine } from "@/lib/syncEngine";
-import type { Equipment } from "@/lib/types";
+import { compressImage } from "@/lib/image";
+import type { Equipment, TicketDetail } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 
@@ -19,12 +20,15 @@ function newId(): string {
 
 export function PannesPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const [barcode, setBarcode] = useState(params.get("barcode") ?? "");
   const [equipment, setEquipment] = useState<Equipment | null>(null);
   const [checking, setChecking] = useState(false);
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [createdId, setCreatedId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Vérifie l'existence de l'équipement (best-effort, échoue silencieusement offline).
@@ -81,7 +85,51 @@ export function PannesPage() {
     e.preventDefault();
     const code = barcode.trim();
     if (!code) return;
+    setSaving(true);
 
+    // En ligne : création directe → id immédiat + fiche accessible.
+    if (navigator.onLine) {
+      try {
+        const ticket = await api<TicketDetail>("/tickets", {
+          method: "POST",
+          body: {
+            equipment_id: equipment?.id ?? null,
+            barcode_uid: equipment ? null : code,
+            description_panne: description.trim() || null,
+          },
+        });
+        for (const p of photos) {
+          try {
+            const compressed = await compressImage(
+              new File([p.blob], "photo.jpg", { type: p.blob.type }),
+            );
+            const form = new FormData();
+            form.append("file", compressed, "photo.jpg");
+            await api(`/tickets/${ticket.id}/photos`, {
+              method: "POST",
+              body: form,
+            });
+          } catch {
+            // Photo non critique : on continue.
+          }
+        }
+        setCreatedId(ticket.id);
+        setSubmitted(true);
+        return;
+      } catch (err) {
+        // Équipement introuvable côté serveur : on remonte l'erreur.
+        if (err instanceof ApiError && err.status === 404) {
+          setSaving(false);
+          alert("Équipement introuvable. Vérifie le code-barres.");
+          return;
+        }
+        // Autre erreur réseau : on bascule sur la file hors-ligne.
+      } finally {
+        setSaving(false);
+      }
+    }
+
+    // Hors-ligne (ou échec réseau) : on met en file de synchronisation.
     const ticketUuid = await syncEngine.enqueue("ticket_reparation", {
       barcode_uid: code,
       description_panne: description.trim() || null,
@@ -101,7 +149,9 @@ export function PannesPage() {
       );
     }
 
+    setCreatedId(null);
     setSubmitted(true);
+    setSaving(false);
   }
 
   function reset() {
@@ -111,6 +161,7 @@ export function PannesPage() {
     setDescription("");
     setPhotos([]);
     setSubmitted(false);
+    setCreatedId(null);
   }
 
   if (submitted) {
@@ -120,9 +171,20 @@ export function PannesPage() {
         <div>
           <h1 className="text-lg font-semibold">Panne enregistrée</h1>
           <p className="text-sm text-fg-muted">
-            Elle sera synchronisée dès que possible.
+            {createdId
+              ? "La fiche de réparation est prête."
+              : "Elle sera synchronisée dès que possible."}
           </p>
         </div>
+        {createdId && (
+          <Button
+            className="w-full"
+            onClick={() => navigate(`/pannes/${createdId}`)}
+          >
+            <Icon name="build" className="text-xl" />
+            Voir la fiche
+          </Button>
+        )}
         <Button variant="ghost" className="w-full" onClick={reset}>
           Déclarer une autre panne
         </Button>
@@ -211,7 +273,7 @@ export function PannesPage() {
         />
       </div>
 
-      <Button type="submit" className="w-full" disabled={!barcode.trim()}>
+      <Button type="submit" className="w-full" disabled={!barcode.trim()} loading={saving}>
         <Icon name="build" className="text-xl" />
         Enregistrer la panne
       </Button>

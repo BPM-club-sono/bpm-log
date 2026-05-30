@@ -15,6 +15,7 @@ from app.routers import (
     equipment,
     fournisseurs,
     inventory,
+    membres,
     notifications,
     prestations,
     sync,
@@ -55,6 +56,7 @@ app.include_router(webauthn.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(fournisseurs.router, prefix="/api")
 app.include_router(inventory.router, prefix="/api")
+app.include_router(membres.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(prestations.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")

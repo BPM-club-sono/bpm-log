@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { syncEngine } from "@/lib/syncEngine";
@@ -461,6 +461,26 @@ interface TimelineEvent {
   accent: string; // classe texte pour le point quand c'est l'évènement le plus récent
   title: string;
   sub: string | null;
+  to?: string;
+}
+
+function ConditionalLink({
+  to,
+  className,
+  children,
+}: {
+  to?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (to) {
+    return (
+      <Link to={to} className={`${className ?? ""} transition-colors hover:opacity-80`}>
+        {children}
+      </Link>
+    );
+  }
+  return <div className={className}>{children}</div>;
 }
 
 function scanLabel(typeAction: string, contexte: string | null): {
@@ -520,6 +540,7 @@ function ActivityTimeline({
       accent: "bg-danger",
       title: `Réparation — ${AVANCEMENT_LABEL[t.avancement] ?? t.avancement}`,
       sub: t.description_panne,
+      to: `/pannes/${t.id}`,
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -557,11 +578,17 @@ function ActivityTimeline({
                   }
                 />
               </span>
-              <div className="min-w-0 flex-1">
+              <ConditionalLink to={ev.to} className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
                   <p className="flex items-center gap-1.5 text-sm font-medium">
                     <Icon name={ev.icon} className="text-base text-fg-muted" />
                     <span className="truncate">{ev.title}</span>
+                    {ev.to && (
+                      <Icon
+                        name="chevron_right"
+                        className="flex-none text-sm text-fg-muted"
+                      />
+                    )}
                   </p>
                   <span className="flex-none text-xs text-fg-muted">
                     {formatDate(ev.date)}
@@ -570,7 +597,7 @@ function ActivityTimeline({
                 {ev.sub && (
                   <p className="mt-0.5 truncate text-xs text-fg-muted">{ev.sub}</p>
                 )}
-              </div>
+              </ConditionalLink>
             </li>
           );
         })}

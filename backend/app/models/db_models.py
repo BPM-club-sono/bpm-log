@@ -31,6 +31,7 @@ from app.models.enums import (
     StatutEquipment,
     StatutPrestation,
     TypeActionScan,
+    TypeEvenementTicket,
     TypePrestation,
 )
 
@@ -198,6 +199,7 @@ class TicketReparation(Base):
         default=AvancementTicket.A_FAIRE,
     )
     cout_estime: Mapped[float | None] = mapped_column(Float)
+    assigne_membre_id: Mapped[int | None] = mapped_column(ForeignKey("membres.id"))
     offline_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     date_declaration: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -205,6 +207,32 @@ class TicketReparation(Base):
     date_resolution: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     photos: Mapped[list[PhotoPanne]] = relationship(back_populates="ticket")
+    evenements: Mapped[list[EvenementTicket]] = relationship(back_populates="ticket")
+
+
+class EvenementTicket(Base):
+    """Fil d'activité d'un ticket : commentaires libres + événements système loggés."""
+
+    __tablename__ = "evenements_ticket"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets_reparation.id"), index=True
+    )
+    membre_id: Mapped[int] = mapped_column(ForeignKey("membres.id"))
+    type: Mapped[TypeEvenementTicket] = mapped_column(
+        _enum(TypeEvenementTicket, "type_evenement_ticket")
+    )
+    # Texte du commentaire (type Commentaire) ou note optionnelle accompagnant l'événement.
+    commentaire: Mapped[str | None] = mapped_column(Text)
+    # Valeurs lisibles avant/après pour les changements (statut, coût, assignation).
+    valeur_avant: Mapped[str | None] = mapped_column(String(200))
+    valeur_apres: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    ticket: Mapped[TicketReparation] = relationship(back_populates="evenements")
 
 
 class PhotoPanne(Base):

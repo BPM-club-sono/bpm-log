@@ -108,7 +108,7 @@ export function CatalogPage() {
         />
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex flex-wrap gap-2">
         {FILTRES.map((f) => (
           <button
             key={f.value}
@@ -120,13 +120,17 @@ export function CatalogPage() {
             {f.label}
           </button>
         ))}
+      </div>
+
+      <div className="flex items-center justify-end">
         <button
           type="button"
           onClick={() => setArchived((v) => !v)}
           data-on={archived}
-          className="shrink-0 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-fg-muted data-[on=true]:border-warning data-[on=true]:bg-warning/15 data-[on=true]:text-warning"
+          className="inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev data-[on=true]:border-warning data-[on=true]:bg-warning/15 data-[on=true]:text-warning"
         >
-          Location archivée
+          <Icon name="archive" className="text-sm" />
+          <span>Locations archivées</span>
         </button>
       </div>
 

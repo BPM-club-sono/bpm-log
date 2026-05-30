@@ -31,6 +31,16 @@ class AvancementTicket(enum.StrEnum):
     RESOLU = "Resolu"
 
 
+class TypeEvenementTicket(enum.StrEnum):
+    """Type d'entrée dans le fil d'activité d'un ticket (façon GitHub issue)."""
+
+    COMMENTAIRE = "Commentaire"
+    CHANGEMENT_STATUT = "Changement_Statut"
+    CHANGEMENT_COUT = "Changement_Cout"
+    AJOUT_PHOTO = "Ajout_Photo"
+    CHANGEMENT_ASSIGNATION = "Changement_Assignation"
+
+
 class TypePrestation(enum.StrEnum):
     INTERNE = "Interne"
     EXTERNE = "Externe"

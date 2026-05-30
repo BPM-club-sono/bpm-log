@@ -177,6 +177,75 @@ export interface TicketHistoryItem {
   date_resolution: string | null;
 }
 
+export type AvancementTicket =
+  | "A_faire"
+  | "En_cours"
+  | "En_attente_de_piece"
+  | "Resolu";
+
+export type TypeEvenementTicket =
+  | "Commentaire"
+  | "Changement_Statut"
+  | "Changement_Cout"
+  | "Ajout_Photo"
+  | "Changement_Assignation";
+
+export interface MembreLite {
+  id: number;
+  nom: string | null;
+  prenom: string | null;
+  role: Role;
+}
+
+export interface TicketPhoto {
+  id: number;
+  ticket_id: number;
+  chemin: string;
+  created_at: string;
+  url: string;
+}
+
+export interface TicketEvenement {
+  id: number;
+  type: TypeEvenementTicket;
+  commentaire: string | null;
+  valeur_avant: string | null;
+  valeur_apres: string | null;
+  created_at: string;
+  auteur: MembreLite | null;
+}
+
+export interface TicketListItem {
+  id: number;
+  equipment_id: number;
+  equipment_nom: string;
+  equipment_barcode: string;
+  avancement: AvancementTicket;
+  description_panne: string | null;
+  cout_estime: number | null;
+  date_declaration: string;
+  date_resolution: string | null;
+  declarant: MembreLite | null;
+  assigne: MembreLite | null;
+  nb_photos: number;
+}
+
+export interface TicketDetail {
+  id: number;
+  equipment_id: number;
+  equipment_nom: string;
+  equipment_barcode: string;
+  avancement: AvancementTicket;
+  description_panne: string | null;
+  cout_estime: number | null;
+  date_declaration: string;
+  date_resolution: string | null;
+  declarant: MembreLite | null;
+  assigne: MembreLite | null;
+  photos: TicketPhoto[];
+  evenements: TicketEvenement[];
+}
+
 export interface ScanHistoryItem {
   id: number;
   type_action: string;

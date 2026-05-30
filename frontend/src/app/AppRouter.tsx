@@ -10,6 +10,8 @@ import { ProfilePage } from "@/features/profile/ProfilePage";
 import { ScanPage } from "@/features/scan/ScanPage";
 import { LabelsPage } from "@/features/labels/LabelsPage";
 import { PannesPage } from "@/features/pannes/PannesPage";
+import { PannesListPage } from "@/features/pannes/PannesListPage";
+import { TicketDetailPage } from "@/features/pannes/TicketDetailPage";
 import { ConflictsPage } from "@/features/sync/ConflictsPage";
 import { PrestationsPage } from "@/features/prestations/PrestationsPage";
 import { PrestationDetailPage } from "@/features/prestations/PrestationDetailPage";
@@ -33,6 +35,8 @@ const router = createBrowserRouter([
             path: "/pannes",
             element: <PannesPage />,
           },
+          { path: "/pannes/liste", element: <PannesListPage /> },
+          { path: "/pannes/:id", element: <TicketDetailPage /> },
           { path: "/conflits", element: <ConflictsPage /> },
           { path: "/prestations", element: <PrestationsPage /> },
           { path: "/prestations/:id", element: <PrestationDetailPage /> },

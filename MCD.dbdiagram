@@ -45,8 +45,8 @@
       {
         "name": "equipments_vrac",
         "schemaName": "public",
-        "x": 1035.7800472764043,
-        "y": 66.81235009011368
+        "x": 1047.3909300706027,
+        "y": -49.29647785186074
       },
       {
         "name": "fournisseurs",
@@ -93,8 +93,8 @@
       {
         "name": "equipments_consommable",
         "schemaName": "public",
-        "x": 564.1328125,
-        "y": 1366.6626753922903
+        "x": 1094.6411359852652,
+        "y": -414.7420263235322
       },
       {
         "name": "users_auth",
