@@ -2,16 +2,18 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/app/AuthContext";
 import { ApiError } from "@/lib/api";
+import { passkeySupported } from "@/lib/webauthn";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, loginPasskey } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -28,6 +30,29 @@ export function LoginPage() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onPasskey() {
+    if (!email.trim()) {
+      setError("Saisis ton email pour utiliser une Passkey.");
+      return;
+    }
+    setError(null);
+    setPasskeyLoading(true);
+    try {
+      await loginPasskey(email.trim());
+      navigate("/", { replace: true });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setError("Aucune Passkey enregistrée pour ce compte.");
+      } else if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setError("Authentification Passkey annulée.");
+      } else {
+        setError("Connexion par Passkey impossible.");
+      }
+    } finally {
+      setPasskeyLoading(false);
     }
   }
 
@@ -70,6 +95,26 @@ export function LoginPage() {
         <Button type="submit" loading={loading} className="w-full">
           Se connecter
         </Button>
+
+        {passkeySupported() && (
+          <>
+            <div className="flex items-center gap-3 text-xs text-fg-muted">
+              <span className="h-px flex-1 bg-line" />
+              ou
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              loading={passkeyLoading}
+              onClick={onPasskey}
+              className="w-full"
+            >
+              <Icon name="passkey" className="text-base" />
+              Se connecter avec une Passkey
+            </Button>
+          </>
+        )}
       </form>
     </div>
   );

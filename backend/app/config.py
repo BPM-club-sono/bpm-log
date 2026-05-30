@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # WebAuthn
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "BPM Log"
-    webauthn_origin: str = "http://localhost:5173"
+    webauthn_origin: list[str] = ["http://localhost", "http://localhost:5173"]
 
     # Web-Push
     vapid_public_key: str = ""
@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     def split_cors(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("webauthn_origin", mode="before")
+    @classmethod
+    def split_webauthn_origin(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("["):
+                return value  # JSON list, parsé par pydantic
+            return [o.strip() for o in value.split(",") if o.strip()]
         return value
 
 

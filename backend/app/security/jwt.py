@@ -37,6 +37,16 @@ def create_refresh_token(membre_id: int) -> str:
     )
 
 
+def create_webauthn_state(membre_id: int, challenge: str, purpose: str) -> str:
+    """Token court (5 min) transportant le challenge WebAuthn entre begin et complete."""
+    return _create_token(
+        subject=str(membre_id),
+        expires_delta=timedelta(minutes=5),
+        token_type=purpose,
+        challenge=challenge,
+    )
+
+
 def decode_token(token: str) -> dict[str, Any] | None:
     try:
         return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])

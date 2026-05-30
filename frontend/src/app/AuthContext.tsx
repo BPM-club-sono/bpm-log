@@ -10,12 +10,14 @@ import {
 import { api } from "@/lib/api";
 import { tokenStore } from "@/lib/tokenStore";
 import { syncEngine } from "@/lib/syncEngine";
+import { loginWithPasskey } from "@/lib/webauthn";
 import type { Membre, TokenPair } from "@/lib/types";
 
 interface AuthState {
   user: Membre | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginPasskey: (email: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -64,14 +66,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me);
   }, []);
 
+  const loginPasskey = useCallback(async (email: string) => {
+    const tokens = await loginWithPasskey(email);
+    tokenStore.set(tokens.access_token, tokens.refresh_token);
+    const me = await api<Membre>("/auth/me");
+    setUser(me);
+  }, []);
+
   const logout = useCallback(() => {
     tokenStore.clear();
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, loginPasskey, logout }),
+    [user, loading, login, loginPasskey, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
