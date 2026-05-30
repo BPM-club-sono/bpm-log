@@ -12,6 +12,7 @@ from app.config import settings
 from app.database import engine
 from app.routers import (
     auth,
+    dashboard,
     equipment,
     fournisseurs,
     inventory,
@@ -53,6 +54,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(webauthn.router, prefix="/api")
+app.include_router(dashboard.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(fournisseurs.router, prefix="/api")
 app.include_router(inventory.router, prefix="/api")

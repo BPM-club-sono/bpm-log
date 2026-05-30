@@ -282,3 +282,51 @@ export interface Fournisseur {
   contact: string | null;
   favori?: boolean;
 }
+
+// --- Tableau de bord d'accueil ---
+
+export interface ParcStats {
+  total_actif: number;
+  fonctionnel: number;
+  en_panne: number;
+  en_reparation: number;
+  perdu: number;
+  pourcentage_sante: number;
+  tickets_ouverts: number;
+  tickets_non_assignes: number;
+  consommables_sous_seuil: number;
+}
+
+export interface PrestationCourante {
+  id: number;
+  nom: string;
+  type: TypePrestation;
+  client_nom: string | null;
+  date_debut: string | null;
+  date_fin: string | null;
+  statut: StatutPrestation;
+  responsable_nom: string | null;
+  nb_objets: number;
+  a_venir: boolean;
+}
+
+export type CategorieActivite = "reparation" | "scan" | "statut";
+
+export interface ActiviteItem {
+  id: string;
+  categorie: CategorieActivite;
+  titre: string;
+  equipment_id: number;
+  equipment_nom: string;
+  membre_nom: string | null;
+  contexte: string | null;
+  date: string;
+  ticket_id: number | null;
+}
+
+export interface DashboardData {
+  parc: ParcStats;
+  prestation: PrestationCourante | null;
+  activite: ActiviteItem[];
+}
+
