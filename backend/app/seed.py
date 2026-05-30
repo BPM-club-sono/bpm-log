@@ -13,8 +13,22 @@ import asyncio
 from sqlalchemy import select
 
 from app.database import async_session_factory
-from app.models import Categorie, Emplacement, Equipment, Membre, UserAuth
-from app.models.enums import RoleMembre, StatutEquipment
+from app.models import (
+    AllocationPresta,
+    Categorie,
+    Emplacement,
+    Equipment,
+    Membre,
+    Prestation,
+    UserAuth,
+)
+from app.models.enums import (
+    RoleMembre,
+    StatutAllocation,
+    StatutEquipment,
+    StatutPrestation,
+    TypePrestation,
+)
 from app.security.passwords import hash_password
 
 
@@ -114,6 +128,53 @@ async def seed_demo() -> None:
         )
 
 
+async def seed_demo_prestation() -> None:
+    """Crée une prestation de démonstration avec quelques allocations (idempotent)."""
+    async with async_session_factory() as db:
+        existing = await db.scalar(
+            select(Prestation).where(Prestation.nom == "Nuketown 2026")
+        )
+        if existing is not None:
+            print("Prestation de démo déjà présente.")
+            return
+
+        presta = Prestation(
+            nom="Nuketown 2026",
+            type=TypePrestation.INTERNE,
+            client_nom="BDE",
+            statut=StatutPrestation.EN_PREPARATION,
+        )
+        db.add(presta)
+        await db.flush()
+
+        # (barcode, quantité prévue)
+        plan = [
+            ("BPM-LUM-0001", 2),
+            ("BPM-SON-0002", 2),
+            ("BPM-CAB-0001", 6),
+            ("BPM-STR-0001", 1),
+        ]
+        added = 0
+        for barcode, quantite in plan:
+            eq = await db.scalar(
+                select(Equipment).where(Equipment.barcode_uid == barcode)
+            )
+            if eq is None:
+                continue
+            db.add(
+                AllocationPresta(
+                    presta_id=presta.id,
+                    equipment_id=eq.id,
+                    quantite=quantite,
+                    statut=StatutAllocation.PLANIFIE,
+                )
+            )
+            added += 1
+
+        await db.commit()
+        print(f"Prestation de démo « Nuketown 2026 » créée avec {added} allocations.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crée un administrateur BPM Log.")
     parser.add_argument("--email", required=True)
@@ -131,6 +192,7 @@ def main() -> None:
         await seed_admin(args.email, args.password, args.nom, args.prenom)
         if args.demo:
             await seed_demo()
+            await seed_demo_prestation()
 
     asyncio.run(run())
 

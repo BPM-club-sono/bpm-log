@@ -7,6 +7,7 @@ import { Icon } from "@/shared/Icon";
 const TYPE_LABEL: Record<SyncQueueItem["type"], string> = {
   ticket_reparation: "Déclaration de panne",
   log_scan: "Scan",
+  presta_check: "Pointage de prestation",
 };
 
 export function ConflictsPage() {

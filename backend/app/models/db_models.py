@@ -269,7 +269,11 @@ class AllocationPresta(Base):
     presta_id: Mapped[int] = mapped_column(ForeignKey("prestations.id"), index=True)
     equipment_id: Mapped[int] = mapped_column(ForeignKey("equipments.id"), index=True)
     quantite: Mapped[int] = mapped_column(Integer, default=1)
+    quantite_sortie: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    quantite_retournee: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     statut: Mapped[StatutAllocation] = mapped_column(
         _enum(StatutAllocation, "statut_allocation"),
         default=StatutAllocation.PLANIFIE,
     )
+
+    equipment: Mapped["Equipment"] = relationship(lazy="raise")

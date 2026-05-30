@@ -9,7 +9,8 @@ import { ScanPage } from "@/features/scan/ScanPage";
 import { LabelsPage } from "@/features/labels/LabelsPage";
 import { PannesPage } from "@/features/pannes/PannesPage";
 import { ConflictsPage } from "@/features/sync/ConflictsPage";
-import { PlaceholderPage } from "@/features/PlaceholderPage";
+import { PrestationsPage } from "@/features/prestations/PrestationsPage";
+import { PrestationDetailPage } from "@/features/prestations/PrestationDetailPage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -28,10 +29,8 @@ const router = createBrowserRouter([
             element: <PannesPage />,
           },
           { path: "/conflits", element: <ConflictsPage /> },
-          {
-            path: "/prestations",
-            element: <PlaceholderPage title="Prestations" icon="event" />,
-          },
+          { path: "/prestations", element: <PrestationsPage /> },
+          { path: "/prestations/:id", element: <PrestationDetailPage /> },
           { path: "/profil", element: <ProfilePage /> },
         ],
       },

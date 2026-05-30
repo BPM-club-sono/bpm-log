@@ -1,7 +1,8 @@
 import Dexie, { type Table } from "dexie";
+import type { Allocation, PrestationDetail } from "./types";
 
 /** Type d'évènement métier mis en file pour synchronisation. */
-export type SyncItemType = "ticket_reparation" | "log_scan";
+export type SyncItemType = "ticket_reparation" | "log_scan" | "presta_check";
 
 export interface SyncQueueItem {
   uuid_client: string;
@@ -23,9 +24,18 @@ export interface PhotoBlob {
   uploaded: 0 | 1;
 }
 
+/** Snapshot d'une prestation préchargée pour le terrain (mode offline). */
+export interface PrestaSnapshot {
+  presta_id: number;
+  presta: PrestationDetail;
+  allocations: Allocation[];
+  prepared_at: string;
+}
+
 class BpmDexie extends Dexie {
   sync_queue!: Table<SyncQueueItem, string>;
   photos_blob!: Table<PhotoBlob, string>;
+  presta_snapshots!: Table<PrestaSnapshot, number>;
 
   constructor() {
     super("bpm_log");
@@ -33,6 +43,11 @@ class BpmDexie extends Dexie {
       // & = clé primaire unique ; les autres champs sont indexés.
       sync_queue: "&uuid_client, type, offline_created_at, synced_at",
       photos_blob: "&id, ticket_uuid, uploaded",
+    });
+    this.version(2).stores({
+      sync_queue: "&uuid_client, type, offline_created_at, synced_at",
+      photos_blob: "&id, ticket_uuid, uploaded",
+      presta_snapshots: "&presta_id",
     });
   }
 }

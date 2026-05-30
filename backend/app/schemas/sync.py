@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SyncItemType = Literal["ticket_reparation", "log_scan"]
+SyncItemType = Literal["ticket_reparation", "log_scan", "presta_check"]
 
 
 class SyncItemIn(BaseModel):

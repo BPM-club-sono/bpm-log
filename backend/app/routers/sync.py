@@ -15,8 +15,14 @@ from fastapi import APIRouter
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
-from app.models import Equipment, LogScan, TicketReparation
-from app.models.enums import StatutEquipment, TypeActionScan
+from app.models import (
+    AllocationPresta,
+    Equipment,
+    LogScan,
+    Prestation,
+    TicketReparation,
+)
+from app.models.enums import StatutAllocation, StatutEquipment, TypeActionScan
 from app.schemas.sync import SyncBatchIn, SyncBatchOut, SyncConflict, SyncItemIn
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -106,9 +112,98 @@ async def _apply_log_scan(
     return True
 
 
+def _clamp(value: int, low: int, high: int) -> int:
+    return max(low, min(value, high))
+
+
+def _recompute_allocation_statut(alloc: AllocationPresta) -> None:
+    if alloc.quantite_sortie == 0:
+        alloc.statut = StatutAllocation.PLANIFIE
+    elif alloc.quantite_retournee >= alloc.quantite_sortie:
+        alloc.statut = StatutAllocation.RETOURNE
+    else:
+        alloc.statut = StatutAllocation.SORTI
+
+
+async def _apply_presta_check(
+    db: DbSession, item: SyncItemIn, membre_id: int
+) -> bool:
+    """Applique un delta sortie/retour sur une allocation. Idempotent par uuid_client.
+
+    Un scan sortie sur un item non alloué crée une allocation ad-hoc (quantité 1).
+    Chaque évènement est tracé dans `logs_scans` (clé uuid_client) pour le dédoublonnage.
+    """
+    existing = await db.scalar(
+        select(LogScan).where(LogScan.uuid_client == item.uuid_client)
+    )
+    if existing is not None:
+        return False
+
+    payload = item.payload
+    presta_id = payload.get("presta_id")
+    if presta_id is None:
+        raise _Conflict("presta_id manquant.")
+    presta = await db.get(Prestation, int(presta_id))
+    if presta is None:
+        raise _Conflict("Prestation introuvable.")
+
+    equipment = await _resolve_equipment(db, payload)
+    sens = payload.get("sens")
+    if sens not in ("sortie", "retour"):
+        raise _Conflict(f"sens invalide : {sens}")
+    try:
+        delta = int(payload.get("delta", 0))
+    except (TypeError, ValueError) as exc:
+        raise _Conflict("delta invalide.") from exc
+
+    alloc = await db.scalar(
+        select(AllocationPresta).where(
+            AllocationPresta.presta_id == presta.id,
+            AllocationPresta.equipment_id == equipment.id,
+        )
+    )
+    if alloc is None:
+        if sens != "sortie" or delta <= 0:
+            raise _Conflict("Aucune ligne à retourner pour cet équipement.")
+        alloc = AllocationPresta(
+            presta_id=presta.id,
+            equipment_id=equipment.id,
+            quantite=1,
+            statut=StatutAllocation.PLANIFIE,
+        )
+        db.add(alloc)
+        await db.flush()
+
+    if sens == "sortie":
+        alloc.quantite_sortie = _clamp(
+            alloc.quantite_sortie + delta, 0, alloc.quantite
+        )
+    else:
+        alloc.quantite_retournee = _clamp(
+            alloc.quantite_retournee + delta, 0, alloc.quantite_sortie
+        )
+    _recompute_allocation_statut(alloc)
+
+    db.add(
+        LogScan(
+            uuid_client=item.uuid_client,
+            equipment_id=equipment.id,
+            membre_id=membre_id,
+            type_action=(
+                TypeActionScan.SCAN_SORTIE
+                if sens == "sortie"
+                else TypeActionScan.SCAN_ENTREE
+            ),
+            offline_created_at=item.offline_created_at,
+        )
+    )
+    return True
+
+
 _HANDLERS = {
     "ticket_reparation": _apply_ticket,
     "log_scan": _apply_log_scan,
+    "presta_check": _apply_presta_check,
 }
 
 
