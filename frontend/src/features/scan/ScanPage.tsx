@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import type { Equipment } from "@/lib/types";
 import { Button } from "@/shared/Button";
@@ -94,6 +95,7 @@ export function ScanPage() {
 }
 
 function ResultCard({ result, onReset }: { result: Result; onReset: () => void }) {
+  const navigate = useNavigate();
   if (result.kind === "found") {
     const e = result.equipment;
     return (
@@ -105,10 +107,21 @@ function ResultCard({ result, onReset }: { result: Result; onReset: () => void }
           </div>
           <StatusBadge statut={e.statut_actuel} />
         </div>
-        <Button variant="ghost" className="w-full" onClick={onReset}>
-          <Icon name="qr_code_scanner" className="text-xl" />
-          Scanner un autre
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="ghost"
+            onClick={() =>
+              navigate(`/pannes?barcode=${encodeURIComponent(e.barcode_uid)}`)
+            }
+          >
+            <Icon name="build" className="text-xl" />
+            Panne
+          </Button>
+          <Button variant="ghost" onClick={onReset}>
+            <Icon name="qr_code_scanner" className="text-xl" />
+            Scanner
+          </Button>
+        </div>
       </div>
     );
   }

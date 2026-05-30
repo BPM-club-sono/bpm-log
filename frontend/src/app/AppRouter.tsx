@@ -7,6 +7,7 @@ import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { ProfilePage } from "@/features/profile/ProfilePage";
 import { ScanPage } from "@/features/scan/ScanPage";
 import { LabelsPage } from "@/features/labels/LabelsPage";
+import { PannesPage } from "@/features/pannes/PannesPage";
 import { PlaceholderPage } from "@/features/PlaceholderPage";
 
 const router = createBrowserRouter([
@@ -23,7 +24,7 @@ const router = createBrowserRouter([
           { path: "/etiquettes", element: <LabelsPage /> },
           {
             path: "/pannes",
-            element: <PlaceholderPage title="Déclarer une panne" icon="build" />,
+            element: <PannesPage />,
           },
           {
             path: "/prestations",

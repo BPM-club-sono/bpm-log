@@ -9,6 +9,7 @@ import {
 } from "react";
 import { api } from "@/lib/api";
 import { tokenStore } from "@/lib/tokenStore";
+import { syncEngine } from "@/lib/syncEngine";
 import type { Membre, TokenPair } from "@/lib/types";
 
 interface AuthState {
@@ -43,6 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void loadMe();
   }, [loadMe]);
+
+  // Le moteur de sync ne tourne que lorsqu'un membre est authentifié.
+  useEffect(() => {
+    if (user) {
+      syncEngine.start();
+      return () => syncEngine.stop();
+    }
+  }, [user]);
 
   const login = useCallback(async (email: string, password: string) => {
     const tokens = await api<TokenPair>("/auth/login", {
