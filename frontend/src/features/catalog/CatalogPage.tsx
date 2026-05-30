@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import type { Categorie, Emplacement, Equipment } from "@/lib/types";
+import { useAuth } from "@/app/AuthContext";
 import { Icon } from "@/shared/Icon";
 import { StatusBadge } from "@/shared/StatusBadge";
 
 export function CatalogPage() {
+  const { user } = useAuth();
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [emplacements, setEmplacements] = useState<Emplacement[]>([]);
@@ -65,11 +68,22 @@ export function CatalogPage() {
 
   return (
     <div className="space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold">Parc matériel</h1>
-        <p className="text-sm text-fg-muted">
-          {equipments.length} équipement{equipments.length > 1 ? "s" : ""}
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">Parc matériel</h1>
+          <p className="text-sm text-fg-muted">
+            {equipments.length} équipement{equipments.length > 1 ? "s" : ""}
+          </p>
+        </div>
+        {user?.role === "Admin" && (
+          <Link
+            to="/etiquettes"
+            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+          >
+            <Icon name="print" className="text-base" />
+            Étiquettes
+          </Link>
+        )}
       </header>
 
       <div className="relative">

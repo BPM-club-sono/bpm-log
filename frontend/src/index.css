@@ -32,3 +32,51 @@ body {
   -webkit-font-feature-settings: "liga";
   -webkit-font-smoothing: antialiased;
 }
+
+/* Impression des étiquettes : feuille A4, 24 étiquettes (4 col × 6 lignes),
+   on masque toute l'interface sauf la grille et les cellules sélectionnées. */
+@media print {
+  @page {
+    size: A4;
+    margin: 8mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .no-print,
+  nav,
+  header.no-print {
+    display: none !important;
+  }
+
+  /* N'imprime que la feuille d'étiquettes. */
+  body * {
+    visibility: hidden;
+  }
+
+  .label-sheet,
+  .label-sheet * {
+    visibility: visible;
+  }
+
+  .label-sheet {
+    position: absolute;
+    inset: 0;
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2mm;
+  }
+
+  .label-cell {
+    opacity: 1 !important;
+    border-color: #ccc !important;
+    break-inside: avoid;
+  }
+
+  /* Les cellules non sélectionnées sont retirées de l'impression. */
+  .label-cell[data-selected="false"] {
+    display: none !important;
+  }
+}

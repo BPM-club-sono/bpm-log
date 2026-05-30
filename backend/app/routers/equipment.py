@@ -1,6 +1,6 @@
 """Routes catalogue : équipements, catégories, emplacements (lecture seule pour l'instant)."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
@@ -34,6 +34,24 @@ async def list_equipments(
 
     result = await db.scalars(stmt)
     return list(result.all())
+
+
+@router.get("/equipments/by-barcode/{barcode_uid}", response_model=EquipmentRead)
+async def get_equipment_by_barcode(
+    barcode_uid: str,
+    _user: CurrentUser,
+    db: DbSession,
+) -> Equipment:
+    """Résout un code-barres scanné vers son équipement (utilisé par le scanner)."""
+    equipment = await db.scalar(
+        select(Equipment).where(Equipment.barcode_uid == barcode_uid)
+    )
+    if equipment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Aucun équipement avec le code-barres {barcode_uid}.",
+        )
+    return equipment
 
 
 @router.get("/categories", response_model=list[CategorieRead])
