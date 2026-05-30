@@ -68,6 +68,7 @@ export interface Allocation {
   statut: StatutAllocation;
   equipment_nom: string | null;
   equipment_barcode: string | null;
+  equipment_externe?: boolean;
 }
 
 export interface PrestationDetail extends Prestation {
@@ -148,6 +149,7 @@ export interface EquipmentListItem {
   photo_url: string | null;
   type: EquipmentType;
   externe: boolean;
+  archive?: boolean;
   vrac: VracPreview | null;
   conso: ConsoPreview | null;
 }
@@ -178,6 +180,7 @@ export interface TicketHistoryItem {
 export interface ScanHistoryItem {
   id: number;
   type_action: string;
+  contexte: string | null;
   membre_nom: string | null;
   emplacement_destination_id: number | null;
   date_scan: string;
@@ -195,6 +198,7 @@ export interface EquipmentDetail {
   photo_url: string | null;
   type: EquipmentType;
   externe: boolean;
+  archive?: boolean;
   created_at: string;
   vrac: VracDetailInfo | null;
   conso: ConsoPreview | null;
@@ -207,4 +211,5 @@ export interface Fournisseur {
   id: number;
   nom: string;
   contact: string | null;
+  favori?: boolean;
 }

@@ -29,6 +29,7 @@ export function CatalogPage() {
   const [filtre, setFiltre] = useState<Filtre>(
     FILTRES.some((f) => f.value === initial) ? initial : "tous",
   );
+  const [archived, setArchived] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -36,7 +37,9 @@ export function CatalogPage() {
       setLoading(true);
       setError(null);
       try {
-        const eq = await api<EquipmentListItem[]>("/equipments");
+        const eq = await api<EquipmentListItem[]>(
+          archived ? "/equipments?archive=1" : "/equipments",
+        );
         if (!active) return;
         setEquipments(eq);
       } catch (err) {
@@ -54,7 +57,7 @@ export function CatalogPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [archived]);
 
   function selectFiltre(f: Filtre) {
     setFiltre(f);
@@ -117,6 +120,14 @@ export function CatalogPage() {
             {f.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setArchived((v) => !v)}
+          data-on={archived}
+          className="shrink-0 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-fg-muted data-[on=true]:border-warning data-[on=true]:bg-warning/15 data-[on=true]:text-warning"
+        >
+          Location archivée
+        </button>
       </div>
 
       {loading && <p className="py-8 text-center text-sm text-fg-muted">Chargement…</p>}

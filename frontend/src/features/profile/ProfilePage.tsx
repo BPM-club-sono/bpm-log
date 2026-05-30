@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/app/AuthContext";
 import { ApiError } from "@/lib/api";
 import { disablePush, enablePush, isPushEnabled, pushSupported } from "@/lib/push";
@@ -48,6 +49,7 @@ export function ProfilePage() {
 
   if (!user) return null;
   const fullName = [user.prenom, user.nom].filter(Boolean).join(" ") || user.email;
+  const canManage = user.role === "Admin" || user.role === "Staff";
 
   async function onTogglePush() {
     setPushError(null);
@@ -108,6 +110,19 @@ export function ProfilePage() {
         <Row label="Email" value={user.email} />
         <Row label="Rôle" value={user.role} />
       </dl>
+
+      {canManage && (
+        <Link
+          to="/fournisseurs"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-bg-soft px-4 py-3"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Icon name="local_shipping" className="text-xl" />
+            Fournisseurs
+          </span>
+          <Icon name="chevron_right" className="text-xl text-fg-muted" />
+        </Link>
+      )}
 
       {pushOk && (
         <section className="space-y-3">

@@ -49,13 +49,13 @@ export function EquipmentDetailPage() {
   const equipmentId = Number(id);
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
   const canEdit = user?.role === "Admin" || user?.role === "Staff";
 
   const [eq, setEq] = useState<EquipmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [inCart, setInCart] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -72,9 +72,14 @@ export function EquipmentDetailPage() {
     void load();
   }, [load]);
 
-  function addToLabels() {
-    labelCart.add(equipmentId);
-    toast(`Ajouté aux étiquettes (${labelCart.count()})`, "success");
+  // Panier d'étiquettes : état réactif (bascule ajout / retrait).
+  useEffect(() => {
+    setInCart(labelCart.has(equipmentId));
+    return labelCart.subscribe(() => setInCart(labelCart.has(equipmentId)));
+  }, [equipmentId]);
+
+  function toggleLabel() {
+    labelCart.toggle(equipmentId);
   }
 
   if (loading) {
@@ -172,9 +177,9 @@ export function EquipmentDetailPage() {
           <Icon name="build" className="text-xl" />
           Déclarer une panne
         </Button>
-        <Button variant="ghost" onClick={addToLabels}>
-          <Icon name="qr_code_2" className="text-xl" />
-          Imprimer étiquette
+        <Button variant={inCart ? "primary" : "ghost"} onClick={toggleLabel}>
+          <Icon name={inCart ? "check" : "qr_code_2"} className="text-xl" />
+          {inCart ? "Ajouté ✓" : "Imprimer étiquette"}
         </Button>
       </div>
 
@@ -183,8 +188,7 @@ export function EquipmentDetailPage() {
       )}
       {eq.conso && <ConsoBlock equipmentId={equipmentId} conso={eq.conso} />}
 
-      <HistoireTickets tickets={eq.tickets} />
-      <HistoireScans scans={eq.scans} />
+      <ActivityTimeline tickets={eq.tickets} scans={eq.scans} />
     </div>
   );
 }
@@ -440,55 +444,137 @@ function ConsoBlock({
   );
 }
 
-function HistoireTickets({
-  tickets,
-}: {
-  tickets: EquipmentDetail["tickets"];
-}) {
-  if (tickets.length === 0) return null;
-  return (
-    <section className="space-y-2">
-      <h2 className="text-sm font-semibold text-fg-muted">Historique des pannes</h2>
-      <ul className="space-y-1.5">
-        {tickets.map((t) => (
-          <li
-            key={t.id}
-            className="rounded-lg border border-line bg-bg-soft px-3 py-2 text-sm"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{t.avancement}</span>
-              <span className="text-xs text-fg-muted">
-                {formatDate(t.date_declaration)}
-              </span>
-            </div>
-            {t.description_panne && (
-              <p className="mt-0.5 text-xs text-fg-muted">{t.description_panne}</p>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+// --------------------------------------------------------------------------- //
+// Timeline d'activité unifiée (scans + réparations)
+// --------------------------------------------------------------------------- //
+const AVANCEMENT_LABEL: Record<string, string> = {
+  A_faire: "À faire",
+  En_cours: "En cours",
+  En_attente_de_piece: "En attente de pièce",
+  Resolu: "Résolu",
+};
+
+interface TimelineEvent {
+  key: string;
+  date: string;
+  icon: string;
+  accent: string; // classe texte pour le point quand c'est l'évènement le plus récent
+  title: string;
+  sub: string | null;
 }
 
-function HistoireScans({ scans }: { scans: EquipmentDetail["scans"] }) {
-  if (scans.length === 0) return null;
+function scanLabel(typeAction: string, contexte: string | null): {
+  title: string;
+  icon: string;
+  accent: string;
+} {
+  switch (typeAction) {
+    case "Scan_Sortie":
+      return {
+        title: contexte ? `Sorti — ${contexte}` : "Sorti",
+        icon: "logout",
+        accent: "bg-warning",
+      };
+    case "Scan_Entree":
+      return {
+        title: contexte ? `Rentré — ${contexte}` : "Rentré",
+        icon: "login",
+        accent: "bg-success",
+      };
+    case "Changement_Statut":
+      return {
+        title: `Statut ${contexte ?? "modifié"}`,
+        icon: "swap_horiz",
+        accent: "bg-fg",
+      };
+    case "Inventaire_Vrac":
+      return { title: "Inventaire vrac", icon: "inventory_2", accent: "bg-fg" };
+    default:
+      return { title: typeAction, icon: "qr_code_2", accent: "bg-fg" };
+  }
+}
+
+function ActivityTimeline({
+  tickets,
+  scans,
+}: {
+  tickets: EquipmentDetail["tickets"];
+  scans: EquipmentDetail["scans"];
+}) {
+  const events: TimelineEvent[] = [
+    ...scans.map((s) => {
+      const { title, icon, accent } = scanLabel(s.type_action, s.contexte);
+      return {
+        key: `scan-${s.id}`,
+        date: s.date_scan,
+        icon,
+        accent,
+        title,
+        sub: `par ${s.membre_nom ?? "—"}`,
+      };
+    }),
+    ...tickets.map((t) => ({
+      key: `ticket-${t.id}`,
+      date: t.date_declaration,
+      icon: "build",
+      accent: "bg-danger",
+      title: `Réparation — ${AVANCEMENT_LABEL[t.avancement] ?? t.avancement}`,
+      sub: t.description_panne,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (events.length === 0) {
+    return (
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-fg-muted">Activité</h2>
+        <p className="text-sm text-fg-muted">Aucune activité enregistrée.</p>
+      </section>
+    );
+  }
+
   return (
-    <section className="space-y-2">
-      <h2 className="text-sm font-semibold text-fg-muted">Derniers scans</h2>
-      <ul className="space-y-1.5">
-        {scans.map((s) => (
-          <li
-            key={s.id}
-            className="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg-soft px-3 py-2 text-sm"
-          >
-            <span>{s.type_action}</span>
-            <span className="text-xs text-fg-muted">
-              {s.membre_nom ?? "—"} · {formatDate(s.date_scan)}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-fg-muted">Activité</h2>
+      <ol className="relative ml-1">
+        {events.map((ev, i) => {
+          const isLast = i === events.length - 1;
+          const isMostRecent = i === 0;
+          return (
+            <li key={ev.key} className="relative flex gap-3 pb-4 last:pb-0">
+              {/* trait vertical reliant les points */}
+              {!isLast && (
+                <span className="absolute left-[7px] top-4 h-full w-px bg-line" />
+              )}
+              {/* point : plein coloré pour le plus récent, creux gris sinon */}
+              <span
+                className={`relative z-10 mt-1 flex h-4 w-4 flex-none items-center justify-center`}
+              >
+                <span
+                  className={
+                    isMostRecent
+                      ? `h-3 w-3 rounded-full ${ev.accent}`
+                      : "h-2.5 w-2.5 rounded-full border-2 border-line bg-bg"
+                  }
+                />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Icon name={ev.icon} className="text-base text-fg-muted" />
+                    <span className="truncate">{ev.title}</span>
+                  </p>
+                  <span className="flex-none text-xs text-fg-muted">
+                    {formatDate(ev.date)}
+                  </span>
+                </div>
+                {ev.sub && (
+                  <p className="mt-0.5 truncate text-xs text-fg-muted">{ev.sub}</p>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
@@ -778,6 +864,21 @@ export function ExterneFields({
   refDevis: string;
   setRefDevis: (v: string) => void;
 }) {
+  const favoris = fournisseurs.filter((f) => f.favori);
+  // On déplie la liste complète s'il n'y a aucun favori, ou si le fournisseur
+  // sélectionné n'en est pas un.
+  const selectedIsFavori =
+    fournisseurId !== "" && favoris.some((f) => f.id === fournisseurId);
+  // Replié par défaut : on montre les favoris dès qu'ils sont chargés. Si aucun
+  // favori n'existe, le <select> complet s'affiche via la condition de rendu.
+  const [showAll, setShowAll] = useState(false);
+
+  function pickFavori(id: number) {
+    setNouveauFournisseur("");
+    setShowAll(false);
+    setFournisseurId(fournisseurId === id ? "" : id);
+  }
+
   return (
     <div className="space-y-3 rounded-xl border border-line bg-bg-soft p-3">
       <label className="flex items-center gap-2 text-sm font-medium">
@@ -791,31 +892,59 @@ export function ExterneFields({
       </label>
       {externe && (
         <>
-          <Field label="Fournisseur">
-            <select
-              value={fournisseurId}
-              onChange={(e) =>
-                setFournisseurId(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              disabled={!!nouveauFournisseur.trim()}
-              className={inputCls}
-            >
-              <option value="">— choisir —</option>
-              {fournisseurs.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.nom}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="…ou nouveau fournisseur">
-            <input
-              value={nouveauFournisseur}
-              onChange={(e) => setNouveauFournisseur(e.target.value)}
-              placeholder="Nom du fournisseur"
-              className={inputCls}
-            />
-          </Field>
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-fg-muted">Fournisseur</span>
+            {favoris.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {favoris.map((f) => {
+                  const active = fournisseurId === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => pickFavori(f.id)}
+                      className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        active
+                          ? "border-fg bg-fg text-bg"
+                          : "border-line bg-bg-elev text-fg"
+                      }`}
+                    >
+                      {f.nom}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    showAll || (fournisseurId !== "" && !selectedIsFavori)
+                      ? "border-fg bg-fg text-bg"
+                      : "border-line bg-bg-elev text-fg"
+                  }`}
+                >
+                  Autre…
+                </button>
+              </div>
+            )}
+            {(showAll || favoris.length === 0) && (
+              <select
+                value={fournisseurId}
+                onChange={(e) =>
+                  setFournisseurId(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                disabled={!!nouveauFournisseur.trim()}
+                className={`${inputCls} mt-1`}
+              >
+                <option value="">— choisir —</option>
+                {fournisseurs.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nom}
+                    {f.favori ? " ★" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <Field label="Référence devis">
             <input
               value={refDevis}
@@ -823,6 +952,13 @@ export function ExterneFields({
               className={inputCls}
             />
           </Field>
+          <Link
+            to="/fournisseurs"
+            className="inline-flex items-center gap-1 text-xs text-fg-muted"
+          >
+            <Icon name="settings" className="text-sm" />
+            Gérer les fournisseurs (contacts, favoris)
+          </Link>
         </>
       )}
     </div>

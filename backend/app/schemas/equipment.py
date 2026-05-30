@@ -38,11 +38,19 @@ class FournisseurRead(BaseModel):
     id: int
     nom: str
     contact: str | None
+    favori: bool = False
 
 
 class FournisseurCreate(BaseModel):
     nom: str
     contact: str | None = None
+    favori: bool = False
+
+
+class FournisseurUpdate(BaseModel):
+    nom: str | None = None
+    contact: str | None = None
+    favori: bool | None = None
 
 
 class EquipmentRead(BaseModel):
@@ -89,6 +97,7 @@ class EquipmentListItem(BaseModel):
     photo_url: str | None
     type: EquipmentType
     externe: bool
+    archive: bool = False
     vrac: VracPreview | None = None
     conso: ConsoPreview | None = None
 
@@ -122,6 +131,7 @@ class TicketHistoryItem(BaseModel):
 class ScanHistoryItem(BaseModel):
     id: int
     type_action: TypeActionScan
+    contexte: str | None
     membre_nom: str | None
     emplacement_destination_id: int | None
     date_scan: datetime
@@ -139,6 +149,7 @@ class EquipmentDetail(BaseModel):
     photo_url: str | None
     type: EquipmentType
     externe: bool
+    archive: bool = False
     created_at: datetime
     vrac: VracDetailInfo | None = None
     conso: ConsoPreview | None = None

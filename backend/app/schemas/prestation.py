@@ -58,6 +58,7 @@ class AllocationRead(BaseModel):
     # Champs dénormalisés pour l'affichage offline de la checklist.
     equipment_nom: str | None = None
     equipment_barcode: str | None = None
+    equipment_externe: bool = False
 
 
 class PrestationDetail(PrestationRead):

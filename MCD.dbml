@@ -107,6 +107,7 @@ Table equipments {
   created_at timestamp
   created_by_membre_id integer
   photo_chemin varchar [note: 'Chemin relatif de la photo de l\'équipement sur le VPS (optionnel), servi par /api/photos']
+  archive boolean [note: 'Matériel de location rendu : conservé en base mais masqué du Parc par défaut']
 }
 
 // Entité dépendante (spécialisation) — n'existe que si l'équipement est une caisse de vrac
@@ -173,6 +174,7 @@ Table logs_scans {
   equipment_id integer
   membre_id integer
   type_action type_action_scan
+  contexte varchar [note: 'Contexte lisible de l\'évènement (nom de presta, nouveau statut…)']
   emplacement_destination_id integer
   offline_created_at timestamp [note: 'Heure du téléphone (UTC) — ordre chronologique du replay, first-write-wins']
   date_scan timestamp
@@ -184,6 +186,7 @@ Table fournisseurs {
   id integer [primary key, increment]
   nom varchar // ex: 'Impact Sonorisation', 'Novelty'
   contact varchar
+  favori boolean [note: 'Fournisseur prioritaire affiché en accès rapide lors de l\'ajout de matériel loué']
 }
 
 // Entité dépendante (spécialisation) — n'existe que si l'équipement est du matériel loué à l'externe

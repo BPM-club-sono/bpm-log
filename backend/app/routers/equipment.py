@@ -24,7 +24,7 @@ from app.models import (
     Membre,
     TicketReparation,
 )
-from app.models.enums import StatutEquipment
+from app.models.enums import StatutEquipment, TypeActionScan
 from app.schemas.equipment import (
     CategorieRead,
     ConsoPreview,
@@ -199,6 +199,7 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         ScanHistoryItem(
             id=log.id,
             type_action=log.type_action,
+            contexte=log.contexte,
             membre_nom=_membre_nom(membre),
             emplacement_destination_id=log.emplacement_destination_id,
             date_scan=log.date_scan,
@@ -218,6 +219,7 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         photo_url=build_photo_url(eq.photo_chemin),
         type=_derive_type(vrac is not None, conso is not None),
         externe=location is not None,
+        archive=eq.archive,
         created_at=eq.created_at,
         vrac=vrac_info,
         conso=conso_info,
@@ -240,6 +242,10 @@ async def list_equipments(
     statut: StatutEquipment | None = Query(default=None),
     type: EquipmentType | None = Query(default=None, description="standard|vrac|consommable"),
     externe: bool | None = Query(default=None),
+    archive: bool = Query(
+        default=False,
+        description="false (défaut) = matériel actif ; true = locations archivées (rendues)",
+    ),
 ) -> list[EquipmentListItem]:
     stmt = select(Equipment)
     if q:
@@ -251,6 +257,7 @@ async def list_equipments(
         stmt = stmt.where(Equipment.emplacement_id == emplacement_id)
     if statut is not None:
         stmt = stmt.where(Equipment.statut_actuel == statut)
+    stmt = stmt.where(Equipment.archive == archive)
     stmt = stmt.order_by(Equipment.nom)
 
     equipments = list((await db.scalars(stmt)).all())
@@ -327,6 +334,7 @@ async def list_equipments(
                 photo_url=build_photo_url(eq.photo_chemin),
                 type=eq_type,
                 externe=is_externe,
+                archive=eq.archive,
                 vrac=vrac_preview,
                 conso=conso_preview,
             )
@@ -466,6 +474,17 @@ async def update_equipment(
     if payload.emplacement_id is not None:
         eq.emplacement_id = payload.emplacement_id
     if payload.statut_actuel is not None:
+        if payload.statut_actuel != eq.statut_actuel:
+            # Trace le changement de statut dans l'historique d'activité.
+            db.add(
+                LogScan(
+                    uuid_client=uuid_lib.uuid4(),
+                    equipment_id=eq.id,
+                    membre_id=user.id,
+                    type_action=TypeActionScan.CHANGEMENT_STATUT,
+                    contexte=f"→ {payload.statut_actuel.replace('_', ' ')}",
+                )
+            )
         eq.statut_actuel = payload.statut_actuel
     if payload.barcode_uid is not None:
         await _assign_barcode(db, eq, payload.barcode_uid)

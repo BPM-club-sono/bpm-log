@@ -19,6 +19,7 @@ from app.models import (
     AllocationPresta,
     Equipment,
     EquipmentConsommable,
+    EquipmentLocation,
     EquipmentVrac,
     InventaireVrac,
     LogScan,
@@ -113,11 +114,17 @@ async def _apply_log_scan(
         raise _Conflict(f"type_action inconnu : {raw_type}") from exc
 
     dest_id = item.payload.get("emplacement_destination_id")
+    contexte: str | None = None
+    if type_action == TypeActionScan.CHANGEMENT_STATUT:
+        raw_statut = item.payload.get("nouveau_statut")
+        if raw_statut is not None:
+            contexte = f"→ {str(raw_statut).replace('_', ' ')}"
     log = LogScan(
         uuid_client=item.uuid_client,
         equipment_id=equipment.id,
         membre_id=membre_id,
         type_action=type_action,
+        contexte=contexte,
         emplacement_destination_id=dest_id,
         offline_created_at=item.offline_created_at,
     )
@@ -207,6 +214,16 @@ async def _apply_presta_check(
         )
     _recompute_allocation_statut(alloc)
 
+    # Matériel de location entièrement rendu : on l'archive (trace conservée, masqué du Parc).
+    if (
+        sens == "retour"
+        and alloc.quantite_sortie > 0
+        and alloc.quantite_retournee >= alloc.quantite_sortie
+    ):
+        location = await db.get(EquipmentLocation, equipment.id)
+        if location is not None:
+            equipment.archive = True
+
     db.add(
         LogScan(
             uuid_client=item.uuid_client,
@@ -217,6 +234,7 @@ async def _apply_presta_check(
                 if sens == "sortie"
                 else TypeActionScan.SCAN_ENTREE
             ),
+            contexte=presta.nom,
             offline_created_at=item.offline_created_at,
         )
     )

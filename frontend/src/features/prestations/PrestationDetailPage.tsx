@@ -12,6 +12,7 @@ import type {
 import { useAuth } from "@/app/AuthContext";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
@@ -215,15 +216,22 @@ export function PrestationDetailPage() {
         </p>
       )}
 
-      {/* Onglets de mode */}
+      {/* Onglets de mode — libellés adaptés au type de presta */}
       <div className="flex gap-1 rounded-xl border border-line bg-bg-soft p-1">
         {(
-          [
-            ["info", "Détail"],
-            ["sortie", "Sortie"],
-            ["retour", "Retour"],
-            ["cloture", "Clôture"],
-          ] as const
+          (detail.type === "Interne"
+            ? [
+                ["info", "Détail"],
+                ["sortie", "Réception"],
+                ["retour", "Rendu"],
+                ["cloture", "Clôture"],
+              ]
+            : [
+                ["info", "Détail"],
+                ["sortie", "Sortie"],
+                ["retour", "Retour"],
+                ["cloture", "Clôture"],
+              ]) as [Mode, string][]
         ).map(([m, label]) => {
           const locked = m !== "info" && !prepared;
           return (
@@ -279,6 +287,7 @@ export function PrestationDetailPage() {
       {mode === "sortie" && (
         <ChecklistView
           sens="sortie"
+          prestaType={detail.type}
           allocations={allocs}
           onDelta={(a, d) => applyDelta(a, "sortie", d)}
           onScan={(b) => handleScan(b, "sortie")}
@@ -287,6 +296,7 @@ export function PrestationDetailPage() {
       {mode === "retour" && (
         <ChecklistView
           sens="retour"
+          prestaType={detail.type}
           allocations={allocs}
           onDelta={(a, d) => applyDelta(a, "retour", d)}
           onScan={(b) => handleScan(b, "retour")}
@@ -320,13 +330,8 @@ function InfoView({
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Equipment[]>([]);
   const [adding, setAdding] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [newNom, setNewNom] = useState("");
-  const [newFournisseur, setNewFournisseur] = useState("");
-  const [newRef, setNewRef] = useState("");
-  const [newQuantite, setNewQuantite] = useState(1);
-  const [creatingBusy, setCreatingBusy] = useState(false);
-  const [createErr, setCreateErr] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [filter, setFilter] = useState<"tous" | "interne" | "location">("tous");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allocatedIds = useMemo(
     () => new Set(allocs.map((a) => a.equipment_id)),
@@ -375,45 +380,27 @@ function InfoView({
     await onReload();
   }
 
-  async function createAndAllocate() {
-    if (!newNom.trim()) {
-      setCreateErr("Le nom est obligatoire.");
-      return;
-    }
-    setCreatingBusy(true);
-    setCreateErr(null);
-    try {
-      const body: Record<string, unknown> = {
-        nom: newNom.trim(),
-        type: "standard",
-        externe: true,
-      };
-      if (newFournisseur.trim()) body.fournisseur_nom = newFournisseur.trim();
-      if (newRef.trim()) body.reference_devis = newRef.trim();
-      const created = await api<{ id: number }>("/equipments", {
-        method: "POST",
-        body,
-      });
-      await api(`/prestations/${detail.id}/allocations`, {
-        method: "POST",
-        body: { equipment_id: created.id, quantite: Math.max(1, newQuantite) },
-      });
-      setCreating(false);
-      setNewNom("");
-      setNewFournisseur("");
-      setNewRef("");
-      setNewQuantite(1);
-      await onReload();
-    } catch (err) {
-      setCreateErr(
-        err instanceof ApiError ? err.message : "Création impossible. Réessaie.",
-      );
-    } finally {
-      setCreatingBusy(false);
-    }
+  async function allocateCreated(created: { id: number }, quantite: number) {
+    await api(`/prestations/${detail.id}/allocations`, {
+      method: "POST",
+      body: { equipment_id: created.id, quantite: Math.max(1, quantite) },
+    });
+    setShowModal(false);
+    setSearch("");
+    setResults([]);
+    await onReload();
   }
 
   const editable = canManage && detail.statut === "En_preparation";
+
+  const hasBoth =
+    allocs.some((a) => a.equipment_externe) &&
+    allocs.some((a) => !a.equipment_externe);
+  const visibleAllocs = allocs.filter((a) => {
+    if (filter === "interne") return !a.equipment_externe;
+    if (filter === "location") return a.equipment_externe;
+    return true;
+  });
 
   return (
     <div className="space-y-4">
@@ -455,80 +442,66 @@ function InfoView({
             </ul>
           )}
 
-          {creating ? (
-            <div className="space-y-2 rounded-xl border border-line bg-bg-soft p-3">
-              <p className="text-sm font-medium">Matériel loué / externe</p>
-              {createErr && <p className="text-xs text-danger">{createErr}</p>}
-              <input
-                value={newNom}
-                onChange={(e) => setNewNom(e.target.value)}
-                placeholder="Nom du matériel"
-                className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
-              />
-              <input
-                value={newFournisseur}
-                onChange={(e) => setNewFournisseur(e.target.value)}
-                placeholder="Fournisseur (optionnel)"
-                className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
-              />
-              <input
-                value={newRef}
-                onChange={(e) => setNewRef(e.target.value)}
-                placeholder="Référence devis (optionnel)"
-                className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
-              />
-              <label className="flex items-center justify-between gap-2 text-sm text-fg-muted">
-                Quantité
-                <input
-                  type="number"
-                  min={1}
-                  value={newQuantite}
-                  onChange={(e) => setNewQuantite(Number(e.target.value))}
-                  className="h-10 w-20 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setCreating(false);
-                    setCreateErr(null);
-                  }}
-                >
-                  Annuler
-                </Button>
-                <Button loading={creatingBusy} onClick={() => void createAndAllocate()}>
-                  Ajouter
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line text-sm font-medium text-fg-muted transition-colors hover:bg-bg-elev"
-            >
-              <Icon name="add" className="text-lg" />
-              Nouveau matériel loué / externe
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line text-sm font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+          >
+            <Icon name="add" className="text-lg" />
+            Ajouter du matériel (créer une fiche)
+          </button>
         </div>
       )}
 
-      <div className="space-y-1">
-        <p className="text-xs font-medium text-fg-muted">
-          {allocs.length} ligne{allocs.length > 1 ? "s" : ""} allouée
-          {allocs.length > 1 ? "s" : ""}
-        </p>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-fg-muted">
+            {allocs.length} ligne{allocs.length > 1 ? "s" : ""} allouée
+            {allocs.length > 1 ? "s" : ""}
+          </p>
+        </div>
+
+        {hasBoth && (
+          <div className="flex gap-1.5">
+            {(
+              [
+                ["tous", "Tous"],
+                ["interne", "Matériel BPM"],
+                ["location", "Location"],
+              ] as const
+            ).map(([f, label]) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  filter === f
+                    ? "border-fg bg-fg text-bg"
+                    : "border-line bg-bg-soft text-fg-muted"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <ul className="space-y-2">
-          {allocs.map((a) => (
+          {visibleAllocs.map((a) => (
             <li
               key={a.id}
               className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg-soft p-3"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                  <span className="truncate">
+                    {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                  </span>
+                  {a.equipment_externe && (
+                    <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                      Location
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-fg-muted">
                   Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné{" "}
@@ -546,12 +519,40 @@ function InfoView({
             </li>
           ))}
         </ul>
-        {allocs.length === 0 && (
+        {visibleAllocs.length === 0 && (
           <p className="py-8 text-center text-sm text-fg-muted">
             Aucun matériel alloué.
           </p>
         )}
       </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-line bg-bg p-4 sm:rounded-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Ajouter du matériel</h2>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-fg-muted hover:bg-bg-elev"
+                aria-label="Fermer"
+              >
+                <Icon name="close" className="text-xl" />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-fg-muted">
+              Crée une fiche (tous types) et l'alloue automatiquement à la
+              prestation.
+            </p>
+            <EquipmentForm
+              externeDefault
+              showQuantite
+              submitLabel="Créer et allouer"
+              onCreated={(created, quantite) => allocateCreated(created, quantite)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

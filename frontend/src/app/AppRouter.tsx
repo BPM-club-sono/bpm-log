@@ -13,6 +13,7 @@ import { PannesPage } from "@/features/pannes/PannesPage";
 import { ConflictsPage } from "@/features/sync/ConflictsPage";
 import { PrestationsPage } from "@/features/prestations/PrestationsPage";
 import { PrestationDetailPage } from "@/features/prestations/PrestationDetailPage";
+import { FournisseursPage } from "@/features/fournisseurs/FournisseursPage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
           { path: "/conflits", element: <ConflictsPage /> },
           { path: "/prestations", element: <PrestationsPage /> },
           { path: "/prestations/:id", element: <PrestationDetailPage /> },
+          { path: "/fournisseurs", element: <FournisseursPage /> },
           { path: "/profil", element: <ProfilePage /> },
         ],
       },

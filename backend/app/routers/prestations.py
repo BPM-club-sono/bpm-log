@@ -15,6 +15,7 @@ from app.deps import CurrentUser, DbSession
 from app.models import (
     AllocationPresta,
     Equipment,
+    EquipmentLocation,
     Prestation,
     TicketReparation,
 )
@@ -37,7 +38,7 @@ from app.security.rbac import RequireStaff
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
 
-def _allocation_read(alloc: AllocationPresta) -> AllocationRead:
+def _allocation_read(alloc: AllocationPresta, externe: bool = False) -> AllocationRead:
     eq = alloc.equipment if "equipment" in alloc.__dict__ else None
     return AllocationRead(
         id=alloc.id,
@@ -49,7 +50,15 @@ def _allocation_read(alloc: AllocationPresta) -> AllocationRead:
         statut=alloc.statut,
         equipment_nom=eq.nom if eq is not None else None,
         equipment_barcode=eq.barcode_uid if eq is not None else None,
+        equipment_externe=externe,
     )
+
+
+async def _location_ids(db: DbSession) -> set[int]:
+    """Ids des équipements en location externe (pour le filtre interne/location)."""
+    return {
+        eid for (eid,) in (await db.execute(select(EquipmentLocation.equipment_id))).all()
+    }
 
 
 async def _get_presta_or_404(db: DbSession, presta_id: int) -> Prestation:
@@ -99,9 +108,12 @@ async def get_prestation(
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
+    loc_ids = await _location_ids(db)
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
-        allocations=[_allocation_read(a) for a in allocs.all()],
+        allocations=[
+            _allocation_read(a, a.equipment_id in loc_ids) for a in allocs.all()
+        ],
     )
 
 
@@ -176,7 +188,8 @@ async def add_allocation(
         db.add(alloc)
     await db.commit()
     await db.refresh(alloc, attribute_names=["equipment"])
-    return _allocation_read(alloc)
+    externe = await db.get(EquipmentLocation, alloc.equipment_id) is not None
+    return _allocation_read(alloc, externe)
 
 
 @router.delete(
@@ -257,7 +270,10 @@ async def cloturer_prestation(
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
+    loc_ids = await _location_ids(db)
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
-        allocations=[_allocation_read(a) for a in refreshed.all()],
+        allocations=[
+            _allocation_read(a, a.equipment_id in loc_ids) for a in refreshed.all()
+        ],
     )

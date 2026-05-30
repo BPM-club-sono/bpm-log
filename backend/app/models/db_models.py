@@ -128,6 +128,9 @@ class Equipment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by_membre_id: Mapped[int | None] = mapped_column(ForeignKey("membres.id"))
     photo_chemin: Mapped[str | None] = mapped_column(String(500))
+    # Matériel de location archivé (rendu au fournisseur) : conservé en base mais
+    # masqué du Parc par défaut pour ne pas le saturer.
+    archive: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     vrac: Mapped[EquipmentVrac | None] = relationship(back_populates="equipment", uselist=False)
     consommable: Mapped[EquipmentConsommable | None] = relationship(
@@ -224,6 +227,8 @@ class LogScan(Base):
     equipment_id: Mapped[int] = mapped_column(ForeignKey("equipments.id"), index=True)
     membre_id: Mapped[int] = mapped_column(ForeignKey("membres.id"))
     type_action: Mapped[TypeActionScan] = mapped_column(_enum(TypeActionScan, "type_action_scan"))
+    # Contexte lisible de l'évènement (nom de presta, nouveau statut…) pour l'historique.
+    contexte: Mapped[str | None] = mapped_column(String(300))
     emplacement_destination_id: Mapped[int | None] = mapped_column(ForeignKey("emplacements.id"))
     offline_created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
@@ -237,6 +242,7 @@ class Fournisseur(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(200))
     contact: Mapped[str | None] = mapped_column(String(200))
+    favori: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class EquipmentLocation(Base):
