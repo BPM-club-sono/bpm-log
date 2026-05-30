@@ -18,6 +18,8 @@ from app.models import (
     Categorie,
     Emplacement,
     Equipment,
+    EquipmentConsommable,
+    EquipmentVrac,
     Membre,
     Prestation,
     UserAuth,
@@ -175,6 +177,79 @@ async def seed_demo_prestation() -> None:
         print(f"Prestation de démo « Nuketown 2026 » créée avec {added} allocations.")
 
 
+# Caisses vrac de démo : (nom, barcode, catégorie idx, emplacement idx, qté théorique)
+_DEMO_VRAC = [
+    ("Caisse câbles XLR 3m", "BPM-VRAC-0001", 3, 1, 50),
+    ("Caisse multipaires", "BPM-VRAC-0002", 3, 1, 12),
+]
+
+# Consommables de démo : (nom, barcode, cat idx, emp idx, stock, seuil, unité)
+_DEMO_CONSO = [
+    ("Gaffer noir 50mm", "BPM-CONSO-0001", 3, 0, 24, 5, "rouleau"),
+    ("Piles AA", "BPM-CONSO-0002", 0, 0, 40, 12, "pile"),
+    ("Colliers Rilsan", "BPM-CONSO-0003", 3, 0, 3, 20, "sachet"),
+]
+
+
+async def seed_demo_inventaire() -> None:
+    """Crée des caisses vrac et des consommables de démonstration (idempotent)."""
+    async with async_session_factory() as db:
+        cats = {
+            c.nom: c
+            for c in (await db.scalars(select(Categorie))).all()
+        }
+        emps = list((await db.scalars(select(Emplacement).order_by(Emplacement.id))).all())
+        cat_list = [cats.get(nom) for nom, _ in _DEMO_CATEGORIES]
+
+        vrac_n = 0
+        for nom, barcode, cat_idx, emp_idx, theorique in _DEMO_VRAC:
+            existing = await db.scalar(
+                select(Equipment).where(Equipment.barcode_uid == barcode)
+            )
+            if existing is not None:
+                continue
+            eq = Equipment(
+                nom=nom,
+                barcode_uid=barcode,
+                categorie_id=cat_list[cat_idx].id if cat_list[cat_idx] else None,
+                emplacement_id=emps[emp_idx].id if emp_idx < len(emps) else None,
+                statut_actuel=StatutEquipment.FONCTIONNEL,
+            )
+            db.add(eq)
+            await db.flush()
+            db.add(EquipmentVrac(equipment_id=eq.id, quantite_theorique=theorique))
+            vrac_n += 1
+
+        conso_n = 0
+        for nom, barcode, cat_idx, emp_idx, stock, seuil, unite in _DEMO_CONSO:
+            existing = await db.scalar(
+                select(Equipment).where(Equipment.barcode_uid == barcode)
+            )
+            if existing is not None:
+                continue
+            eq = Equipment(
+                nom=nom,
+                barcode_uid=barcode,
+                categorie_id=cat_list[cat_idx].id if cat_list[cat_idx] else None,
+                emplacement_id=emps[emp_idx].id if emp_idx < len(emps) else None,
+                statut_actuel=StatutEquipment.FONCTIONNEL,
+            )
+            db.add(eq)
+            await db.flush()
+            db.add(
+                EquipmentConsommable(
+                    equipment_id=eq.id,
+                    stock_actuel=stock,
+                    seuil_alerte=seuil,
+                    unite=unite,
+                )
+            )
+            conso_n += 1
+
+        await db.commit()
+        print(f"Inventaire de démo : {vrac_n} caisses vrac, {conso_n} consommables ajoutés.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crée un administrateur BPM Log.")
     parser.add_argument("--email", required=True)
@@ -193,6 +268,7 @@ def main() -> None:
         if args.demo:
             await seed_demo()
             await seed_demo_prestation()
+            await seed_demo_inventaire()
 
     asyncio.run(run())
 

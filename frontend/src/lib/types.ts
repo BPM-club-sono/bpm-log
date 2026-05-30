@@ -75,3 +75,44 @@ export interface PrestationDetail extends Prestation {
 }
 
 export type ClotureDecision = "retourne" | "perdu" | "casse" | "ouvert";
+
+export interface Consommable {
+  equipment_id: number;
+  nom: string;
+  barcode_uid: string;
+  stock_actuel: number;
+  seuil_alerte: number;
+  unite: string | null;
+  en_alerte: boolean;
+}
+
+export interface VracLock {
+  membre_id: number;
+  membre_nom: string | null;
+  expires_at: string;
+  is_mine: boolean;
+}
+
+export interface VracCaisse {
+  equipment_id: number;
+  nom: string;
+  barcode_uid: string;
+  quantite_theorique: number;
+  quantite_actuelle: number;
+  ecart: number;
+  lock: VracLock | null;
+}
+
+export interface InventaireEntry {
+  id: number;
+  membre_id: number;
+  membre_nom: string | null;
+  delta: number;
+  note: string | null;
+  presta_id: number | null;
+  date: string;
+}
+
+export interface VracDetail extends VracCaisse {
+  historique: InventaireEntry[];
+}

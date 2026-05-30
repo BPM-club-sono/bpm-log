@@ -8,6 +8,8 @@ const TYPE_LABEL: Record<SyncQueueItem["type"], string> = {
   ticket_reparation: "Déclaration de panne",
   log_scan: "Scan",
   presta_check: "Pointage de prestation",
+  vrac_delta: "Inventaire vrac",
+  conso_delta: "Stock consommable",
 };
 
 export function ConflictsPage() {

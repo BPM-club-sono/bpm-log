@@ -11,6 +11,9 @@ import { PannesPage } from "@/features/pannes/PannesPage";
 import { ConflictsPage } from "@/features/sync/ConflictsPage";
 import { PrestationsPage } from "@/features/prestations/PrestationsPage";
 import { PrestationDetailPage } from "@/features/prestations/PrestationDetailPage";
+import { ConsommablesPage } from "@/features/consommables/ConsommablesPage";
+import { VracPage } from "@/features/vrac/VracPage";
+import { VracDetailPage } from "@/features/vrac/VracDetailPage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -31,6 +34,9 @@ const router = createBrowserRouter([
           { path: "/conflits", element: <ConflictsPage /> },
           { path: "/prestations", element: <PrestationsPage /> },
           { path: "/prestations/:id", element: <PrestationDetailPage /> },
+          { path: "/consommables", element: <ConsommablesPage /> },
+          { path: "/vrac", element: <VracPage /> },
+          { path: "/vrac/:id", element: <VracDetailPage /> },
           { path: "/profil", element: <ProfilePage /> },
         ],
       },

@@ -2,7 +2,12 @@ import Dexie, { type Table } from "dexie";
 import type { Allocation, PrestationDetail } from "./types";
 
 /** Type d'évènement métier mis en file pour synchronisation. */
-export type SyncItemType = "ticket_reparation" | "log_scan" | "presta_check";
+export type SyncItemType =
+  | "ticket_reparation"
+  | "log_scan"
+  | "presta_check"
+  | "vrac_delta"
+  | "conso_delta";
 
 export interface SyncQueueItem {
   uuid_client: string;

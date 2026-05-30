@@ -18,6 +18,9 @@ from app.deps import CurrentUser, DbSession
 from app.models import (
     AllocationPresta,
     Equipment,
+    EquipmentConsommable,
+    EquipmentVrac,
+    InventaireVrac,
     LogScan,
     Prestation,
     TicketReparation,
@@ -200,10 +203,101 @@ async def _apply_presta_check(
     return True
 
 
+async def _apply_vrac_delta(
+    db: DbSession, item: SyncItemIn, membre_id: int
+) -> bool:
+    """Enregistre un delta unitaire d'inventaire vrac (append-only). Idempotent.
+
+    La quantité courante d'une caisse n'est jamais stockée en valeur absolue :
+    c'est `quantite_theorique + Σ deltas`. Les deltas sont commutatifs, donc
+    l'ordre d'arrivée n'a aucune importance (scénario C du plan).
+    """
+    existing = await db.scalar(
+        select(LogScan).where(LogScan.uuid_client == item.uuid_client)
+    )
+    if existing is not None:
+        return False
+
+    equipment = await _resolve_equipment(db, item.payload)
+    vrac = await db.get(EquipmentVrac, equipment.id)
+    if vrac is None:
+        raise _Conflict("Cet équipement n'est pas une caisse vrac.")
+
+    try:
+        delta = int(item.payload.get("delta", 0))
+    except (TypeError, ValueError) as exc:
+        raise _Conflict("delta invalide.") from exc
+    if delta == 0:
+        raise _Conflict("delta nul.")
+
+    presta_id = item.payload.get("presta_id")
+    db.add(
+        InventaireVrac(
+            equipment_id=equipment.id,
+            membre_id=membre_id,
+            delta=delta,
+            presta_id=int(presta_id) if presta_id is not None else None,
+            note=item.payload.get("note"),
+            date=item.offline_created_at,
+        )
+    )
+    db.add(
+        LogScan(
+            uuid_client=item.uuid_client,
+            equipment_id=equipment.id,
+            membre_id=membre_id,
+            type_action=TypeActionScan.INVENTAIRE_VRAC,
+            offline_created_at=item.offline_created_at,
+        )
+    )
+    return True
+
+
+async def _apply_conso_delta(
+    db: DbSession, item: SyncItemIn, membre_id: int
+) -> bool:
+    """Applique un réappro / une consommation sur le stock d'un consommable. Idempotent.
+
+    `stock_actuel` est borné à 0. Le dédoublonnage passe par `logs_scans`
+    (clé `uuid_client`) pour ne jamais appliquer deux fois le même delta.
+    """
+    existing = await db.scalar(
+        select(LogScan).where(LogScan.uuid_client == item.uuid_client)
+    )
+    if existing is not None:
+        return False
+
+    equipment = await _resolve_equipment(db, item.payload)
+    conso = await db.get(EquipmentConsommable, equipment.id)
+    if conso is None:
+        raise _Conflict("Cet équipement n'est pas un consommable.")
+
+    try:
+        delta = int(item.payload.get("delta", 0))
+    except (TypeError, ValueError) as exc:
+        raise _Conflict("delta invalide.") from exc
+    if delta == 0:
+        raise _Conflict("delta nul.")
+
+    conso.stock_actuel = max(0, conso.stock_actuel + delta)
+    db.add(
+        LogScan(
+            uuid_client=item.uuid_client,
+            equipment_id=equipment.id,
+            membre_id=membre_id,
+            type_action=TypeActionScan.CHANGEMENT_STATUT,
+            offline_created_at=item.offline_created_at,
+        )
+    )
+    return True
+
+
 _HANDLERS = {
     "ticket_reparation": _apply_ticket,
     "log_scan": _apply_log_scan,
     "presta_check": _apply_presta_check,
+    "vrac_delta": _apply_vrac_delta,
+    "conso_delta": _apply_conso_delta,
 }
 
 

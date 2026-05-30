@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, equipment, prestations, sync, tickets
+from app.routers import auth, equipment, inventory, prestations, sync, tickets
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
+app.include_router(inventory.router, prefix="/api")
 app.include_router(prestations.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
 app.include_router(tickets.router, prefix="/api")
