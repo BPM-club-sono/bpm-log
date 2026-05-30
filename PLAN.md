@@ -520,6 +520,14 @@ Wrapper React :
 - `docker-compose.prod.yml` avec nginx + Let's Encrypt (Caddy serait plus simple, à considérer)
 - Documentation `/admin` pour onboarder un nouveau membre
 
+> **Statut M10 — partiellement réalisé (2026-05) :**
+> - ✅ Code-splitting des routes (bundle initial 786 → 330 KB ; scanner QR isolé)
+> - ✅ Tests fondation : Vitest (frontend) + pytest (backend), scripts `lint`/`typecheck`/`test` verts
+> - ✅ Healthchecks Docker sur `db`, `api`, `frontend`
+> - ✅ `docker-compose.prod.yml` (TLS délégué à **Tailscale Funnel**, pas de Let's Encrypt)
+> - ✅ `scripts/backup.sh` (pg_dump compressé + rétention, cron-friendly)
+> - ⏳ Reste : couverture ≥70 %, tests Playwright e2e, logs JSON structlog, Sentry, doc /admin
+
 ---
 
 ## 7. Risques identifiés & mitigations
