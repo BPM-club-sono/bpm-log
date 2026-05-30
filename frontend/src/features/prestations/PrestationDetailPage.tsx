@@ -242,17 +242,29 @@ export function PrestationDetailPage() {
       </div>
 
       {!prepared && (
-        <div className="space-y-2 rounded-xl border border-dashed border-line bg-bg-soft p-4 text-center">
-          <Icon name="cloud_download" className="text-3xl text-fg-muted" />
-          <p className="text-sm font-medium">Préparer pour le terrain</p>
-          <p className="text-xs text-fg-muted">
-            Précharge la liste pour pouvoir pointer la sortie et le retour
-            hors-ligne.
-          </p>
+        <div className="space-y-3 rounded-xl border border-dashed border-line bg-bg-soft p-4">
+          <div className="flex items-start gap-3">
+            <Icon name="cloud_download" className="mt-0.5 text-2xl text-fg-muted" />
+            <div className="space-y-0.5 text-left">
+              <p className="text-sm font-medium">Télécharger pour le terrain</p>
+              <p className="text-xs text-fg-muted">
+                Enregistre la liste du matériel sur cet appareil pour pointer la
+                sortie et le retour même sans réseau.
+              </p>
+            </div>
+          </div>
           <Button className="w-full" onClick={prepareForField}>
-            <Icon name="download" className="text-lg" />
-            Préparer pour le terrain
+            <Icon name="download_for_offline" className="text-lg" />
+            Télécharger pour utilisation hors-ligne
           </Button>
+          <button
+            type="button"
+            disabled
+            className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-line text-sm font-medium text-fg-muted opacity-50"
+          >
+            <Icon name="request_quote" className="text-lg" />
+            Importer depuis un devis — bientôt
+          </button>
         </div>
       )}
 
@@ -308,6 +320,13 @@ function InfoView({
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Equipment[]>([]);
   const [adding, setAdding] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newNom, setNewNom] = useState("");
+  const [newFournisseur, setNewFournisseur] = useState("");
+  const [newRef, setNewRef] = useState("");
+  const [newQuantite, setNewQuantite] = useState(1);
+  const [creatingBusy, setCreatingBusy] = useState(false);
+  const [createErr, setCreateErr] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allocatedIds = useMemo(
     () => new Set(allocs.map((a) => a.equipment_id)),
@@ -356,6 +375,44 @@ function InfoView({
     await onReload();
   }
 
+  async function createAndAllocate() {
+    if (!newNom.trim()) {
+      setCreateErr("Le nom est obligatoire.");
+      return;
+    }
+    setCreatingBusy(true);
+    setCreateErr(null);
+    try {
+      const body: Record<string, unknown> = {
+        nom: newNom.trim(),
+        type: "standard",
+        externe: true,
+      };
+      if (newFournisseur.trim()) body.fournisseur_nom = newFournisseur.trim();
+      if (newRef.trim()) body.reference_devis = newRef.trim();
+      const created = await api<{ id: number }>("/equipments", {
+        method: "POST",
+        body,
+      });
+      await api(`/prestations/${detail.id}/allocations`, {
+        method: "POST",
+        body: { equipment_id: created.id, quantite: Math.max(1, newQuantite) },
+      });
+      setCreating(false);
+      setNewNom("");
+      setNewFournisseur("");
+      setNewRef("");
+      setNewQuantite(1);
+      await onReload();
+    } catch (err) {
+      setCreateErr(
+        err instanceof ApiError ? err.message : "Création impossible. Réessaie.",
+      );
+    } finally {
+      setCreatingBusy(false);
+    }
+  }
+
   const editable = canManage && detail.statut === "En_preparation";
 
   return (
@@ -396,6 +453,64 @@ function InfoView({
                 </li>
               ))}
             </ul>
+          )}
+
+          {creating ? (
+            <div className="space-y-2 rounded-xl border border-line bg-bg-soft p-3">
+              <p className="text-sm font-medium">Matériel loué / externe</p>
+              {createErr && <p className="text-xs text-danger">{createErr}</p>}
+              <input
+                value={newNom}
+                onChange={(e) => setNewNom(e.target.value)}
+                placeholder="Nom du matériel"
+                className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
+              />
+              <input
+                value={newFournisseur}
+                onChange={(e) => setNewFournisseur(e.target.value)}
+                placeholder="Fournisseur (optionnel)"
+                className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
+              />
+              <input
+                value={newRef}
+                onChange={(e) => setNewRef(e.target.value)}
+                placeholder="Référence devis (optionnel)"
+                className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
+              />
+              <label className="flex items-center justify-between gap-2 text-sm text-fg-muted">
+                Quantité
+                <input
+                  type="number"
+                  min={1}
+                  value={newQuantite}
+                  onChange={(e) => setNewQuantite(Number(e.target.value))}
+                  className="h-10 w-20 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setCreating(false);
+                    setCreateErr(null);
+                  }}
+                >
+                  Annuler
+                </Button>
+                <Button loading={creatingBusy} onClick={() => void createAndAllocate()}>
+                  Ajouter
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line text-sm font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            >
+              <Icon name="add" className="text-lg" />
+              Nouveau matériel loué / externe
+            </button>
           )}
         </div>
       )}

@@ -116,3 +116,95 @@ export interface InventaireEntry {
 export interface VracDetail extends VracCaisse {
   historique: InventaireEntry[];
 }
+
+// --- Parc unifié & fiche équipement (refonte pré-prod) ---
+
+export type EquipmentType = "standard" | "vrac" | "consommable";
+
+export interface VracPreview {
+  quantite_theorique: number;
+  quantite_actuelle: number;
+  ecart: number;
+  locked: boolean;
+  lock_is_mine: boolean;
+}
+
+export interface ConsoPreview {
+  stock_actuel: number;
+  seuil_alerte: number;
+  unite: string | null;
+  en_alerte: boolean;
+}
+
+export interface EquipmentListItem {
+  id: number;
+  barcode_uid: string;
+  nom: string;
+  categorie_id: number | null;
+  categorie_nom: string | null;
+  emplacement_id: number | null;
+  emplacement_nom: string | null;
+  statut_actuel: StatutEquipment;
+  photo_url: string | null;
+  type: EquipmentType;
+  externe: boolean;
+  vrac: VracPreview | null;
+  conso: ConsoPreview | null;
+}
+
+export interface VracDetailInfo {
+  quantite_theorique: number;
+  quantite_actuelle: number;
+  ecart: number;
+  lock: VracLock | null;
+  historique: InventaireEntry[];
+}
+
+export interface LocationInfo {
+  fournisseur_id: number | null;
+  fournisseur_nom: string | null;
+  reference_devis: string | null;
+}
+
+export interface TicketHistoryItem {
+  id: number;
+  description_panne: string | null;
+  avancement: string;
+  cout_estime: number | null;
+  date_declaration: string;
+  date_resolution: string | null;
+}
+
+export interface ScanHistoryItem {
+  id: number;
+  type_action: string;
+  membre_nom: string | null;
+  emplacement_destination_id: number | null;
+  date_scan: string;
+}
+
+export interface EquipmentDetail {
+  id: number;
+  barcode_uid: string;
+  nom: string;
+  categorie_id: number | null;
+  categorie_nom: string | null;
+  emplacement_id: number | null;
+  emplacement_nom: string | null;
+  statut_actuel: StatutEquipment;
+  photo_url: string | null;
+  type: EquipmentType;
+  externe: boolean;
+  created_at: string;
+  vrac: VracDetailInfo | null;
+  conso: ConsoPreview | null;
+  location: LocationInfo | null;
+  tickets: TicketHistoryItem[];
+  scans: ScanHistoryItem[];
+}
+
+export interface Fournisseur {
+  id: number;
+  nom: string;
+  contact: string | null;
+}

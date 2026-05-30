@@ -4,6 +4,8 @@ import { ProtectedRoute } from "./ProtectedRoute";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { HomePage } from "@/features/home/HomePage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
+import { EquipmentDetailPage } from "@/features/equipment/EquipmentDetailPage";
+import { EquipmentCreatePage } from "@/features/equipment/EquipmentCreatePage";
 import { ProfilePage } from "@/features/profile/ProfilePage";
 import { ScanPage } from "@/features/scan/ScanPage";
 import { LabelsPage } from "@/features/labels/LabelsPage";
@@ -11,9 +13,6 @@ import { PannesPage } from "@/features/pannes/PannesPage";
 import { ConflictsPage } from "@/features/sync/ConflictsPage";
 import { PrestationsPage } from "@/features/prestations/PrestationsPage";
 import { PrestationDetailPage } from "@/features/prestations/PrestationDetailPage";
-import { ConsommablesPage } from "@/features/consommables/ConsommablesPage";
-import { VracPage } from "@/features/vrac/VracPage";
-import { VracDetailPage } from "@/features/vrac/VracDetailPage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -26,6 +25,8 @@ const router = createBrowserRouter([
           { path: "/", element: <HomePage /> },
           { path: "/scan", element: <ScanPage /> },
           { path: "/inventaire", element: <CatalogPage /> },
+          { path: "/inventaire/nouveau", element: <EquipmentCreatePage /> },
+          { path: "/inventaire/:id", element: <EquipmentDetailPage /> },
           { path: "/etiquettes", element: <LabelsPage /> },
           {
             path: "/pannes",
@@ -34,9 +35,6 @@ const router = createBrowserRouter([
           { path: "/conflits", element: <ConflictsPage /> },
           { path: "/prestations", element: <PrestationsPage /> },
           { path: "/prestations/:id", element: <PrestationDetailPage /> },
-          { path: "/consommables", element: <ConsommablesPage /> },
-          { path: "/vrac", element: <VracPage /> },
-          { path: "/vrac/:id", element: <VracDetailPage /> },
           { path: "/profil", element: <ProfilePage /> },
         ],
       },

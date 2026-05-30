@@ -127,6 +127,7 @@ class Equipment(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by_membre_id: Mapped[int | None] = mapped_column(ForeignKey("membres.id"))
+    photo_chemin: Mapped[str | None] = mapped_column(String(500))
 
     vrac: Mapped[EquipmentVrac | None] = relationship(back_populates="equipment", uselist=False)
     consommable: Mapped[EquipmentConsommable | None] = relationship(

@@ -5,8 +5,8 @@ import { Icon } from "@/shared/Icon";
 const shortcuts = [
   { icon: "qr_code_scanner", label: "Scanner du matériel", to: "/scan" },
   { icon: "build", label: "Déclarer une panne", to: "/pannes" },
-  { icon: "inventory", label: "Inventaire vrac", to: "/vrac" },
-  { icon: "category", label: "Consommables", to: "/consommables" },
+  { icon: "inventory", label: "Inventaire vrac", to: "/inventaire?type=vrac" },
+  { icon: "category", label: "Consommables", to: "/inventaire?type=consommable" },
   { icon: "event", label: "Prestations", to: "/prestations" },
 ];
 

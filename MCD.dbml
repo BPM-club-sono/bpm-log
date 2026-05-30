@@ -106,6 +106,7 @@ Table equipments {
   statut_actuel statut_equipment
   created_at timestamp
   created_by_membre_id integer
+  photo_chemin varchar [note: 'Chemin relatif de la photo de l\'équipement sur le VPS (optionnel), servi par /api/photos']
 }
 
 // Entité dépendante (spécialisation) — n'existe que si l'équipement est une caisse de vrac

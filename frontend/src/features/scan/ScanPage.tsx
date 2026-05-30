@@ -4,40 +4,42 @@ import { api, ApiError } from "@/lib/api";
 import type { Equipment } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
-import { StatusBadge } from "@/shared/StatusBadge";
 import { QrScanner } from "./QrScanner";
 
 type Result =
-  | { kind: "found"; equipment: Equipment }
   | { kind: "not_found"; code: string }
   | { kind: "error"; message: string };
 
 export function ScanPage() {
+  const navigate = useNavigate();
   const [result, setResult] = useState<Result | null>(null);
   const [manual, setManual] = useState("");
   const [loading, setLoading] = useState(false);
   const lastCodeRef = useRef<string>("");
 
-  const resolve = useCallback(async (code: string) => {
-    const trimmed = code.trim();
-    if (!trimmed) return;
-    setLoading(true);
-    try {
-      const equipment = await api<Equipment>(
-        `/equipments/by-barcode/${encodeURIComponent(trimmed)}`,
-      );
-      setResult({ kind: "found", equipment });
-      if (navigator.vibrate) navigator.vibrate(60);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setResult({ kind: "not_found", code: trimmed });
-      } else {
-        setResult({ kind: "error", message: "Erreur réseau. Réessaie." });
+  const resolve = useCallback(
+    async (code: string) => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      setLoading(true);
+      try {
+        const equipment = await api<Equipment>(
+          `/equipments/by-barcode/${encodeURIComponent(trimmed)}`,
+        );
+        if (navigator.vibrate) navigator.vibrate(60);
+        navigate(`/inventaire/${equipment.id}`);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          setResult({ kind: "not_found", code: trimmed });
+        } else {
+          setResult({ kind: "error", message: "Erreur réseau. Réessaie." });
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [navigate],
+  );
 
   const onScan = useCallback(
     (text: string) => {
@@ -96,35 +98,6 @@ export function ScanPage() {
 
 function ResultCard({ result, onReset }: { result: Result; onReset: () => void }) {
   const navigate = useNavigate();
-  if (result.kind === "found") {
-    const e = result.equipment;
-    return (
-      <div className="space-y-4 rounded-2xl border border-line bg-bg-soft p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-lg font-semibold">{e.nom}</p>
-            <p className="font-mono text-xs text-fg-muted">{e.barcode_uid}</p>
-          </div>
-          <StatusBadge statut={e.statut_actuel} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant="ghost"
-            onClick={() =>
-              navigate(`/pannes?barcode=${encodeURIComponent(e.barcode_uid)}`)
-            }
-          >
-            <Icon name="build" className="text-xl" />
-            Panne
-          </Button>
-          <Button variant="ghost" onClick={onReset}>
-            <Icon name="qr_code_scanner" className="text-xl" />
-            Scanner
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   if (result.kind === "not_found") {
     return (
@@ -133,9 +106,21 @@ function ResultCard({ result, onReset }: { result: Result; onReset: () => void }
         <p className="text-sm">
           Code <span className="font-mono">{result.code}</span> inconnu dans le parc.
         </p>
-        <Button variant="ghost" className="w-full" onClick={onReset}>
-          Réessayer
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="ghost"
+            onClick={() =>
+              navigate(`/pannes?barcode=${encodeURIComponent(result.code)}`)
+            }
+          >
+            <Icon name="build" className="text-xl" />
+            Déclarer une panne
+          </Button>
+          <Button variant="ghost" onClick={onReset}>
+            <Icon name="qr_code_scanner" className="text-xl" />
+            Réessayer
+          </Button>
+        </div>
       </div>
     );
   }
