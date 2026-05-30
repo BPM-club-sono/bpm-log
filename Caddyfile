@@ -1,0 +1,11 @@
+# Caddy reverse proxy pour BPM Log.
+# Gère automatiquement le certificat TLS via Let's Encrypt (HTTP-01 challenge).
+# Aucune config de cert à faire — Caddy s'en occupe tout seul.
+
+log.bpmclubsono.com {
+    # Toutes les requêtes /api/* → FastAPI
+    reverse_proxy /api/* api:8000
+
+    # Tout le reste → fichiers statiques nginx (SPA React)
+    reverse_proxy frontend:80
+}

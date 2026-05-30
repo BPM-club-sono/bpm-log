@@ -1,11 +1,19 @@
-# Production — déploiement sur VM.
+# Production — déploiement sur VM avec sous-domaine propre.
 #
-# TLS/HTTPS est géré PAR TAILSCALE FUNNEL (pas de Let's Encrypt/nginx TLS ici).
-# Le frontend n'écoute que sur 127.0.0.1:80 ; Tailscale serve/funnel le publie
-# en HTTPS sur le nom *.ts.net. La base et adminer ne sont JAMAIS exposés.
+# Architecture :
+#   Internet → Caddy (80/443, TLS Let's Encrypt auto)
+#               ├── /api/*  → api:8000  (FastAPI)
+#               └── /*      → frontend:80 (nginx, fichiers statiques)
 #
-# Lancer :  docker compose -f docker-compose.prod.yml --env-file .env up -d --build
-# Exposer :  sudo tailscale funnel --bg 80
+# La base, l'API et le frontend n'ont AUCUN port exposé publiquement.
+# Seul Caddy répond sur 80/443.
+#
+# Pré-requis sur la VM :
+#   - Ports 80 et 443 ouverts (firewall)
+#   - Enregistrement DNS A : log.bpmclubsono.com → IP de la VM
+#
+# Lancer :
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 
 services:
   db:
@@ -36,7 +44,7 @@ services:
     environment:
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bpm_log}
-    # Pas de `ports:` → l'API n'est jointe que par le frontend (proxy nginx /api).
+    # Pas de `ports:` → joignable uniquement par Caddy via le réseau Docker interne.
     depends_on:
       db:
         condition: service_healthy
@@ -55,9 +63,7 @@ services:
       dockerfile: Dockerfile
     container_name: bpm_log_frontend
     restart: unless-stopped
-    # Bind sur la loopback uniquement : c'est Tailscale Funnel qui publie en HTTPS.
-    ports:
-      - "127.0.0.1:80:80"
+    # Pas de `ports:` → servi par Caddy via le réseau Docker interne.
     depends_on:
       - api
     healthcheck:
@@ -67,6 +73,26 @@ services:
       retries: 3
       start_period: 10s
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: bpm_log_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"    # Requis pour le challenge ACME HTTP-01 (renouvellement Let's Encrypt).
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # Certificats TLS (persistés entre redémarrages).
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
 volumes:
+  bpm_pgdata:
+  bpm_photos:
+  caddy_data:
+  caddy_config:
+
   bpm_pgdata:
   bpm_photos:
