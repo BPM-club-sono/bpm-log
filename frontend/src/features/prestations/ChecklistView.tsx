@@ -110,7 +110,7 @@ export function ChecklistView({
         </div>
       )}
 
-      <ul className="space-y-2">
+      <ul className="divide-y divide-line">
         {visible.map((a) => {
           const val = current(a, sens);
           const tgt = target(a, sens);
@@ -118,7 +118,7 @@ export function ChecklistView({
           return (
             <li
               key={a.id}
-              className="flex items-center gap-3 rounded-xl border border-line bg-bg-soft p-3"
+              className="flex items-center gap-3 py-3"
             >
               <Icon
                 name={done ? "check_circle" : "radio_button_unchecked"}

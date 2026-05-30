@@ -113,6 +113,12 @@
         "schemaName": "public",
         "x": -509.66193299128804,
         "y": 287.0930168378354
+      },
+      {
+        "name": "evenements_ticket",
+        "schemaName": "public",
+        "x": 1847.3197329744467,
+        "y": -91.16783913837571
       }
     ],
     "tableGroupCollapseStates": [],

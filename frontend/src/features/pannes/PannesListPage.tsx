@@ -124,12 +124,12 @@ export function PannesListPage() {
       )}
 
       {!loading && !error && tickets.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-line">
           {tickets.map((t) => (
             <li key={t.id}>
               <Link
                 to={`/pannes/${t.id}`}
-                className="flex flex-col gap-1.5 rounded-xl border border-line bg-bg-soft p-3 transition-colors hover:bg-bg-elev"
+                className="flex flex-col gap-1.5 py-4 transition-opacity hover:opacity-70"
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="truncate font-medium">{t.equipment_nom}</p>

@@ -148,12 +148,12 @@ export function CatalogPage() {
       )}
 
       {!loading && !error && filtered.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-line">
           {filtered.map((e) => (
             <li key={e.id}>
               <Link
                 to={`/inventaire/${e.id}`}
-                className="flex gap-3 rounded-xl border border-line bg-bg-soft p-3 transition-colors hover:bg-bg-elev"
+                className="flex gap-3.5 py-4 transition-opacity hover:opacity-70"
               >
                 {e.photo_url ? (
                   <img

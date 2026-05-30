@@ -235,7 +235,7 @@ export function TicketDetailPage() {
         </div>
         <Link
           to={`/inventaire/${ticket.equipment_id}`}
-          className="flex items-center gap-2 rounded-xl border border-line bg-bg-soft p-3 transition-colors hover:bg-bg-elev"
+          className="-mx-1 flex items-center gap-2 rounded-lg px-1 py-2 transition-opacity hover:opacity-70"
         >
           <Icon name="inventory_2" className="text-xl text-fg-muted" />
           <div className="min-w-0 flex-1">
@@ -249,17 +249,17 @@ export function TicketDetailPage() {
       </header>
 
       {/* Méta-données */}
-      <section className="space-y-2 rounded-xl border border-line bg-bg-soft p-3 text-sm">
-        <div className="flex justify-between gap-2">
+      <section className="divide-y divide-line text-sm">
+        <div className="flex justify-between gap-2 py-2">
           <span className="text-fg-muted">Déclarée par</span>
           <span className="font-medium">{membreNom(ticket.declarant)}</span>
         </div>
-        <div className="flex justify-between gap-2">
+        <div className="flex justify-between gap-2 py-2">
           <span className="text-fg-muted">Le</span>
           <span>{formatDateTime(ticket.date_declaration)}</span>
         </div>
         {ticket.date_resolution && (
-          <div className="flex justify-between gap-2">
+          <div className="flex justify-between gap-2 py-2">
             <span className="text-fg-muted">Résolue le</span>
             <span>{formatDateTime(ticket.date_resolution)}</span>
           </div>
@@ -269,7 +269,7 @@ export function TicketDetailPage() {
       {ticket.description_panne && (
         <section className="space-y-1.5">
           <h2 className="text-sm font-semibold text-fg-muted">Description</h2>
-          <p className="whitespace-pre-wrap rounded-xl border border-line bg-bg-soft p-3 text-sm">
+          <p className="whitespace-pre-wrap text-sm">
             {ticket.description_panne}
           </p>
         </section>
@@ -408,7 +408,7 @@ export function TicketDetailPage() {
                   <p
                     className={
                       isComment
-                        ? "mt-1 whitespace-pre-wrap rounded-xl border border-line bg-bg-soft p-2.5 text-sm"
+                        ? "mt-0.5 whitespace-pre-wrap text-sm"
                         : "text-sm text-fg-muted"
                     }
                   >

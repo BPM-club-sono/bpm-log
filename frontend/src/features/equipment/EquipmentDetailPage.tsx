@@ -135,7 +135,7 @@ export function EquipmentDetailPage() {
         />
       )}
 
-      <div className="space-y-3 rounded-2xl border border-line bg-bg-soft p-4">
+      <div className="space-y-3 border-b border-line pb-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold">{eq.nom}</h1>
@@ -143,19 +143,19 @@ export function EquipmentDetailPage() {
           </div>
           <StatusBadge statut={eq.statut_actuel} />
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="inline-flex items-center gap-1 rounded-full bg-bg-elev px-2 py-0.5 text-fg-muted">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
+          <span className="inline-flex items-center gap-1">
             <Icon name="label" className="text-sm" />
             {TYPE_LABEL[eq.type]}
           </span>
           {eq.externe && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-warning">
+            <span className="inline-flex items-center gap-1 text-warning">
               <Icon name="local_shipping" className="text-sm" />
               Location externe
             </span>
           )}
         </div>
-        <dl className="grid grid-cols-2 gap-3 text-sm">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Info label="Catégorie" value={eq.categorie_nom} />
           <Info label="Emplacement" value={eq.emplacement_nom} />
           {eq.externe && (
@@ -277,11 +277,11 @@ function VracBlock({
   }
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <h2 className="text-sm font-semibold text-fg-muted">Inventaire vrac</h2>
       {err && <p className="text-sm text-danger">{err}</p>}
 
-      <div className="rounded-2xl border border-line bg-bg-soft p-5 text-center">
+      <div className="py-2 text-center">
         <p className="text-xs uppercase tracking-wide text-fg-muted">Quantité actuelle</p>
         <p className="my-1 text-5xl font-bold tabular-nums">{local.quantite_actuelle}</p>
         <p className="text-sm text-fg-muted">
@@ -319,7 +319,7 @@ function VracBlock({
       </div>
 
       {!canCount ? (
-        <div className="space-y-2 rounded-xl border border-line bg-bg-soft p-4">
+        <div className="space-y-2">
           {lock ? (
             <p className="text-sm text-fg-muted">
               <Icon name="lock" className="mr-1 text-base" />
@@ -354,11 +354,11 @@ function VracBlock({
       )}
 
       {local.historique.length > 0 && (
-        <ul className="space-y-1.5">
+        <div className="divide-y divide-line">
           {local.historique.map((h) => (
-            <li
+            <div
               key={h.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg-soft px-3 py-2 text-sm"
+              className="flex items-center justify-between gap-3 py-2 text-sm"
             >
               <div className="min-w-0">
                 <p className="truncate">{h.membre_nom ?? "—"}</p>
@@ -371,9 +371,9 @@ function VracBlock({
               >
                 {h.delta > 0 ? `+${h.delta}` : h.delta}
               </span>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </section>
   );
@@ -404,9 +404,9 @@ function ConsoBlock({
   }
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <h2 className="text-sm font-semibold text-fg-muted">Stock consommable</h2>
-      <div className="rounded-2xl border border-line bg-bg-soft p-5 text-center">
+      <div className="py-2 text-center">
         <p className="text-xs uppercase tracking-wide text-fg-muted">Stock actuel</p>
         <p
           className={`my-1 text-5xl font-bold tabular-nums ${

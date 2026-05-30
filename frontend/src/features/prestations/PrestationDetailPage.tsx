@@ -217,7 +217,7 @@ export function PrestationDetailPage() {
       )}
 
       {/* Onglets de mode — libellés adaptés au type de presta */}
-      <div className="flex gap-1 rounded-xl border border-line bg-bg-soft p-1">
+      <div className="flex border-b border-line">
         {(
           (detail.type === "Interne"
             ? [
@@ -239,8 +239,8 @@ export function PrestationDetailPage() {
               key={m}
               onClick={() => !locked && setMode(m)}
               disabled={locked}
-              className={`h-9 flex-1 rounded-lg text-xs font-medium transition-colors ${
-                mode === m ? "bg-fg text-bg" : "text-fg-muted"
+              className={`-mb-px h-10 flex-1 border-b-2 text-xs font-medium transition-colors ${
+                mode === m ? "border-fg text-fg" : "border-transparent text-fg-muted"
               } ${locked ? "opacity-40" : ""}`}
             >
               {label}
@@ -419,13 +419,13 @@ function InfoView({
             />
           </div>
           {results.length > 0 && (
-            <ul className="overflow-hidden rounded-xl border border-line">
+            <ul className="divide-y divide-line border-y border-line">
               {results.map((e) => (
                 <li key={e.id}>
                   <button
                     disabled={adding}
                     onClick={() => addEquipment(e)}
-                    className="flex w-full items-center justify-between gap-3 bg-bg-soft px-3 py-2.5 text-left transition-colors hover:bg-bg-elev"
+                    className="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-opacity hover:opacity-70"
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">
@@ -486,28 +486,26 @@ function InfoView({
           </div>
         )}
 
-        <ul className="space-y-2">
+        <ul className="divide-y divide-line">
           {visibleAllocs.map((a) => (
             <li
               key={a.id}
-              className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg-soft p-3"
+              className="flex items-center justify-between gap-3 py-4"
             >
-              <div className="min-w-0">
-                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                  <span className="truncate">
-                    {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
-                  </span>
-                  {a.equipment_externe && (
-                    <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                      Location
-                    </span>
-                  )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
                 </p>
-                <p className="text-xs text-fg-muted">
+                <p className="mt-1.5 text-xs text-fg-muted">
                   Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné{" "}
                   {a.quantite_retournee}
                 </p>
               </div>
+              {a.equipment_externe && (
+                <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                  Location
+                </span>
+              )}
               {editable && a.id > 0 && (
                 <button
                   onClick={() => removeAllocation(a)}
@@ -634,11 +632,11 @@ function ClotureView({
         {ecarts.length} ligne{ecarts.length > 1 ? "s" : ""} avec un écart. Tranche
         chaque cas :
       </p>
-      <ul className="space-y-3">
+      <ul className="divide-y divide-line">
         {ecarts.map((a) => (
           <li
             key={a.id}
-            className="space-y-2 rounded-xl border border-line bg-bg-soft p-3"
+            className="space-y-2 py-3"
           >
             <div>
               <p className="text-sm font-medium">

@@ -13,9 +13,9 @@ const STATUT_LABEL: Record<Prestation["statut"], string> = {
 };
 
 const STATUT_STYLE: Record<Prestation["statut"], string> = {
-  En_preparation: "bg-bg-elev text-fg-muted",
+  En_preparation: "bg-warning/15 text-warning",
   En_cours: "bg-fg text-bg",
-  Terminee: "bg-bg-elev text-fg-muted line-through",
+  Terminee: "bg-success/15 text-success",
 };
 
 export function PrestationsPage() {
@@ -95,19 +95,19 @@ export function PrestationsPage() {
       {showForm && (
         <form
           onSubmit={onCreate}
-          className="space-y-3 rounded-xl border border-line bg-bg-soft p-4"
+          className="space-y-3 border-b border-line pb-4"
         >
           <input
             value={nom}
             onChange={(e) => setNom(e.target.value)}
             placeholder="Nom de la prestation"
-            className="h-11 w-full rounded-xl border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
+            className="h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg"
           />
           <input
             value={clientNom}
             onChange={(e) => setClientNom(e.target.value)}
             placeholder="Client (optionnel)"
-            className="h-11 w-full rounded-xl border border-line bg-bg px-3 text-sm outline-none focus:border-fg"
+            className="h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg"
           />
           <div className="flex gap-2">
             {(["Interne", "Externe"] as const).map((t) => (
@@ -144,12 +144,12 @@ export function PrestationsPage() {
       )}
 
       {!loading && prestations.length > 0 && (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-line">
           {prestations.map((p) => (
             <li key={p.id}>
               <Link
                 to={`/prestations/${p.id}`}
-                className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg-soft p-3 transition-colors hover:bg-bg-elev"
+                className="flex items-center justify-between gap-3 py-4 transition-opacity hover:opacity-70"
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium">{p.nom}</p>
