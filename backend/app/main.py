@@ -14,16 +14,20 @@ from app.routers import (
     auth,
     equipment,
     inventory,
+    notifications,
     prestations,
     sync,
     tickets,
     webauthn,
 )
+from app.services.scheduler import shutdown_scheduler, start_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    start_scheduler()
     yield
+    shutdown_scheduler()
     await engine.dispose()
 
 
@@ -49,6 +53,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(webauthn.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(inventory.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 app.include_router(prestations.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
 app.include_router(tickets.router, prefix="/api")

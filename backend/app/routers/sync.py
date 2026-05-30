@@ -25,10 +25,30 @@ from app.models import (
     Prestation,
     TicketReparation,
 )
-from app.models.enums import StatutAllocation, StatutEquipment, TypeActionScan
+from app.models.enums import RoleMembre, StatutAllocation, StatutEquipment, TypeActionScan
 from app.schemas.sync import SyncBatchIn, SyncBatchOut, SyncConflict, SyncItemIn
+from app.services.push import notify_role
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+
+# Mots-clés déclenchant une alerte push aux membres Tech.
+_URGENCE_KEYWORDS = (
+    "urgent",
+    "urgence",
+    "critique",
+    "danger",
+    "securite",
+    "s\u00e9curit\u00e9",
+    "incendie",
+    "feu",
+)
+
+
+def _is_urgent(description: str | None) -> bool:
+    if not description:
+        return False
+    texte = description.lower()
+    return any(mot in texte for mot in _URGENCE_KEYWORDS)
 
 
 class _Conflict(Exception):
@@ -310,6 +330,7 @@ async def sync_batch(
     """Rejoue un lot d'évènements offline, triés par `offline_created_at`."""
     applied: list[UUID] = []
     conflicts: list[SyncConflict] = []
+    urgent_equipment_ids: list[int] = []
 
     ordered = sorted(batch.items, key=lambda i: i.offline_created_at or datetime.min)
 
@@ -317,8 +338,16 @@ async def sync_batch(
         handler = _HANDLERS[item.type]
         try:
             async with db.begin_nested():
-                await handler(db, item, user.id)
+                created = await handler(db, item, user.id)
             applied.append(item.uuid_client)
+            if (
+                created
+                and item.type == "ticket_reparation"
+                and _is_urgent(item.payload.get("description_panne"))
+            ):
+                eid = item.payload.get("equipment_id")
+                if eid is not None:
+                    urgent_equipment_ids.append(int(eid))
         except _Conflict as exc:
             conflicts.append(SyncConflict(uuid_client=item.uuid_client, reason=str(exc)))
         except Exception as exc:  # noqa: BLE001 - on ne perd jamais un item
@@ -330,4 +359,20 @@ async def sync_batch(
             )
 
     await db.commit()
+    await _notify_urgent_tickets(db, urgent_equipment_ids)
     return SyncBatchOut(applied=applied, conflicts=conflicts)
+
+
+async def _notify_urgent_tickets(db: DbSession, equipment_ids: list[int]) -> None:
+    """Alerte les membres Tech après synchronisation d'un ticket urgent."""
+    for equipment_id in equipment_ids:
+        equipment = await db.get(Equipment, equipment_id)
+        nom = equipment.nom if equipment else "un équipement"
+        await notify_role(
+            db,
+            RoleMembre.TECH,
+            title="Panne urgente signalée",
+            body=f"« {nom} » nécessite une intervention rapide.",
+            url="/pannes",
+            tag=f"ticket-urgent-{equipment_id}",
+        )

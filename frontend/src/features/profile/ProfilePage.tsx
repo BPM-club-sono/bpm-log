@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/app/AuthContext";
 import { ApiError } from "@/lib/api";
+import { disablePush, enablePush, isPushEnabled, pushSupported } from "@/lib/push";
 import {
   deletePasskey,
   listPasskeys,
@@ -19,6 +20,11 @@ export function ProfilePage() {
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const pushOk = pushSupported();
+
   const supported = passkeySupported();
 
   const loadKeys = useCallback(async () => {
@@ -36,8 +42,34 @@ export function ProfilePage() {
     else setLoadingKeys(false);
   }, [supported, loadKeys]);
 
+  useEffect(() => {
+    if (pushOk) void isPushEnabled().then(setPushOn);
+  }, [pushOk]);
+
   if (!user) return null;
   const fullName = [user.prenom, user.nom].filter(Boolean).join(" ") || user.email;
+
+  async function onTogglePush() {
+    setPushError(null);
+    setPushBusy(true);
+    try {
+      if (pushOn) {
+        await disablePush();
+        setPushOn(false);
+      } else {
+        await enablePush();
+        setPushOn(true);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === "permission-denied") {
+        setPushError("Autorise les notifications dans les r\u00e9glages du navigateur.");
+      } else {
+        setPushError("Impossible de modifier les notifications.");
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   async function onRegister() {
     setError(null);
@@ -76,6 +108,29 @@ export function ProfilePage() {
         <Row label="Email" value={user.email} />
         <Row label="Rôle" value={user.role} />
       </dl>
+
+      {pushOk && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Icon name="notifications" className="text-xl" />
+            <h2 className="text-sm font-semibold">Notifications</h2>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg-soft px-4 py-3">
+            <p className="text-xs text-fg-muted">
+              Reçois une alerte pour les pannes urgentes et le matériel non rendu.
+            </p>
+            <Button
+              variant={pushOn ? "ghost" : "primary"}
+              loading={pushBusy}
+              className="shrink-0"
+              onClick={onTogglePush}
+            >
+              {pushOn ? "Désactiver" : "Activer"}
+            </Button>
+          </div>
+          {pushError && <p className="text-sm text-danger">{pushError}</p>}
+        </section>
+      )}
 
       {supported && (
         <section className="space-y-3">
