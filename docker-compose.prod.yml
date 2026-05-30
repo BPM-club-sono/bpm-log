@@ -1,0 +1,72 @@
+# Production — déploiement sur VM.
+#
+# TLS/HTTPS est géré PAR TAILSCALE FUNNEL (pas de Let's Encrypt/nginx TLS ici).
+# Le frontend n'écoute que sur 127.0.0.1:80 ; Tailscale serve/funnel le publie
+# en HTTPS sur le nom *.ts.net. La base et adminer ne sont JAMAIS exposés.
+#
+# Lancer :  docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# Exposer :  sudo tailscale funnel --bg 80
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: bpm_log_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-bpm_log}
+    # Pas de `ports:` → la base n'est accessible que depuis le réseau Docker interne.
+    volumes:
+      - bpm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-bpm_log}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bpm_log_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bpm_log}
+    # Pas de `ports:` → l'API n'est jointe que par le frontend (proxy nginx /api).
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - bpm_photos:/var/bpm/photos
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bpm_log_frontend
+    restart: unless-stopped
+    # Bind sur la loopback uniquement : c'est Tailscale Funnel qui publie en HTTPS.
+    ports:
+      - "127.0.0.1:80:80"
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  bpm_pgdata:
+  bpm_photos:
