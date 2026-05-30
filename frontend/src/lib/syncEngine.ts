@@ -63,8 +63,9 @@ class SyncEngine {
   }
 
   private async emit(syncing = this.flushing): Promise<void> {
-    const pending = await db.sync_queue.where("synced_at").equals("").count();
-    const state: SyncState = { pending, syncing, conflicts: 0 };
+    const queue = await db.sync_queue.where("synced_at").equals("").toArray();
+    const conflicts = queue.filter((i) => i.last_error !== null).length;
+    const state: SyncState = { pending: queue.length, syncing, conflicts };
     this.listeners.forEach((l) => l(state));
   }
 
@@ -130,6 +131,9 @@ class SyncEngine {
             });
           }
         });
+
+        // Les photos sont uploadées séparément, une fois le ticket synchronisé.
+        await this.uploadPhotos(res.applied);
       }
 
       // Purge des items synchronisés (garde la file légère).
@@ -148,6 +152,61 @@ class SyncEngine {
       this.flushing = false;
       await this.emit(false);
     }
+  }
+
+  /** Upload les photos liées aux tickets fraîchement synchronisés. */
+  private async uploadPhotos(ticketUuids: string[]): Promise<void> {
+    if (!ticketUuids.length) return;
+    for (const uuid of ticketUuids) {
+      const photos = await db.photos_blob
+        .where("ticket_uuid")
+        .equals(uuid)
+        .filter((p) => p.uploaded === 0)
+        .toArray();
+      for (const photo of photos) {
+        try {
+          const form = new FormData();
+          form.append("uuid_client", uuid);
+          form.append("file", photo.blob, `${photo.id}.jpg`);
+          await api("/tickets/photos", { method: "POST", body: form });
+          await db.photos_blob.delete(photo.id);
+        } catch {
+          // On garde le blob ; il sera réessayé au prochain flush.
+        }
+      }
+    }
+  }
+
+  /** Conflits en attente d'arbitrage (items avec last_error). */
+  async listConflicts(): Promise<SyncQueueItem[]> {
+    const queue = await db.sync_queue.where("synced_at").equals("").toArray();
+    return queue
+      .filter((i) => i.last_error !== null)
+      .sort((a, b) => a.offline_created_at.localeCompare(b.offline_created_at));
+  }
+
+  /** Réessaie un item en conflit (efface l'erreur et relance un flush). */
+  async retryItem(
+    uuid: string,
+    payloadPatch?: Record<string, unknown>,
+  ): Promise<void> {
+    const existing = await db.sync_queue.get(uuid);
+    if (!existing) return;
+    await db.sync_queue.update(uuid, {
+      last_error: null,
+      payload: payloadPatch
+        ? { ...existing.payload, ...payloadPatch }
+        : existing.payload,
+    });
+    await this.emit();
+    void this.flush();
+  }
+
+  /** Abandonne définitivement un item en conflit. */
+  async discardItem(uuid: string): Promise<void> {
+    await db.sync_queue.delete(uuid);
+    await db.photos_blob.where("ticket_uuid").equals(uuid).delete();
+    await this.emit();
   }
 }
 

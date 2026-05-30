@@ -36,7 +36,8 @@ interface RequestOptions {
 export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, auth = true, retry = true } = opts;
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (auth) {
     const token = tokenStore.getAccess();
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -45,7 +46,7 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? (isForm ? (body as FormData) : JSON.stringify(body)) : undefined,
   });
 
   if (res.status === 401 && auth && retry) {

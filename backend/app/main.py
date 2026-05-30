@@ -1,14 +1,16 @@
 """Point d'entrée FastAPI : application, CORS, routers, health check."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
-from app.routers import auth, equipment, sync
+from app.routers import auth, equipment, sync, tickets
 
 
 @asynccontextmanager
@@ -38,6 +40,12 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
+app.include_router(tickets.router, prefix="/api")
+
+# Service statique des photos de panne (volume bpm_photos).
+_photos_dir = Path(settings.photos_dir)
+_photos_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/api/photos", StaticFiles(directory=_photos_dir), name="photos")
 
 
 @app.get("/health", tags=["health"])

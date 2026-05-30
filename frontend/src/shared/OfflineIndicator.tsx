@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useSync } from "@/lib/useSync";
 import { Icon } from "./Icon";
 
 export function OfflineIndicator() {
   const [online, setOnline] = useState(navigator.onLine);
-  const { pending, syncing } = useSync();
+  const { pending, syncing, conflicts } = useSync();
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -16,6 +17,18 @@ export function OfflineIndicator() {
       window.removeEventListener("offline", off);
     };
   }, []);
+
+  if (conflicts > 0) {
+    return (
+      <Link
+        to="/conflits"
+        className="flex items-center justify-center gap-2 bg-danger/15 px-4 py-1.5 text-xs font-medium text-danger"
+      >
+        <Icon name="error" className="text-base" />
+        {conflicts} conflit{conflicts > 1 ? "s" : ""} à arbitrer
+      </Link>
+    );
+  }
 
   if (!online) {
     return (

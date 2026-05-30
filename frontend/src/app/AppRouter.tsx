@@ -8,6 +8,7 @@ import { ProfilePage } from "@/features/profile/ProfilePage";
 import { ScanPage } from "@/features/scan/ScanPage";
 import { LabelsPage } from "@/features/labels/LabelsPage";
 import { PannesPage } from "@/features/pannes/PannesPage";
+import { ConflictsPage } from "@/features/sync/ConflictsPage";
 import { PlaceholderPage } from "@/features/PlaceholderPage";
 
 const router = createBrowserRouter([
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
             path: "/pannes",
             element: <PannesPage />,
           },
+          { path: "/conflits", element: <ConflictsPage /> },
           {
             path: "/prestations",
             element: <PlaceholderPage title="Prestations" icon="event" />,
