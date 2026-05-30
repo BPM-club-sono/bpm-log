@@ -1,15 +1,17 @@
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/app/AuthContext";
 import { Icon } from "@/shared/Icon";
 
 const shortcuts = [
-  { icon: "qr_code_scanner", label: "Scanner du matériel" },
-  { icon: "build", label: "Déclarer une panne" },
-  { icon: "inventory", label: "Inventaire vrac" },
-  { icon: "event", label: "Prestations" },
+  { icon: "qr_code_scanner", label: "Scanner du matériel", to: "/scan" },
+  { icon: "build", label: "Déclarer une panne", to: "/pannes" },
+  { icon: "inventory", label: "Inventaire vrac", to: "/inventaire" },
+  { icon: "event", label: "Prestations", to: "/prestations" },
 ];
 
 export function HomePage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const prenom = user?.prenom ?? "";
 
   return (
@@ -23,6 +25,7 @@ export function HomePage() {
         {shortcuts.map((s) => (
           <button
             key={s.label}
+            onClick={() => navigate(s.to)}
             className="flex flex-col items-start gap-3 rounded-2xl border border-line bg-bg-soft p-4 text-left transition-colors hover:bg-bg-elev"
           >
             <Icon name={s.icon} className="text-3xl" />
