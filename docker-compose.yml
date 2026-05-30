@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: bpm_log_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bpm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bpm}
+      POSTGRES_DB: ${POSTGRES_DB:-bpm_log}
+    ports:
+      - "5432:5432"
+    volumes:
+      - bpm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bpm} -d ${POSTGRES_DB:-bpm_log}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer:4
+    container_name: bpm_log_adminer
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bpm_log_api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bpm}:${POSTGRES_PASSWORD:-bpm}@db:5432/${POSTGRES_DB:-bpm_log}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - bpm_photos:/var/bpm/photos
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bpm_log_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  bpm_pgdata:
+  bpm_photos:

@@ -1,0 +1,1 @@
+"""Application FastAPI BPM Log."""
