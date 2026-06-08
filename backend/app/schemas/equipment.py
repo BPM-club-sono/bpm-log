@@ -30,6 +30,7 @@ class EmplacementRead(BaseModel):
     id: int
     nom: str
     zone_stockage: str | None
+    parent_id: int | None = None
 
 
 class FournisseurRead(BaseModel):
@@ -93,6 +94,9 @@ class EquipmentListItem(BaseModel):
     categorie_nom: str | None
     emplacement_id: int | None
     emplacement_nom: str | None
+    contenant_id: int | None = None
+    contenant_nom: str | None = None
+    est_contenant: bool = False
     statut_actuel: StatutEquipment
     photo_url: str | None
     type: EquipmentType
@@ -137,6 +141,26 @@ class ScanHistoryItem(BaseModel):
     date_scan: datetime
 
 
+class PathSegment(BaseModel):
+    """Segment du fil d'Ariane de localisation (emplacement fixe ou contenant)."""
+
+    kind: Literal["emplacement", "contenant"]
+    id: int
+    nom: str
+
+
+class ContenuChild(BaseModel):
+    """Élément contenu dans un contenant (vue 'contenu d'une caisse')."""
+
+    id: int
+    nom: str
+    barcode_uid: str
+    type: EquipmentType
+    statut_actuel: StatutEquipment
+    photo_url: str | None = None
+    est_contenant: bool = False
+
+
 class EquipmentDetail(BaseModel):
     id: int
     barcode_uid: str
@@ -145,6 +169,11 @@ class EquipmentDetail(BaseModel):
     categorie_nom: str | None
     emplacement_id: int | None
     emplacement_nom: str | None
+    contenant_id: int | None = None
+    contenant_nom: str | None = None
+    est_contenant: bool = False
+    chemin: list[PathSegment] = []
+    contenu: list[ContenuChild] = []
     statut_actuel: StatutEquipment
     photo_url: str | None
     type: EquipmentType
@@ -166,6 +195,7 @@ class EquipmentCreate(BaseModel):
     type: EquipmentType = "standard"
     categorie_id: int | None = None
     emplacement_id: int | None = None
+    contenant_id: int | None = None
     statut_actuel: StatutEquipment = StatutEquipment.FONCTIONNEL
     barcode_uid: str | None = None
     # Vrac
@@ -185,6 +215,7 @@ class EquipmentUpdate(BaseModel):
     nom: str | None = None
     categorie_id: int | None = None
     emplacement_id: int | None = None
+    contenant_id: int | None = None
     statut_actuel: StatutEquipment | None = None
     barcode_uid: str | None = None
     # Vrac

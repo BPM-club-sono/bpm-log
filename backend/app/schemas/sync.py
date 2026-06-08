@@ -12,6 +12,7 @@ SyncItemType = Literal[
     "presta_check",
     "vrac_delta",
     "conso_delta",
+    "deplacement",
 ]
 
 

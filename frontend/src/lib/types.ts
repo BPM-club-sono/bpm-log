@@ -41,6 +41,7 @@ export interface Emplacement {
   id: number;
   nom: string;
   zone_stockage: string | null;
+  parent_id?: number | null;
 }
 
 export type TypePrestation = "Interne" | "Externe";
@@ -69,6 +70,7 @@ export interface Allocation {
   equipment_nom: string | null;
   equipment_barcode: string | null;
   equipment_externe?: boolean;
+  equipment_contenant_id?: number | null;
 }
 
 export interface PrestationDetail extends Prestation {
@@ -145,6 +147,9 @@ export interface EquipmentListItem {
   categorie_nom: string | null;
   emplacement_id: number | null;
   emplacement_nom: string | null;
+  contenant_id?: number | null;
+  contenant_nom?: string | null;
+  est_contenant?: boolean;
   statut_actuel: StatutEquipment;
   photo_url: string | null;
   type: EquipmentType;
@@ -255,6 +260,22 @@ export interface ScanHistoryItem {
   date_scan: string;
 }
 
+export interface PathSegment {
+  kind: "emplacement" | "contenant";
+  id: number;
+  nom: string;
+}
+
+export interface ContenuChild {
+  id: number;
+  nom: string;
+  barcode_uid: string;
+  type: EquipmentType;
+  statut_actuel: StatutEquipment;
+  photo_url: string | null;
+  est_contenant: boolean;
+}
+
 export interface EquipmentDetail {
   id: number;
   barcode_uid: string;
@@ -263,6 +284,11 @@ export interface EquipmentDetail {
   categorie_nom: string | null;
   emplacement_id: number | null;
   emplacement_nom: string | null;
+  contenant_id?: number | null;
+  contenant_nom?: string | null;
+  est_contenant?: boolean;
+  chemin?: PathSegment[];
+  contenu?: ContenuChild[];
   statut_actuel: StatutEquipment;
   photo_url: string | null;
   type: EquipmentType;

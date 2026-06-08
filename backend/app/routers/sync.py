@@ -330,12 +330,89 @@ async def _apply_conso_delta(
     return True
 
 
+_DEPTH_GUARD = 32  # garde anti-boucle sur la remontée de l'arbre des contenants
+
+
+async def _ensure_no_cycle(db: DbSession, item_id: int, new_parent_id: int) -> None:
+    """Lève `_Conflict` si ranger `item_id` dans `new_parent_id` crée une boucle."""
+    if new_parent_id == item_id:
+        raise _Conflict("Un contenant ne peut pas se contenir lui-même.")
+    current: int | None = new_parent_id
+    seen: set[int] = set()
+    for _ in range(_DEPTH_GUARD):
+        if current is None:
+            return
+        if current == item_id:
+            raise _Conflict("Déplacement impossible : cela créerait une boucle de contenants.")
+        if current in seen:
+            return
+        seen.add(current)
+        parent = await db.get(Equipment, current)
+        if parent is None:
+            return
+        current = parent.contenant_id
+
+
+async def _apply_deplacement(
+    db: DbSession, item: SyncItemIn, membre_id: int
+) -> bool:
+    """Déplace un équipement vers un contenant OU un emplacement fixe. Idempotent.
+
+    Re-parente la racine uniquement : le contenu suit par dérivation (la localisation
+    effective d'un item se calcule en remontant l'arbre). Un seul champ change, donc
+    l'opération est commutative-safe et déterministe par `offline_created_at`.
+    Les deux cibles sont exclusives (règle de frontière).
+    """
+    existing = await db.scalar(
+        select(LogScan).where(LogScan.uuid_client == item.uuid_client)
+    )
+    if existing is not None:
+        return False
+
+    equipment = await _resolve_equipment(db, item.payload)
+    contenant_dest = item.payload.get("contenant_destination_id")
+    emplacement_dest = item.payload.get("emplacement_destination_id")
+
+    if contenant_dest is not None:
+        cid = int(contenant_dest)
+        contenant = await db.get(Equipment, cid)
+        if contenant is None:
+            raise _Conflict("Contenant de destination introuvable.")
+        await _ensure_no_cycle(db, equipment.id, cid)
+        equipment.contenant_id = cid
+        equipment.emplacement_id = None
+        contexte = f"Rangé dans {contenant.nom}"
+        dest_emplacement_id = None
+    elif emplacement_dest is not None:
+        eid = int(emplacement_dest)
+        equipment.emplacement_id = eid
+        equipment.contenant_id = None
+        contexte = "Déplacé"
+        dest_emplacement_id = eid
+    else:
+        raise _Conflict("Destination de déplacement manquante.")
+
+    db.add(
+        LogScan(
+            uuid_client=item.uuid_client,
+            equipment_id=equipment.id,
+            membre_id=membre_id,
+            type_action=TypeActionScan.CHANGEMENT_STATUT,
+            contexte=contexte,
+            emplacement_destination_id=dest_emplacement_id,
+            offline_created_at=item.offline_created_at,
+        )
+    )
+    return True
+
+
 _HANDLERS = {
     "ticket_reparation": _apply_ticket,
     "log_scan": _apply_log_scan,
     "presta_check": _apply_presta_check,
     "vrac_delta": _apply_vrac_delta,
     "conso_delta": _apply_conso_delta,
+    "deplacement": _apply_deplacement,
 }
 
 

@@ -28,6 +28,7 @@ from app.models.enums import StatutEquipment, TypeActionScan
 from app.schemas.equipment import (
     CategorieRead,
     ConsoPreview,
+    ContenuChild,
     EmplacementRead,
     EquipmentCreate,
     EquipmentDetail,
@@ -36,6 +37,7 @@ from app.schemas.equipment import (
     EquipmentType,
     EquipmentUpdate,
     LocationInfo,
+    PathSegment,
     PhotoUploadResult,
     ScanHistoryItem,
     TicketHistoryItem,
@@ -102,9 +104,156 @@ async def _resolve_fournisseur(
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Contenants imbriqués (rangement hiérarchique)
+# --------------------------------------------------------------------------- #
+_DEPTH_GUARD = 32  # garde anti-boucle (données corrompues) sur les remontées d'arbre
+
+
+async def _check_no_cycle(db: DbSession, item_id: int | None, new_parent_id: int | None) -> None:
+    """Vérifie que ranger `item_id` dans `new_parent_id` ne crée pas de boucle.
+
+    Lève 409 si le parent est l'item lui-même ou l'un de ses descendants, 404 s'il
+    n'existe pas. À appeler avant tout assignation de `contenant_id`.
+    """
+    if new_parent_id is None:
+        return
+    if new_parent_id == item_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Un contenant ne peut pas se contenir lui-même.",
+        )
+    current_id: int | None = new_parent_id
+    seen: set[int] = set()
+    for _ in range(_DEPTH_GUARD):
+        if current_id is None:
+            return
+        if current_id == item_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Déplacement impossible : cela créerait une boucle de contenants.",
+            )
+        if current_id in seen:
+            return
+        seen.add(current_id)
+        parent = await db.get(Equipment, current_id)
+        if parent is None:
+            if current_id == new_parent_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Contenant introuvable.",
+                )
+            return
+        current_id = parent.contenant_id
+
+
+async def _compute_chemin(db: DbSession, eq: Equipment) -> list[PathSegment]:
+    """Fil d'Ariane de localisation, du plus large au plus précis (exclut `eq`).
+
+    Remonte les contenants jusqu'à la racine, puis les emplacements parents de
+    celle-ci : ex. Dépôt > Étagère A > Flight MH (pour une lyre dans le Flight MH).
+    """
+    containers: list[Equipment] = []
+    current = eq
+    seen_eq: set[int] = {eq.id}
+    for _ in range(_DEPTH_GUARD):
+        if current.contenant_id is None or current.contenant_id in seen_eq:
+            break
+        parent = await db.get(Equipment, current.contenant_id)
+        if parent is None:
+            break
+        seen_eq.add(parent.id)
+        containers.append(parent)
+        current = parent
+
+    emplacements: list[Emplacement] = []
+    emp_id = current.emplacement_id
+    seen_emp: set[int] = set()
+    for _ in range(_DEPTH_GUARD):
+        if emp_id is None or emp_id in seen_emp:
+            break
+        emp = await db.get(Emplacement, emp_id)
+        if emp is None:
+            break
+        seen_emp.add(emp.id)
+        emplacements.append(emp)
+        emp_id = emp.parent_id
+
+    segments: list[PathSegment] = [
+        PathSegment(kind="emplacement", id=emp.id, nom=emp.nom)
+        for emp in reversed(emplacements)
+    ]
+    segments += [
+        PathSegment(kind="contenant", id=cont.id, nom=cont.nom)
+        for cont in reversed(containers)
+    ]
+    return segments
+
+
+async def _build_contenu(db: DbSession, container_id: int) -> list[ContenuChild]:
+    """Enfants directs d'un contenant, avec leur type dérivé et photo."""
+    children = list(
+        (
+            await db.scalars(
+                select(Equipment)
+                .where(Equipment.contenant_id == container_id)
+                .order_by(Equipment.nom)
+            )
+        ).all()
+    )
+    if not children:
+        return []
+    child_ids = [c.id for c in children]
+    vrac_ids = {
+        eid
+        for (eid,) in (
+            await db.execute(
+                select(EquipmentVrac.equipment_id).where(
+                    EquipmentVrac.equipment_id.in_(child_ids)
+                )
+            )
+        ).all()
+    }
+    conso_ids = {
+        eid
+        for (eid,) in (
+            await db.execute(
+                select(EquipmentConsommable.equipment_id).where(
+                    EquipmentConsommable.equipment_id.in_(child_ids)
+                )
+            )
+        ).all()
+    }
+    parent_ids = {
+        eid
+        for (eid,) in (
+            await db.execute(
+                select(Equipment.contenant_id)
+                .where(Equipment.contenant_id.in_(child_ids))
+                .distinct()
+            )
+        ).all()
+    }
+    return [
+        ContenuChild(
+            id=c.id,
+            nom=c.nom,
+            barcode_uid=c.barcode_uid,
+            type=_derive_type(c.id in vrac_ids, c.id in conso_ids),
+            statut_actuel=c.statut_actuel,
+            photo_url=build_photo_url(c.photo_chemin),
+            est_contenant=c.id in parent_ids,
+        )
+        for c in children
+    ]
+
+
 async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> EquipmentDetail:
     categorie = await db.get(Categorie, eq.categorie_id) if eq.categorie_id else None
     emplacement = await db.get(Emplacement, eq.emplacement_id) if eq.emplacement_id else None
+    contenant = await db.get(Equipment, eq.contenant_id) if eq.contenant_id else None
+    chemin = await _compute_chemin(db, eq)
+    contenu = await _build_contenu(db, eq.id)
     vrac = await db.get(EquipmentVrac, eq.id)
     conso = await db.get(EquipmentConsommable, eq.id)
     location = await db.get(EquipmentLocation, eq.id)
@@ -215,6 +364,11 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         categorie_nom=categorie.nom if categorie else None,
         emplacement_id=eq.emplacement_id,
         emplacement_nom=emplacement.nom if emplacement else None,
+        contenant_id=eq.contenant_id,
+        contenant_nom=contenant.nom if contenant else None,
+        est_contenant=bool(contenu),
+        chemin=chemin,
+        contenu=contenu,
         statut_actuel=eq.statut_actuel,
         photo_url=build_photo_url(eq.photo_chemin),
         type=_derive_type(vrac is not None, conso is not None),
@@ -242,6 +396,12 @@ async def list_equipments(
     statut: StatutEquipment | None = Query(default=None),
     type: EquipmentType | None = Query(default=None, description="standard|vrac|consommable"),
     externe: bool | None = Query(default=None),
+    contenant_id: int | None = Query(
+        default=None, description="Filtre : contenu direct de ce contenant"
+    ),
+    racine: bool = Query(
+        default=False, description="true = seulement les items hors contenant (racine)"
+    ),
     archive: bool = Query(
         default=False,
         description="false (défaut) = matériel actif ; true = locations archivées (rendues)",
@@ -257,6 +417,10 @@ async def list_equipments(
         stmt = stmt.where(Equipment.emplacement_id == emplacement_id)
     if statut is not None:
         stmt = stmt.where(Equipment.statut_actuel == statut)
+    if contenant_id is not None:
+        stmt = stmt.where(Equipment.contenant_id == contenant_id)
+    if racine:
+        stmt = stmt.where(Equipment.contenant_id.is_(None))
     stmt = stmt.where(Equipment.archive == archive)
     stmt = stmt.order_by(Equipment.nom)
 
@@ -265,6 +429,12 @@ async def list_equipments(
     # Maps en masse (parc de petite taille).
     cat_map = {c.id: c.nom for c in (await db.scalars(select(Categorie))).all()}
     emp_map = {e.id: e.nom for e in (await db.scalars(select(Emplacement))).all()}
+    # Nom de chaque équipement (pour contenant_nom) + ids ayant du contenu.
+    eq_rows = (
+        await db.execute(select(Equipment.id, Equipment.nom, Equipment.contenant_id))
+    ).all()
+    eq_nom_map = {i: n for i, n, _ in eq_rows}
+    container_ids = {c for _, _, c in eq_rows if c is not None}
     vrac_map = {v.equipment_id: v for v in (await db.scalars(select(EquipmentVrac))).all()}
     conso_map = {
         c.equipment_id: c for c in (await db.scalars(select(EquipmentConsommable))).all()
@@ -330,6 +500,9 @@ async def list_equipments(
                 categorie_nom=cat_map.get(eq.categorie_id) if eq.categorie_id else None,
                 emplacement_id=eq.emplacement_id,
                 emplacement_nom=emp_map.get(eq.emplacement_id) if eq.emplacement_id else None,
+                contenant_id=eq.contenant_id,
+                contenant_nom=eq_nom_map.get(eq.contenant_id) if eq.contenant_id else None,
+                est_contenant=eq.id in container_ids,
                 statut_actuel=eq.statut_actuel,
                 photo_url=build_photo_url(eq.photo_chemin),
                 type=eq_type,
@@ -371,6 +544,42 @@ async def get_equipment(equipment_id: int, user: CurrentUser, db: DbSession) -> 
     return await _build_detail(db, eq, user.id)
 
 
+@router.get("/equipments/{equipment_id}/contenu", response_model=list[ContenuChild])
+async def get_equipment_contenu(
+    equipment_id: int,
+    _user: CurrentUser,
+    db: DbSession,
+    recursif: bool = Query(default=False, description="true = tout le sous-arbre"),
+) -> list[ContenuChild]:
+    """Contenu d'un contenant : enfants directs, ou tout le sous-arbre si `recursif`."""
+    eq = await db.get(Equipment, equipment_id)
+    if eq is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
+        )
+    if not recursif:
+        return await _build_contenu(db, equipment_id)
+
+    # Parcours en largeur, garde anti-boucle.
+    out: list[ContenuChild] = []
+    queue: list[int] = [equipment_id]
+    seen: set[int] = {equipment_id}
+    for _ in range(_DEPTH_GUARD):
+        if not queue:
+            break
+        next_queue: list[int] = []
+        for cid in queue:
+            for child in await _build_contenu(db, cid):
+                if child.id in seen:
+                    continue
+                seen.add(child.id)
+                out.append(child)
+                if child.est_contenant:
+                    next_queue.append(child.id)
+        queue = next_queue
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Création / édition (Admin + Staff)
 # --------------------------------------------------------------------------- #
@@ -399,11 +608,15 @@ async def create_equipment(
     db: DbSession,
 ) -> EquipmentDetail:
     """Crée un équipement (standard/vrac/consommable, option location externe)."""
+    # Règle de frontière : ranger dans un contenant exclut l'emplacement fixe.
+    if payload.contenant_id is not None:
+        await _check_no_cycle(db, None, payload.contenant_id)
     eq = Equipment(
         barcode_uid=f"tmp-{uuid_lib.uuid4().hex}",
         nom=payload.nom,
         categorie_id=payload.categorie_id,
-        emplacement_id=payload.emplacement_id,
+        emplacement_id=None if payload.contenant_id is not None else payload.emplacement_id,
+        contenant_id=payload.contenant_id,
         statut_actuel=payload.statut_actuel,
         created_by_membre_id=user.id,
     )
@@ -471,8 +684,15 @@ async def update_equipment(
         eq.nom = payload.nom
     if payload.categorie_id is not None:
         eq.categorie_id = payload.categorie_id
+    # Localisation : emplacement fixe et contenant sont exclusifs (règle de frontière).
+    # Poser l'un efface l'autre ; si les deux sont fournis, le contenant l'emporte.
     if payload.emplacement_id is not None:
         eq.emplacement_id = payload.emplacement_id
+        eq.contenant_id = None
+    if payload.contenant_id is not None:
+        await _check_no_cycle(db, eq.id, payload.contenant_id)
+        eq.contenant_id = payload.contenant_id
+        eq.emplacement_id = None
     if payload.statut_actuel is not None:
         if payload.statut_actuel != eq.statut_actuel:
             # Trace le changement de statut dans l'historique d'activité.

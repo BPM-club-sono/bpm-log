@@ -7,10 +7,13 @@ import { compressImage } from "@/lib/image";
 import type {
   Categorie,
   ConsoPreview,
+  ContenuChild,
   Emplacement,
   EquipmentDetail,
+  EquipmentListItem,
   Fournisseur,
   InventaireEntry,
+  PathSegment,
   StatutEquipment,
   VracDetailInfo,
 } from "@/lib/types";
@@ -55,6 +58,7 @@ export function EquipmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [inCart, setInCart] = useState(false);
 
   const load = useCallback(async () => {
@@ -136,6 +140,7 @@ export function EquipmentDetailPage() {
       )}
 
       <div className="space-y-3 border-b border-line pb-5">
+        {eq.chemin && eq.chemin.length > 0 && <Chemin segments={eq.chemin} />}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold">{eq.nom}</h1>
@@ -183,6 +188,20 @@ export function EquipmentDetailPage() {
         </Button>
       </div>
 
+      <Button variant="ghost" onClick={() => setMoving((v) => !v)} className="w-full">
+        <Icon name="move_up" className="text-xl" />
+        Déplacer / ranger
+      </Button>
+      {moving && (
+        <MoveBlock
+          equipmentId={equipmentId}
+          currentName={eq.nom}
+          onDone={() => setMoving(false)}
+        />
+      )}
+
+      {eq.contenu && eq.contenu.length > 0 && <ContenuBlock contenu={eq.contenu} />}
+
       {eq.vrac && (
         <VracBlock equipmentId={equipmentId} vrac={eq.vrac} onChange={load} />
       )}
@@ -199,6 +218,181 @@ function Info({ label, value }: { label: string; value: string | null }) {
       <dt className="text-xs uppercase tracking-wide text-fg-muted">{label}</dt>
       <dd className="truncate">{value ?? "—"}</dd>
     </div>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Fil d'Ariane de localisation (Dépôt > Étagère A > Flight MH)
+// --------------------------------------------------------------------------- //
+function Chemin({ segments }: { segments: PathSegment[] }) {
+  return (
+    <nav className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-fg-muted">
+      <Icon name="location_on" className="text-sm" />
+      {segments.map((seg, i) => (
+        <span key={`${seg.kind}-${seg.id}`} className="inline-flex items-center gap-1">
+          {i > 0 && <Icon name="chevron_right" className="text-sm opacity-60" />}
+          {seg.kind === "contenant" ? (
+            <Link to={`/inventaire/${seg.id}`} className="underline hover:text-fg">
+              {seg.nom}
+            </Link>
+          ) : (
+            <span>{seg.nom}</span>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Contenu d'un contenant (flight case) : enfants directs + pack list
+// --------------------------------------------------------------------------- //
+function ContenuBlock({ contenu }: { contenu: ContenuChild[] }) {
+  const { toast } = useToast();
+  function addAllToCart() {
+    contenu.forEach((c) => labelCart.add(c.id));
+    toast(`${contenu.length} étiquette(s) ajoutée(s) au panier`, "success");
+  }
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-fg-muted">
+          Contenu · {contenu.length} élément{contenu.length > 1 ? "s" : ""}
+        </h2>
+        <button
+          type="button"
+          onClick={addAllToCart}
+          className="inline-flex items-center gap-1 text-xs text-fg-muted underline"
+        >
+          <Icon name="qr_code_2" className="text-sm" />
+          Pack list
+        </button>
+      </div>
+      <div className="divide-y divide-line rounded-xl border border-line">
+        {contenu.map((c) => (
+          <Link
+            key={c.id}
+            to={`/inventaire/${c.id}`}
+            className="flex items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-bg-soft"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <Icon
+                name={c.est_contenant ? "inventory_2" : "label"}
+                className="flex-none text-base text-fg-muted"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{c.nom}</p>
+                <p className="truncate font-mono text-xs text-fg-muted">
+                  {c.barcode_uid}
+                </p>
+              </div>
+            </div>
+            <StatusBadge statut={c.statut_actuel} />
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// Déplacement offline : ranger dans un emplacement OU un contenant
+// --------------------------------------------------------------------------- //
+function MoveBlock({
+  equipmentId,
+  currentName,
+  onDone,
+}: {
+  equipmentId: number;
+  currentName: string;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [mode, setMode] = useState<"emplacement" | "contenant">("emplacement");
+  const [emplacements, setEmplacements] = useState<Emplacement[]>([]);
+  const [containers, setContainers] = useState<EquipmentListItem[]>([]);
+  const [target, setTarget] = useState<number | "">("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [emp, eqs] = await Promise.all([
+          api<Emplacement[]>("/emplacements"),
+          api<EquipmentListItem[]>("/equipments"),
+        ]);
+        setEmplacements(emp);
+        // Cibles contenant possibles : tout sauf soi-même (le serveur refuse les boucles).
+        setContainers(eqs.filter((e) => e.id !== equipmentId));
+      } catch {
+        // listes non bloquantes
+      }
+    })();
+  }, [equipmentId]);
+
+  useEffect(() => setTarget(""), [mode]);
+
+  async function confirm() {
+    if (target === "") return;
+    setBusy(true);
+    const payload =
+      mode === "contenant"
+        ? { equipment_id: equipmentId, contenant_destination_id: target }
+        : { equipment_id: equipmentId, emplacement_destination_id: target };
+    await syncEngine.enqueue("deplacement", payload);
+    toast(`« ${currentName} » déplacé (synchro en attente)`, "success");
+    setBusy(false);
+    onDone();
+  }
+
+  return (
+    <section className="space-y-3 rounded-xl border border-line bg-bg-soft p-3">
+      <div className="flex gap-1.5">
+        {(["emplacement", "contenant"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+              mode === m ? "border-fg bg-fg text-bg" : "border-line bg-bg-elev text-fg"
+            }`}
+          >
+            {m === "emplacement" ? "Emplacement" : "Dans un contenant"}
+          </button>
+        ))}
+      </div>
+      <select
+        value={target}
+        onChange={(e) => setTarget(e.target.value === "" ? "" : Number(e.target.value))}
+        className={inputCls}
+      >
+        <option value="">— choisir —</option>
+        {mode === "emplacement"
+          ? emplacements.map((em) => (
+              <option key={em.id} value={em.id}>
+                {em.nom}
+              </option>
+            ))
+          : containers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nom}
+              </option>
+            ))}
+      </select>
+      <div className="flex gap-2">
+        <Button variant="ghost" onClick={onDone} className="flex-1">
+          Annuler
+        </Button>
+        <Button
+          onClick={() => void confirm()}
+          loading={busy}
+          disabled={target === ""}
+          className="flex-1"
+        >
+          Déplacer
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -502,6 +696,10 @@ function scanLabel(typeAction: string, contexte: string | null): {
         accent: "bg-success",
       };
     case "Changement_Statut":
+      // Les déplacements sont aussi loggés en Changement_Statut (contexte dédié).
+      if (contexte && (contexte === "Déplacé" || contexte.startsWith("Rangé"))) {
+        return { title: contexte, icon: "move_up", accent: "bg-fg" };
+      }
       return {
         title: `Statut ${contexte ?? "modifié"}`,
         icon: "swap_horiz",
@@ -625,6 +823,11 @@ function EditForm({
   const [emplacementId, setEmplacementId] = useState<number | "">(
     eq.emplacement_id ?? "",
   );
+  const [rangementMode, setRangementMode] = useState<"emplacement" | "contenant">(
+    eq.contenant_id ? "contenant" : "emplacement",
+  );
+  const [contenantId, setContenantId] = useState<number | "">(eq.contenant_id ?? "");
+  const [containers, setContainers] = useState<EquipmentListItem[]>([]);
   const [statut, setStatut] = useState<StatutEquipment>(eq.statut_actuel);
   const [quantiteTheo, setQuantiteTheo] = useState<number>(
     eq.vrac?.quantite_theorique ?? 0,
@@ -649,19 +852,22 @@ function EditForm({
   useEffect(() => {
     void (async () => {
       try {
-        const [cat, emp, four] = await Promise.all([
+        const [cat, emp, four, eqs] = await Promise.all([
           api<Categorie[]>("/categories"),
           api<Emplacement[]>("/emplacements"),
           api<Fournisseur[]>("/fournisseurs"),
+          api<EquipmentListItem[]>("/equipments"),
         ]);
         setCategories(cat);
         setEmplacements(emp);
         setFournisseurs(four);
+        // Cibles contenant : tout sauf soi-même (le serveur refuse les boucles).
+        setContainers(eqs.filter((e) => e.id !== eq.id));
       } catch {
         // listes non bloquantes
       }
     })();
-  }, []);
+  }, [eq.id]);
 
   function onPhotoChange(file: File | null) {
     setPhotoFile(file);
@@ -676,10 +882,15 @@ function EditForm({
         nom,
         barcode_uid: barcode,
         categorie_id: categorieId === "" ? null : categorieId,
-        emplacement_id: emplacementId === "" ? null : emplacementId,
         statut_actuel: statut,
         externe,
       };
+      // Rangement : emplacement fixe OU contenant (exclusifs côté serveur).
+      if (rangementMode === "contenant" && contenantId !== "") {
+        body.contenant_id = contenantId;
+      } else {
+        body.emplacement_id = emplacementId === "" ? null : emplacementId;
+      }
       if (eq.type === "vrac") body.quantite_theorique = quantiteTheo;
       if (eq.type === "consommable") {
         body.seuil_alerte = seuil;
@@ -772,22 +983,56 @@ function EditForm({
           ))}
         </select>
       </Field>
-      <Field label="Emplacement">
-        <select
-          value={emplacementId}
-          onChange={(e) =>
-            setEmplacementId(e.target.value === "" ? "" : Number(e.target.value))
-          }
-          className={inputCls}
-        >
-          <option value="">—</option>
-          {emplacements.map((em) => (
-            <option key={em.id} value={em.id}>
-              {em.nom}
-            </option>
+      <div className="space-y-1">
+        <span className="text-xs font-medium text-fg-muted">Rangement</span>
+        <div className="flex gap-1.5">
+          {(["emplacement", "contenant"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setRangementMode(m)}
+              className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                rangementMode === m
+                  ? "border-fg bg-fg text-bg"
+                  : "border-line bg-bg-elev text-fg"
+              }`}
+            >
+              {m === "emplacement" ? "Emplacement" : "Dans un contenant"}
+            </button>
           ))}
-        </select>
-      </Field>
+        </div>
+        {rangementMode === "emplacement" ? (
+          <select
+            value={emplacementId}
+            onChange={(e) =>
+              setEmplacementId(e.target.value === "" ? "" : Number(e.target.value))
+            }
+            className={`${inputCls} mt-1`}
+          >
+            <option value="">—</option>
+            {emplacements.map((em) => (
+              <option key={em.id} value={em.id}>
+                {em.nom}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <select
+            value={contenantId}
+            onChange={(e) =>
+              setContenantId(e.target.value === "" ? "" : Number(e.target.value))
+            }
+            className={`${inputCls} mt-1`}
+          >
+            <option value="">— choisir un contenant —</option>
+            {containers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nom}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
       <Field label="Statut">
         <select
           value={statut}

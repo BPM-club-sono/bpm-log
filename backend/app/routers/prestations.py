@@ -15,7 +15,9 @@ from app.deps import CurrentUser, DbSession
 from app.models import (
     AllocationPresta,
     Equipment,
+    EquipmentConsommable,
     EquipmentLocation,
+    EquipmentVrac,
     Prestation,
     TicketReparation,
 )
@@ -51,7 +53,60 @@ def _allocation_read(alloc: AllocationPresta, externe: bool = False) -> Allocati
         equipment_nom=eq.nom if eq is not None else None,
         equipment_barcode=eq.barcode_uid if eq is not None else None,
         equipment_externe=externe,
+        equipment_contenant_id=eq.contenant_id if eq is not None else None,
     )
+
+
+_DEPTH_GUARD = 32  # garde anti-boucle sur la descente de l'arbre des contenants
+
+
+async def _standard_descendant_ids(db: DbSession, root_id: int) -> list[int]:
+    """Ids des descendants *standard* (hors vrac/conso) d'un contenant.
+
+    Parcours en largeur borné : on descend par tous les enfants mais on n'alloue
+    que les items standard (un vrac/conso garde sa propre logique de quantité).
+    """
+    collected: list[int] = []
+    frontier = [root_id]
+    seen: set[int] = {root_id}
+    for _ in range(_DEPTH_GUARD):
+        if not frontier:
+            break
+        child_ids = [
+            cid
+            for (cid,) in (
+                await db.execute(
+                    select(Equipment.id).where(Equipment.contenant_id.in_(frontier))
+                )
+            ).all()
+            if cid not in seen
+        ]
+        if not child_ids:
+            break
+        seen.update(child_ids)
+        vrac = {
+            e
+            for (e,) in (
+                await db.execute(
+                    select(EquipmentVrac.equipment_id).where(
+                        EquipmentVrac.equipment_id.in_(child_ids)
+                    )
+                )
+            ).all()
+        }
+        conso = {
+            e
+            for (e,) in (
+                await db.execute(
+                    select(EquipmentConsommable.equipment_id).where(
+                        EquipmentConsommable.equipment_id.in_(child_ids)
+                    )
+                )
+            ).all()
+        }
+        collected.extend(c for c in child_ids if c not in vrac and c not in conso)
+        frontier = child_ids
+    return collected
 
 
 async def _location_ids(db: DbSession) -> set[int]:
@@ -186,6 +241,33 @@ async def add_allocation(
             statut=StatutAllocation.PLANIFIE,
         )
         db.add(alloc)
+
+    # Contenant : on alloue aussi son contenu standard (les enfants suivent la caisse).
+    if data.inclure_contenu:
+        descendant_ids = await _standard_descendant_ids(db, data.equipment_id)
+        if descendant_ids:
+            already = {
+                eid
+                for (eid,) in (
+                    await db.execute(
+                        select(AllocationPresta.equipment_id).where(
+                            AllocationPresta.presta_id == presta_id,
+                            AllocationPresta.equipment_id.in_(descendant_ids),
+                        )
+                    )
+                ).all()
+            }
+            for eid in descendant_ids:
+                if eid not in already:
+                    db.add(
+                        AllocationPresta(
+                            presta_id=presta_id,
+                            equipment_id=eid,
+                            quantite=1,
+                            statut=StatutAllocation.PLANIFIE,
+                        )
+                    )
+
     await db.commit()
     await db.refresh(alloc, attribute_names=["equipment"])
     externe = await db.get(EquipmentLocation, alloc.equipment_id) is not None

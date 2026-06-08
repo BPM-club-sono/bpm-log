@@ -62,6 +62,85 @@ export function ChecklistView({
     (a) => current(a, sens) < target(a, sens),
   ).length;
 
+  // Groupage par contenant : une ligne enfant est rangée sous l'allocation de
+  // son flight (si celui-ci est aussi visible dans la checklist).
+  const childIds = new Set<number>();
+  const groupOf = new Map<number, Allocation[]>();
+  for (const a of visible) {
+    const cid = a.equipment_contenant_id;
+    if (cid == null) continue;
+    const parent = visible.find((x) => x.equipment_id === cid);
+    if (!parent) continue;
+    childIds.add(a.id);
+    const arr = groupOf.get(parent.id) ?? [];
+    arr.push(a);
+    groupOf.set(parent.id, arr);
+  }
+  const topLevel = visible.filter((a) => !childIds.has(a.id));
+
+  function pointGroup(container: Allocation, children: Allocation[]) {
+    for (const c of [container, ...children]) {
+      const remaining = target(c, sens) - current(c, sens);
+      if (remaining > 0) onDelta(c, remaining);
+    }
+  }
+
+  function renderRow(a: Allocation, nested: boolean) {
+    const val = current(a, sens);
+    const tgt = target(a, sens);
+    const done = tgt > 0 && val >= tgt;
+    return (
+      <li
+        key={a.id}
+        className={`flex items-center gap-3 py-3 ${nested ? "pl-6" : ""}`}
+      >
+        <Icon
+          name={done ? "check_circle" : "radio_button_unchecked"}
+          className={`text-xl ${done ? "text-success" : "text-fg-muted"}`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+            {groupOf.has(a.equipment_id) && (
+              <Icon name="inventory_2" className="flex-none text-sm text-fg-muted" />
+            )}
+            <span className="truncate">
+              {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+            </span>
+            {a.equipment_externe && (
+              <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                Location
+              </span>
+            )}
+          </p>
+          <p className={`text-xs ${done ? "text-success" : "text-fg-muted"}`}>
+            {val}/{tgt} {actionLabel(!!a.equipment_externe, sens)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onDelta(a, -1)}
+            disabled={val <= 0}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-fg disabled:opacity-30"
+          >
+            <Icon name="remove" className="text-lg" />
+          </button>
+          <span className="w-6 text-center text-sm font-semibold tabular-nums">
+            {val}
+          </span>
+          <button
+            type="button"
+            onClick={() => onDelta(a, +1)}
+            disabled={val >= tgt}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-fg disabled:opacity-30"
+          >
+            <Icon name="add" className="text-lg" />
+          </button>
+        </div>
+      </li>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <form
@@ -111,57 +190,23 @@ export function ChecklistView({
       )}
 
       <ul className="divide-y divide-line">
-        {visible.map((a) => {
-          const val = current(a, sens);
-          const tgt = target(a, sens);
-          const done = tgt > 0 && val >= tgt;
+        {topLevel.map((a) => {
+          const children = groupOf.get(a.equipment_id);
+          if (!children) return renderRow(a, false);
           return (
-            <li
-              key={a.id}
-              className="flex items-center gap-3 py-3"
-            >
-              <Icon
-                name={done ? "check_circle" : "radio_button_unchecked"}
-                className={`text-xl ${done ? "text-success" : "text-fg-muted"}`}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                  <span className="truncate">
-                    {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
-                  </span>
-                  {a.equipment_externe && (
-                    <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                      Location
-                    </span>
-                  )}
-                </p>
-                <p
-                  className={`text-xs ${done ? "text-success" : "text-fg-muted"}`}
-                >
-                  {val}/{tgt} {actionLabel(!!a.equipment_externe, sens)}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onDelta(a, -1)}
-                  disabled={val <= 0}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-fg disabled:opacity-30"
-                >
-                  <Icon name="remove" className="text-lg" />
-                </button>
-                <span className="w-6 text-center text-sm font-semibold tabular-nums">
-                  {val}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onDelta(a, +1)}
-                  disabled={val >= tgt}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-fg disabled:opacity-30"
-                >
-                  <Icon name="add" className="text-lg" />
-                </button>
-              </div>
+            <li key={`group-${a.id}`} className="py-1">
+              <ul className="divide-y divide-line">
+                {renderRow(a, false)}
+                {children.map((c) => renderRow(c, true))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => pointGroup(a, children)}
+                className="mb-1 ml-6 inline-flex items-center gap-1 text-xs font-medium text-fg-muted underline"
+              >
+                <Icon name="done_all" className="text-sm" />
+                Tout pointer ({children.length + 1})
+              </button>
             </li>
           );
         })}
