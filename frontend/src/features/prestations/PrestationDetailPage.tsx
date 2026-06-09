@@ -14,6 +14,7 @@ import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
+import { buildAllocTree } from "./prestationTree";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
 
@@ -144,7 +145,18 @@ export function PrestationDetailPage() {
   function handleScan(barcode: string, sens: ChecklistSens) {
     const match = allocs.find((a) => a.equipment_barcode === barcode);
     if (match) {
-      applyDelta(match, sens, +1);
+      // Scanner un flight pointe tout son contenu d'un coup (case + descendants).
+      const { descendantsOf } = buildAllocTree(allocs);
+      const descendants = descendantsOf(match);
+      if (descendants.length > 0) {
+        for (const line of [match, ...descendants]) {
+          const cur = sens === "sortie" ? line.quantite_sortie : line.quantite_retournee;
+          const tgt = sens === "sortie" ? line.quantite : line.quantite_sortie;
+          if (cur < tgt) applyDelta(line, sens, tgt - cur);
+        }
+      } else {
+        applyDelta(match, sens, +1);
+      }
       navigator.vibrate?.(40);
       return;
     }
@@ -403,6 +415,32 @@ function InfoView({
     return true;
   });
 
+  // Arbre des contenants : les items d'un flight sont affichés imbriqués sous
+  // leur caisse (style timeline), pas en vrac dans la liste plate.
+  const { topLevel, descendantsOf } = buildAllocTree(visibleAllocs);
+
+  const metaLine = (a: Allocation) => (
+    <p className="mt-1 text-xs text-fg-muted">
+      Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné {a.quantite_retournee}
+    </p>
+  );
+  const locationBadge = (a: Allocation) =>
+    a.equipment_externe ? (
+      <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+        Location
+      </span>
+    ) : null;
+  const deleteBtn = (a: Allocation) =>
+    editable && a.id > 0 ? (
+      <button
+        onClick={() => removeAllocation(a)}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted hover:text-danger"
+        aria-label="Retirer"
+      >
+        <Icon name="delete" className="text-lg" />
+      </button>
+    ) : null;
+
   return (
     <div className="space-y-4">
       {editable && (
@@ -492,35 +530,79 @@ function InfoView({
         )}
 
         <ul className="divide-y divide-line">
-          {visibleAllocs.map((a) => (
-            <li
-              key={a.id}
-              className="flex items-center justify-between gap-3 py-4"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
-                </p>
-                <p className="mt-1.5 text-xs text-fg-muted">
-                  Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné{" "}
-                  {a.quantite_retournee}
-                </p>
-              </div>
-              {a.equipment_externe && (
-                <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                  Location
-                </span>
-              )}
-              {editable && a.id > 0 && (
-                <button
-                  onClick={() => removeAllocation(a)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:text-danger"
+          {topLevel.map((a) => {
+            const children = descendantsOf(a);
+
+            // Article simple (hors flight) : ligne plate classique.
+            if (children.length === 0) {
+              return (
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 py-4"
                 >
-                  <Icon name="delete" className="text-lg" />
-                </button>
-              )}
-            </li>
-          ))}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                    </p>
+                    {metaLine(a)}
+                  </div>
+                  {locationBadge(a)}
+                  {deleteBtn(a)}
+                </li>
+              );
+            }
+
+            // Flight : en-tête caisse + ses items en timeline (clairement dedans).
+            return (
+              <li key={`flight-${a.id}`} className="py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+                    <Icon name="inventory_2" className="flex-none text-base text-fg-muted" />
+                    <span className="truncate">
+                      {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                    </span>
+                    {locationBadge(a)}
+                  </p>
+                  {deleteBtn(a)}
+                </div>
+                <p className="mt-0.5 pl-[26px] text-xs text-fg-muted">
+                  {children.length} article{children.length > 1 ? "s" : ""} dans le flight
+                </p>
+                <ol className="relative ml-2 mt-2">
+                  {children.map((c, i) => {
+                    const isLast = i === children.length - 1;
+                    const isContainer = descendantsOf(c).length > 0;
+                    return (
+                      <li key={c.id} className="relative flex gap-3 pb-3 last:pb-0">
+                        {!isLast && (
+                          <span className="absolute left-[7px] top-4 h-full w-px bg-line" />
+                        )}
+                        <span className="relative z-10 mt-1 flex h-4 w-4 flex-none items-center justify-center">
+                          <span className="h-2.5 w-2.5 rounded-full border-2 border-line bg-bg" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                            {isContainer && (
+                              <Icon
+                                name="inventory_2"
+                                className="flex-none text-sm text-fg-muted"
+                              />
+                            )}
+                            <span className="truncate">
+                              {c.equipment_nom ?? c.equipment_barcode ?? `#${c.equipment_id}`}
+                            </span>
+                            {locationBadge(c)}
+                          </p>
+                          {metaLine(c)}
+                        </div>
+                        {deleteBtn(c)}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </li>
+            );
+          })}
         </ul>
         {visibleAllocs.length === 0 && (
           <p className="py-8 text-center text-sm text-fg-muted">

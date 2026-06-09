@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { Allocation, TypePrestation } from "@/lib/types";
 import { Icon } from "@/shared/Icon";
+import { buildAllocTree, current, target, type ChecklistSens } from "./prestationTree";
 
-export type ChecklistSens = "sortie" | "retour";
+export type { ChecklistSens };
 
 interface ChecklistViewProps {
   sens: ChecklistSens;
@@ -14,20 +15,16 @@ interface ChecklistViewProps {
   onScan: (barcode: string) => void;
 }
 
-/** Valeur courante d'une ligne selon le sens (sortie ou retour). */
-function current(alloc: Allocation, sens: ChecklistSens): number {
-  return sens === "sortie" ? alloc.quantite_sortie : alloc.quantite_retournee;
-}
-
-/** Objectif d'une ligne : la quantité prévue en sortie, la quantité sortie en retour. */
-function target(alloc: Allocation, sens: ChecklistSens): number {
-  return sens === "sortie" ? alloc.quantite : alloc.quantite_sortie;
-}
-
 /** Libellé adapté : matériel loué = réception/rendu, matériel BPM = sortie/retour. */
 function actionLabel(externe: boolean, sens: ChecklistSens): string {
   if (sens === "sortie") return externe ? "reçu" : "sorti";
   return externe ? "rendu" : "retourné";
+}
+
+/** Verbe d'action pour le bouton « pointer tout le flight ». */
+function flightVerb(externe: boolean, sens: ChecklistSens): string {
+  if (sens === "sortie") return externe ? "Recevoir" : "Sortir";
+  return externe ? "Rendre" : "Retourner";
 }
 
 type Filter = "tous" | "interne" | "location";
@@ -41,6 +38,7 @@ export function ChecklistView({
 }: ChecklistViewProps) {
   const [scanInput, setScanInput] = useState("");
   const [filter, setFilter] = useState<Filter>("tous");
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   // Presta interne : on ne pointe que le matériel loué (le matériel BPM interne
   // reste listé dans l'onglet Détail, pas dans le flux de réception/rendu).
@@ -58,30 +56,36 @@ export function ChecklistView({
     return true;
   });
 
-  const incomplete = visible.filter(
-    (a) => current(a, sens) < target(a, sens),
-  ).length;
+  // Arbre des contenants : un flight est affiché en une seule ligne ; ses
+  // articles ne sont visibles qu'en dépliant la ligne (gestion des manquants).
+  const { topLevel, descendantsOf } = buildAllocTree(visible);
 
-  // Groupage par contenant : une ligne enfant est rangée sous l'allocation de
-  // son flight (si celui-ci est aussi visible dans la checklist).
-  const childIds = new Set<number>();
-  const groupOf = new Map<number, Allocation[]>();
-  for (const a of visible) {
-    const cid = a.equipment_contenant_id;
-    if (cid == null) continue;
-    const parent = visible.find((x) => x.equipment_id === cid);
-    if (!parent) continue;
-    childIds.add(a.id);
-    const arr = groupOf.get(parent.id) ?? [];
-    arr.push(a);
-    groupOf.set(parent.id, arr);
+  // Comptage par « unité » : un flight = 1 unité (incomplète si une ligne de son
+  // sous-arbre est sous l'objectif), un article seul = 1 unité.
+  const incomplete = topLevel.filter((a) => {
+    const lines = [a, ...descendantsOf(a)];
+    return lines.some((l) => current(l, sens) < target(l, sens));
+  }).length;
+
+  function toggleExpanded(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
-  const topLevel = visible.filter((a) => !childIds.has(a.id));
 
-  function pointGroup(container: Allocation, children: Allocation[]) {
-    for (const c of [container, ...children]) {
-      const remaining = target(c, sens) - current(c, sens);
-      if (remaining > 0) onDelta(c, remaining);
+  /** Pointe (full=false) ou dé-pointe (full=true) toutes les lignes d'un flight. */
+  function toggleFlight(lines: Allocation[], full: boolean) {
+    for (const l of lines) {
+      if (full) {
+        const cur = current(l, sens);
+        if (cur > 0) onDelta(l, -cur);
+      } else {
+        const remaining = target(l, sens) - current(l, sens);
+        if (remaining > 0) onDelta(l, remaining);
+      }
     }
   }
 
@@ -100,9 +104,6 @@ export function ChecklistView({
         />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-            {groupOf.has(a.equipment_id) && (
-              <Icon name="inventory_2" className="flex-none text-sm text-fg-muted" />
-            )}
             <span className="truncate">
               {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
             </span>
@@ -137,6 +138,86 @@ export function ChecklistView({
             <Icon name="add" className="text-lg" />
           </button>
         </div>
+      </li>
+    );
+  }
+
+  function renderFlightRow(flight: Allocation, descendants: Allocation[]) {
+    const lines = [flight, ...descendants]; // toggleFlight point/dé-point tout
+    const articles = descendants; // les vrais articles, sans le flight
+    const articlesTotal = articles.length;
+    const articlesDone = articles.filter(
+      (l) => current(l, sens) >= target(l, sens),
+    ).length;
+    const allArticlesDone = articlesDone === articlesTotal;
+    const flightDone = current(flight, sens) >= target(flight, sens);
+    const isOpen = expanded.has(flight.id);
+    const isFull = allArticlesDone && flightDone; // complet = articles + flight
+
+    // 4 états : vide / partiel (carré orange) / articles OK mais flight pas
+    // sorti (rond orange) / complet (vert).
+    const stateIcon =
+      articlesDone === 0 && !flightDone
+        ? { name: "radio_button_unchecked", filled: false, cls: "text-fg-muted" }
+        : !allArticlesDone
+          ? { name: "indeterminate_check_box", filled: false, cls: "text-warning" }
+          : !flightDone
+            ? { name: "circle", filled: true, cls: "text-warning" }
+            : { name: "check_circle", filled: false, cls: "text-success" };
+
+    return (
+      <li key={`flight-${flight.id}`} className="py-1">
+        <div className="flex items-center gap-3 py-2">
+          <Icon
+            name={stateIcon.name}
+            filled={stateIcon.filled}
+            className={`flex-none text-xl ${stateIcon.cls}`}
+          />
+          <button
+            type="button"
+            onClick={() => toggleExpanded(flight.id)}
+            className="flex flex-none items-center justify-center rounded-lg text-fg-muted hover:text-fg"
+            aria-label={isOpen ? "Replier le flight" : "Déplier le flight"}
+          >
+            <Icon name="inventory_2" filled={!isOpen} className="text-xl" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+              <span className="truncate">
+                {flight.equipment_nom ?? flight.equipment_barcode ?? `#${flight.equipment_id}`}
+              </span>
+              {flight.equipment_externe && (
+                <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                  Location
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-fg-muted">
+              {articlesTotal} article{articlesTotal > 1 ? "s" : ""}
+              {articlesDone > 0 && !allArticlesDone && (
+                <span className="ml-1.5 font-semibold text-warning">
+                  {articlesDone}/{articlesTotal}
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => toggleFlight(lines, isFull)}
+            className={`flex-none rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+              isFull
+                ? "border-line text-fg-muted hover:text-fg"
+                : "border-fg bg-fg text-bg"
+            }`}
+          >
+            {isFull ? "Annuler" : flightVerb(!!flight.equipment_externe, sens)}
+          </button>
+        </div>
+        {isOpen && (
+          <ul className="divide-y divide-line border-t border-line">
+            {descendants.map((c) => renderRow(c, true))}
+          </ul>
+        )}
       </li>
     );
   }
@@ -191,34 +272,19 @@ export function ChecklistView({
 
       <ul className="divide-y divide-line">
         {topLevel.map((a) => {
-          const children = groupOf.get(a.equipment_id);
-          if (!children) return renderRow(a, false);
-          return (
-            <li key={`group-${a.id}`} className="py-1">
-              <ul className="divide-y divide-line">
-                {renderRow(a, false)}
-                {children.map((c) => renderRow(c, true))}
-              </ul>
-              <button
-                type="button"
-                onClick={() => pointGroup(a, children)}
-                className="mb-1 ml-6 inline-flex items-center gap-1 text-xs font-medium text-fg-muted hover:text-fg"
-              >
-                <Icon name="done_all" className="text-sm" />
-                Tout pointer ({children.length + 1})
-              </button>
-            </li>
-          );
+          const descendants = descendantsOf(a);
+          if (descendants.length === 0) return renderRow(a, false);
+          return renderFlightRow(a, descendants);
         })}
       </ul>
 
-      {visible.length === 0 ? (
+      {topLevel.length === 0 ? (
         <p className="py-8 text-center text-sm text-fg-muted">
           Aucun matériel à pointer ici.
         </p>
       ) : incomplete > 0 ? (
         <p className="text-center text-xs text-fg-muted">
-          {incomplete} ligne{incomplete > 1 ? "s" : ""} incomplète
+          {incomplete} élément{incomplete > 1 ? "s" : ""} incomplet
           {incomplete > 1 ? "s" : ""}
         </p>
       ) : (
@@ -227,4 +293,3 @@ export function ChecklistView({
     </div>
   );
 }
-
