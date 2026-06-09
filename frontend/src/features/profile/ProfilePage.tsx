@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/app/AuthContext";
 import { ApiError } from "@/lib/api";
+import { dashboardMode, useDashboardMode } from "@/lib/dashboardMode";
 import { disablePush, enablePush, isPushEnabled, pushSupported } from "@/lib/push";
+import type { DashboardMode } from "@/lib/types";
 import {
   deletePasskey,
   listPasskeys,
@@ -12,6 +14,26 @@ import {
 } from "@/lib/webauthn";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+
+const VIEW_MODES: {
+  key: DashboardMode;
+  label: string;
+  icon: string;
+  hint: string;
+}[] = [
+  {
+    key: "evenementiel",
+    label: "Événementiel",
+    icon: "event",
+    hint: "Prestations et leur avancement",
+  },
+  {
+    key: "maintenance",
+    label: "Maintenance",
+    icon: "build",
+    hint: "Santé du parc et pannes",
+  },
+];
 
 export function ProfilePage() {
   const { user, logout } = useAuth();
@@ -27,6 +49,7 @@ export function ProfilePage() {
   const pushOk = pushSupported();
 
   const supported = passkeySupported();
+  const viewMode = useDashboardMode(user?.role);
 
   const loadKeys = useCallback(async () => {
     try {
@@ -123,6 +146,44 @@ export function ProfilePage() {
           <Icon name="chevron_right" className="text-xl text-fg-muted" />
         </Link>
       )}
+
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Icon name="dashboard" className="text-xl" />
+          <h2 className="text-sm font-semibold">Vue d'accueil</h2>
+        </div>
+        <p className="text-xs text-fg-muted">
+          Choisis ce que ton tableau de bord met en avant.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {VIEW_MODES.map((m) => {
+            const active = viewMode === m.key;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => dashboardMode.set(m.key)}
+                aria-pressed={active}
+                className={`flex flex-col gap-1 rounded-xl border px-3 py-3 text-left transition-colors ${
+                  active
+                    ? "border-fg bg-fg text-bg"
+                    : "border-line bg-bg-soft text-fg hover:bg-bg-elev"
+                }`}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <Icon name={m.icon} className="text-lg" />
+                  {m.label}
+                </span>
+                <span
+                  className={`text-xs ${active ? "text-bg/80" : "text-fg-muted"}`}
+                >
+                  {m.hint}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {pushOk && (
         <section className="space-y-3">
