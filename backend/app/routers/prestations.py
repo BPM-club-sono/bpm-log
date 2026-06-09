@@ -109,6 +109,35 @@ async def _standard_descendant_ids(db: DbSession, root_id: int) -> list[int]:
     return collected
 
 
+async def _descendant_ids(db: DbSession, root_id: int) -> list[int]:
+    """Tous les descendants (toutes natures) d'un contenant.
+
+    Sert à la suppression en cascade d'un flight : retirer la caisse retire aussi
+    tout ce qu'elle contient (miroir de l'ajout `inclure_contenu`).
+    """
+    collected: list[int] = []
+    frontier = [root_id]
+    seen: set[int] = {root_id}
+    for _ in range(_DEPTH_GUARD):
+        if not frontier:
+            break
+        child_ids = [
+            cid
+            for (cid,) in (
+                await db.execute(
+                    select(Equipment.id).where(Equipment.contenant_id.in_(frontier))
+                )
+            ).all()
+            if cid not in seen
+        ]
+        if not child_ids:
+            break
+        seen.update(child_ids)
+        collected.extend(child_ids)
+        frontier = child_ids
+    return collected
+
+
 async def _location_ids(db: DbSession) -> set[int]:
     """Ids des équipements en location externe (pour le filtre interne/location)."""
     return {
@@ -288,6 +317,17 @@ async def remove_allocation(
     if alloc is None or alloc.presta_id != presta_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Allocation introuvable."
+        )
+
+    # Supprimer un flight retire aussi les allocations de tout son contenu, pour
+    # ne jamais laisser d'items orphelins dans la prestation.
+    descendant_ids = await _descendant_ids(db, alloc.equipment_id)
+    if descendant_ids:
+        await db.execute(
+            AllocationPresta.__table__.delete().where(
+                AllocationPresta.presta_id == presta_id,
+                AllocationPresta.equipment_id.in_(descendant_ids),
+            )
         )
     await db.delete(alloc)
     await db.commit()
