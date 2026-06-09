@@ -5,8 +5,6 @@ en cours (ou la prochaine à venir) et un fil d'activité global récent
 (scans, changements de statut, réparations) limité aux dernières actions.
 """
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
@@ -32,6 +30,7 @@ from app.schemas.dashboard import (
     ActiviteItem,
     DashboardOut,
     ParcStats,
+    PrestationApercu,
     PrestationCourante,
 )
 
@@ -162,6 +161,71 @@ async def _prestation_courante(db: DbSession) -> PrestationCourante | None:
         nb_objets=int(nb_objets or 0),
         a_venir=a_venir,
     )
+
+
+async def _prestations_apercu(db: DbSession, limit: int = 6) -> list[PrestationApercu]:
+    """Prestations actives ou à venir avec avancement de préparation agrégé.
+
+    Pour la vue d'accueil « événementiel » : on liste les prestations en cours
+    puis les prochaines en préparation, chacune accompagnée des quantités
+    prévues / sorties / retournées (somme de ses allocations) afin de calculer
+    une barre d'avancement côté client.
+    """
+    rows = (
+        await db.execute(
+            select(
+                Prestation,
+                func.coalesce(func.sum(AllocationPresta.quantite), 0),
+                func.coalesce(func.sum(AllocationPresta.quantite_sortie), 0),
+                func.coalesce(func.sum(AllocationPresta.quantite_retournee), 0),
+                func.count(AllocationPresta.id),
+            )
+            .outerjoin(AllocationPresta, AllocationPresta.presta_id == Prestation.id)
+            .where(
+                Prestation.statut.in_(
+                    [StatutPrestation.EN_COURS, StatutPrestation.EN_PREPARATION]
+                )
+            )
+            .group_by(Prestation.id)
+            # En cours d'abord (a_venir=False), puis à venir par date de début.
+            .order_by(
+                (Prestation.statut == StatutPrestation.EN_PREPARATION).asc(),
+                Prestation.date_debut.asc().nulls_last(),
+            )
+            .limit(limit)
+        )
+    ).all()
+    if not rows:
+        return []
+
+    membre_ids = {p.responsable_membre_id for p, *_ in rows if p.responsable_membre_id}
+    membres = {
+        m.id: m
+        for m in (
+            await db.scalars(select(Membre).where(Membre.id.in_(membre_ids)))
+        ).all()
+    }
+
+    apercus: list[PrestationApercu] = []
+    for presta, qte_prevue, qte_sortie, qte_retournee, nb_objets in rows:
+        apercus.append(
+            PrestationApercu(
+                id=presta.id,
+                nom=presta.nom,
+                type=presta.type,
+                client_nom=presta.client_nom,
+                date_debut=presta.date_debut,
+                date_fin=presta.date_fin,
+                statut=presta.statut,
+                responsable_nom=_membre_nom(membres.get(presta.responsable_membre_id)),
+                nb_objets=int(nb_objets or 0),
+                qte_prevue=int(qte_prevue or 0),
+                qte_sortie=int(qte_sortie or 0),
+                qte_retournee=int(qte_retournee or 0),
+                a_venir=presta.statut == StatutPrestation.EN_PREPARATION,
+            )
+        )
+    return apercus
 
 
 async def _activite(db: DbSession) -> list[ActiviteItem]:
@@ -296,5 +360,6 @@ async def get_dashboard(_user: CurrentUser, db: DbSession) -> DashboardOut:
     return DashboardOut(
         parc=await _parc_stats(db),
         prestation=await _prestation_courante(db),
+        prestations=await _prestations_apercu(db),
         activite=await _activite(db),
     )

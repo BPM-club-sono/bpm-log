@@ -40,6 +40,24 @@ class PrestationCourante(BaseModel):
     a_venir: bool
 
 
+class PrestationApercu(BaseModel):
+    """Prestation active ou à venir, avec son avancement de préparation agrégé."""
+
+    id: int
+    nom: str
+    type: TypePrestation
+    client_nom: str | None
+    date_debut: datetime | None
+    date_fin: datetime | None
+    statut: StatutPrestation
+    responsable_nom: str | None
+    nb_objets: int
+    qte_prevue: int
+    qte_sortie: int
+    qte_retournee: int
+    a_venir: bool
+
+
 class ActiviteItem(BaseModel):
     """Une ligne du fil d'activité global."""
 
@@ -59,4 +77,5 @@ class DashboardOut(BaseModel):
 
     parc: ParcStats
     prestation: PrestationCourante | None
+    prestations: list[PrestationApercu]
     activite: list[ActiviteItem]

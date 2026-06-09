@@ -336,7 +336,26 @@ export interface PrestationCourante {
   a_venir: boolean;
 }
 
+export interface PrestationApercu {
+  id: number;
+  nom: string;
+  type: TypePrestation;
+  client_nom: string | null;
+  date_debut: string | null;
+  date_fin: string | null;
+  statut: StatutPrestation;
+  responsable_nom: string | null;
+  nb_objets: number;
+  qte_prevue: number;
+  qte_sortie: number;
+  qte_retournee: number;
+  a_venir: boolean;
+}
+
 export type CategorieActivite = "reparation" | "scan" | "statut";
+
+/** Profil de vue de l'accueil, choisi dans le Profil (stocké en local). */
+export type DashboardMode = "evenementiel" | "maintenance";
 
 export interface ActiviteItem {
   id: string;
@@ -353,6 +372,7 @@ export interface ActiviteItem {
 export interface DashboardData {
   parc: ParcStats;
   prestation: PrestationCourante | null;
+  prestations: PrestationApercu[];
   activite: ActiviteItem[];
 }
 
