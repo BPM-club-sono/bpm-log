@@ -202,7 +202,7 @@ export function ChecklistView({
               <button
                 type="button"
                 onClick={() => pointGroup(a, children)}
-                className="mb-1 ml-6 inline-flex items-center gap-1 text-xs font-medium text-fg-muted underline"
+                className="mb-1 ml-6 inline-flex items-center gap-1 text-xs font-medium text-fg-muted hover:text-fg"
               >
                 <Icon name="done_all" className="text-sm" />
                 Tout pointer ({children.length + 1})

@@ -93,7 +93,7 @@ export function EquipmentDetailPage() {
     return (
       <div className="space-y-4">
         <p className="py-8 text-center text-sm text-danger">{error}</p>
-        <Link to="/inventaire" className="text-sm text-fg-muted underline">
+        <Link to="/inventaire" className="text-sm text-fg-muted hover:text-fg">
           ← Retour au parc
         </Link>
       </div>
@@ -232,7 +232,7 @@ function Chemin({ segments }: { segments: PathSegment[] }) {
         <span key={`${seg.kind}-${seg.id}`} className="inline-flex items-center gap-1">
           {i > 0 && <Icon name="chevron_right" className="text-sm opacity-60" />}
           {seg.kind === "contenant" ? (
-            <Link to={`/inventaire/${seg.id}`} className="underline hover:text-fg">
+            <Link to={`/inventaire/${seg.id}`} className="font-medium hover:text-fg">
               {seg.nom}
             </Link>
           ) : (
@@ -262,7 +262,7 @@ function ContenuBlock({ contenu }: { contenu: ContenuChild[] }) {
         <button
           type="button"
           onClick={addAllToCart}
-          className="inline-flex items-center gap-1 text-xs text-fg-muted underline"
+          className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
         >
           <Icon name="qr_code_2" className="text-sm" />
           Pack list
@@ -927,7 +927,7 @@ function EditForm({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Modifier</h1>
-        <button onClick={onCancel} className="text-sm text-fg-muted underline">
+        <button onClick={onCancel} className="text-sm text-fg-muted hover:text-fg">
           Annuler
         </button>
       </div>

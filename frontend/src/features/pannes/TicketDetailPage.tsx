@@ -216,7 +216,7 @@ export function TicketDetailPage() {
     return (
       <div className="space-y-4 py-8 text-center">
         <p className="text-sm text-danger">{error ?? "Ticket introuvable."}</p>
-        <Link to="/pannes/liste" className="text-sm text-fg-muted underline">
+        <Link to="/pannes/liste" className="text-sm text-fg-muted hover:text-fg">
           Retour à la liste
         </Link>
       </div>

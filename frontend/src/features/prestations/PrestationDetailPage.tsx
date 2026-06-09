@@ -185,7 +185,7 @@ export function PrestationDetailPage() {
     return (
       <div className="space-y-3 py-8 text-center">
         <p className="text-sm text-danger">{error}</p>
-        <Link to="/prestations" className="text-sm text-fg-muted underline">
+        <Link to="/prestations" className="text-sm text-fg-muted hover:text-fg">
           ← Retour aux prestations
         </Link>
       </div>
