@@ -43,6 +43,8 @@ class PrestationRead(BaseModel):
 class AllocationCreate(BaseModel):
     equipment_id: int
     quantite: int = Field(default=1, ge=1)
+    # Si l'équipement est un contenant, alloue aussi son contenu (items standard).
+    inclure_contenu: bool = False
 
 
 class AllocationRead(BaseModel):
@@ -59,6 +61,8 @@ class AllocationRead(BaseModel):
     equipment_nom: str | None = None
     equipment_barcode: str | None = None
     equipment_externe: bool = False
+    # Contenant de l'équipement (pour grouper la checklist sous son flight).
+    equipment_contenant_id: int | None = None
 
 
 class PrestationDetail(PrestationRead):

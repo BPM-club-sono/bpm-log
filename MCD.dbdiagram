@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "darkMode": false,
+  "darkMode": true,
   "gridEnabling": false,
   "currentViewName": null,
   "defaultView": {
@@ -39,8 +39,8 @@
       {
         "name": "logs_scans",
         "schemaName": "public",
-        "x": 547.2397080969876,
-        "y": 445.4627224880113
+        "x": 556.5119248938626,
+        "y": 445.4627224880114
       },
       {
         "name": "equipments_vrac",

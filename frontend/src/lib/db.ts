@@ -7,7 +7,8 @@ export type SyncItemType =
   | "log_scan"
   | "presta_check"
   | "vrac_delta"
-  | "conso_delta";
+  | "conso_delta"
+  | "deplacement";
 
 export interface SyncQueueItem {
   uuid_client: string;

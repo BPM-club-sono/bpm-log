@@ -6,7 +6,7 @@ import { syncEngine } from "@/lib/syncEngine";
 import type {
   Allocation,
   ClotureDecision,
-  Equipment,
+  EquipmentListItem,
   PrestationDetail,
 } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
@@ -185,7 +185,7 @@ export function PrestationDetailPage() {
     return (
       <div className="space-y-3 py-8 text-center">
         <p className="text-sm text-danger">{error}</p>
-        <Link to="/prestations" className="text-sm text-fg-muted underline">
+        <Link to="/prestations" className="text-sm text-fg-muted hover:text-fg">
           ← Retour aux prestations
         </Link>
       </div>
@@ -328,7 +328,7 @@ function InfoView({
   onReload: () => Promise<void>;
 }) {
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState<Equipment[]>([]);
+  const [results, setResults] = useState<EquipmentListItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [filter, setFilter] = useState<"tous" | "interne" | "location">("tous");
@@ -348,7 +348,7 @@ function InfoView({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const r = await api<Equipment[]>(
+        const r = await api<EquipmentListItem[]>(
           `/equipments?q=${encodeURIComponent(q)}`,
         );
         setResults(r.filter((e) => !allocatedIds.has(e.id)).slice(0, 8));
@@ -358,12 +358,13 @@ function InfoView({
     }, 300);
   }, [search, canManage, allocatedIds]);
 
-  async function addEquipment(eq: Equipment) {
+  async function addEquipment(eq: EquipmentListItem) {
     setAdding(true);
     try {
       await api(`/prestations/${detail.id}/allocations`, {
         method: "POST",
-        body: { equipment_id: eq.id, quantite: 1 },
+        // Un contenant entraîne son contenu (les items suivent la caisse).
+        body: { equipment_id: eq.id, quantite: 1, inclure_contenu: !!eq.est_contenant },
       });
       setSearch("");
       setResults([]);
@@ -428,11 +429,15 @@ function InfoView({
                     className="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-opacity hover:opacity-70"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
+                      <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        {e.est_contenant && (
+                          <Icon name="inventory_2" className="text-sm text-fg-muted" />
+                        )}
                         {e.nom}
                       </span>
                       <span className="block font-mono text-xs text-fg-muted">
                         {e.barcode_uid}
+                        {e.est_contenant ? " · contenu inclus" : ""}
                       </span>
                     </span>
                     <Icon name="add_circle" className="text-xl text-fg-muted" />

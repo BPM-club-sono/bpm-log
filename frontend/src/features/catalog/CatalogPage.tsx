@@ -85,13 +85,22 @@ export function CatalogPage() {
             {filtered.length} équipement{filtered.length > 1 ? "s" : ""}
           </p>
         </div>
-        <Link
-          to="/etiquettes"
-          className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
-        >
-          <Icon name="print" className="text-base" />
-          Étiquettes
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/inventaire/rangement"
+            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+          >
+            <Icon name="account_tree" className="text-base" />
+            Rangement
+          </Link>
+          <Link
+            to="/etiquettes"
+            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+          >
+            <Icon name="print" className="text-base" />
+            Étiquettes
+          </Link>
+        </div>
       </header>
 
       <div className="relative">

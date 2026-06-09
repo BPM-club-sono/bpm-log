@@ -112,6 +112,10 @@ class Emplacement(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(120))
     zone_stockage: Mapped[str | None] = mapped_column(String(120))
+    # Emplacement parent pour le rangement fixe imbriqué (Dépôt > Étagère A).
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("emplacements.id"), index=True)
+
+    parent: Mapped[Emplacement | None] = relationship(remote_side=[id])
 
 
 class Equipment(Base):
@@ -122,6 +126,9 @@ class Equipment(Base):
     nom: Mapped[str] = mapped_column(String(200))
     categorie_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
     emplacement_id: Mapped[int | None] = mapped_column(ForeignKey("emplacements.id"))
+    # Contenant direct (flight case…) : un équipement rangé DANS un autre équipement.
+    # Exclusif avec emplacement_id (cf. règle de frontière, PLAN). NULL = pas dans une caisse.
+    contenant_id: Mapped[int | None] = mapped_column(ForeignKey("equipments.id"), index=True)
     statut_actuel: Mapped[StatutEquipment] = mapped_column(
         _enum(StatutEquipment, "statut_equipment"),
         default=StatutEquipment.FONCTIONNEL,
@@ -137,6 +144,11 @@ class Equipment(Base):
     consommable: Mapped[EquipmentConsommable | None] = relationship(
         back_populates="equipment", uselist=False
     )
+    # Arbre des contenants (adjacency list) : contenant = parent, contenu = enfants.
+    contenant: Mapped[Equipment | None] = relationship(
+        back_populates="contenu", remote_side=[id]
+    )
+    contenu: Mapped[list[Equipment]] = relationship(back_populates="contenant")
 
 
 class EquipmentVrac(Base):

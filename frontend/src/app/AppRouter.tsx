@@ -24,6 +24,11 @@ const EquipmentCreatePage = lazy(() =>
     default: m.EquipmentCreatePage,
   })),
 );
+const ExplorerPage = lazy(() =>
+  import("@/features/equipment/ExplorerPage").then((m) => ({
+    default: m.ExplorerPage,
+  })),
+);
 const ProfilePage = lazy(() =>
   import("@/features/profile/ProfilePage").then((m) => ({ default: m.ProfilePage })),
 );
@@ -80,6 +85,7 @@ const router = createBrowserRouter([
           { path: "/", element: lazyRoute(<HomePage />) },
           { path: "/scan", element: lazyRoute(<ScanPage />) },
           { path: "/inventaire", element: lazyRoute(<CatalogPage />) },
+          { path: "/inventaire/rangement", element: lazyRoute(<ExplorerPage />) },
           { path: "/inventaire/nouveau", element: lazyRoute(<EquipmentCreatePage />) },
           { path: "/inventaire/:id", element: lazyRoute(<EquipmentDetailPage />) },
           { path: "/etiquettes", element: lazyRoute(<LabelsPage />) },

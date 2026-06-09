@@ -128,7 +128,7 @@ export function LabelsPage() {
       <div className="no-print flex items-center justify-between text-sm">
         <button
           onClick={() => setSelected(new Set(visible.map((l) => l.equipment.id)))}
-          className="font-medium text-fg-muted underline"
+          className="font-medium text-fg-muted hover:text-fg"
         >
           Tout sélectionner
         </button>

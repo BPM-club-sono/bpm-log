@@ -10,6 +10,7 @@ const TYPE_LABEL: Record<SyncQueueItem["type"], string> = {
   presta_check: "Pointage de prestation",
   vrac_delta: "Inventaire vrac",
   conso_delta: "Stock consommable",
+  deplacement: "Déplacement",
 };
 
 export function ConflictsPage() {

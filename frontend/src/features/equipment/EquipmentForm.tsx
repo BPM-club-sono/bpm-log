@@ -5,6 +5,7 @@ import type {
   Categorie,
   Emplacement,
   EquipmentDetail,
+  EquipmentListItem,
   EquipmentType,
   Fournisseur,
 } from "@/lib/types";
@@ -46,6 +47,7 @@ export function EquipmentForm({
   const [type, setType] = useState<EquipmentType>("standard");
   const [categorieId, setCategorieId] = useState<number | "">("");
   const [emplacementId, setEmplacementId] = useState<number | "">("");
+  const [contenantId, setContenantId] = useState<number | "">("");
   const [overrideBarcode, setOverrideBarcode] = useState(false);
   const [barcode, setBarcode] = useState("");
   const [quantite, setQuantite] = useState(1);
@@ -62,6 +64,7 @@ export function EquipmentForm({
 
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [emplacements, setEmplacements] = useState<Emplacement[]>([]);
+  const [containers, setContainers] = useState<EquipmentListItem[]>([]);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -69,14 +72,16 @@ export function EquipmentForm({
   useEffect(() => {
     void (async () => {
       try {
-        const [cat, emp, four] = await Promise.all([
+        const [cat, emp, four, eqs] = await Promise.all([
           api<Categorie[]>("/categories"),
           api<Emplacement[]>("/emplacements"),
           api<Fournisseur[]>("/fournisseurs"),
+          api<EquipmentListItem[]>("/equipments"),
         ]);
         setCategories(cat);
         setEmplacements(emp);
         setFournisseurs(four);
+        setContainers(eqs);
       } catch {
         // listes non bloquantes
       }
@@ -100,9 +105,11 @@ export function EquipmentForm({
         nom: nom.trim(),
         type,
         categorie_id: categorieId === "" ? null : categorieId,
-        emplacement_id: emplacementId === "" ? null : emplacementId,
         externe,
       };
+      // Rangement : contenant prioritaire sur emplacement (exclusifs côté serveur).
+      if (contenantId !== "") body.contenant_id = contenantId;
+      else body.emplacement_id = emplacementId === "" ? null : emplacementId;
       if (overrideBarcode && barcode.trim()) body.barcode_uid = barcode.trim();
       if (type === "vrac") body.quantite_theorique = quantiteTheo;
       if (type === "consommable") {
@@ -212,15 +219,34 @@ export function EquipmentForm({
       <Field label="Emplacement">
         <select
           value={emplacementId}
-          onChange={(e) =>
-            setEmplacementId(e.target.value === "" ? "" : Number(e.target.value))
-          }
+          onChange={(e) => {
+            setEmplacementId(e.target.value === "" ? "" : Number(e.target.value));
+            if (e.target.value !== "") setContenantId("");
+          }}
+          disabled={contenantId !== ""}
           className={inputCls}
         >
           <option value="">—</option>
           {emplacements.map((em) => (
             <option key={em.id} value={em.id}>
               {em.nom}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Ou ranger dans un contenant (flight…)">
+        <select
+          value={contenantId}
+          onChange={(e) => {
+            setContenantId(e.target.value === "" ? "" : Number(e.target.value));
+            if (e.target.value !== "") setEmplacementId("");
+          }}
+          className={inputCls}
+        >
+          <option value="">—</option>
+          {containers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nom}
             </option>
           ))}
         </select>
