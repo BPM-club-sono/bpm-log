@@ -147,6 +147,53 @@ async def _check_no_cycle(db: DbSession, item_id: int | None, new_parent_id: int
         current_id = parent.contenant_id
 
 
+async def _ensure_flight(db: DbSession, contenant_id: int) -> Equipment:
+    """Vérifie que la cible d'un rangement est bien un flight (est_contenant).
+
+    Lève 404 si l'équipement cible n'existe pas, 400 s'il n'est pas un flight.
+    À appeler avant `_check_no_cycle` lors d'une assignation de `contenant_id`.
+    """
+    contenant = await db.get(Equipment, contenant_id)
+    if contenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Contenant introuvable."
+        )
+    if not contenant.est_contenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="L'équipement cible n'est pas un flight (contenant).",
+        )
+    return contenant
+
+
+async def _apply_est_contenant(db: DbSession, eq: Equipment, value: bool) -> None:
+    """Change le marquage flight d'un équipement en protégeant les invariants.
+
+    400 si on marque un vrac/consommable, 409 si on démarque un flight non vide.
+    """
+    if value == eq.est_contenant:
+        return
+    if value:
+        has_vrac = await db.get(EquipmentVrac, eq.id)
+        has_conso = await db.get(EquipmentConsommable, eq.id)
+        if has_vrac is not None or has_conso is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Seul un équipement standard peut être un flight.",
+            )
+        eq.est_contenant = True
+    else:
+        child_id = await db.scalar(
+            select(Equipment.id).where(Equipment.contenant_id == eq.id).limit(1)
+        )
+        if child_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ce flight contient encore du matériel. Videz-le d'abord.",
+            )
+        eq.est_contenant = False
+
+
 async def _compute_chemin(db: DbSession, eq: Equipment) -> list[PathSegment]:
     """Fil d'Ariane de localisation, du plus large au plus précis (exclut `eq`).
 
@@ -224,16 +271,6 @@ async def _build_contenu(db: DbSession, container_id: int) -> list[ContenuChild]
             )
         ).all()
     }
-    parent_ids = {
-        eid
-        for (eid,) in (
-            await db.execute(
-                select(Equipment.contenant_id)
-                .where(Equipment.contenant_id.in_(child_ids))
-                .distinct()
-            )
-        ).all()
-    }
     return [
         ContenuChild(
             id=c.id,
@@ -242,7 +279,7 @@ async def _build_contenu(db: DbSession, container_id: int) -> list[ContenuChild]
             type=_derive_type(c.id in vrac_ids, c.id in conso_ids),
             statut_actuel=c.statut_actuel,
             photo_url=build_photo_url(c.photo_chemin),
-            est_contenant=c.id in parent_ids,
+            est_contenant=c.est_contenant,
         )
         for c in children
     ]
@@ -366,7 +403,7 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         emplacement_nom=emplacement.nom if emplacement else None,
         contenant_id=eq.contenant_id,
         contenant_nom=contenant.nom if contenant else None,
-        est_contenant=bool(contenu),
+        est_contenant=eq.est_contenant,
         chemin=chemin,
         contenu=contenu,
         statut_actuel=eq.statut_actuel,
@@ -429,12 +466,9 @@ async def list_equipments(
     # Maps en masse (parc de petite taille).
     cat_map = {c.id: c.nom for c in (await db.scalars(select(Categorie))).all()}
     emp_map = {e.id: e.nom for e in (await db.scalars(select(Emplacement))).all()}
-    # Nom de chaque équipement (pour contenant_nom) + ids ayant du contenu.
-    eq_rows = (
-        await db.execute(select(Equipment.id, Equipment.nom, Equipment.contenant_id))
-    ).all()
-    eq_nom_map = {i: n for i, n, _ in eq_rows}
-    container_ids = {c for _, _, c in eq_rows if c is not None}
+    # Nom de chaque équipement (pour contenant_nom).
+    eq_rows = (await db.execute(select(Equipment.id, Equipment.nom))).all()
+    eq_nom_map = {i: n for i, n in eq_rows}
     vrac_map = {v.equipment_id: v for v in (await db.scalars(select(EquipmentVrac))).all()}
     conso_map = {
         c.equipment_id: c for c in (await db.scalars(select(EquipmentConsommable))).all()
@@ -502,7 +536,7 @@ async def list_equipments(
                 emplacement_nom=emp_map.get(eq.emplacement_id) if eq.emplacement_id else None,
                 contenant_id=eq.contenant_id,
                 contenant_nom=eq_nom_map.get(eq.contenant_id) if eq.contenant_id else None,
-                est_contenant=eq.id in container_ids,
+                est_contenant=eq.est_contenant,
                 statut_actuel=eq.statut_actuel,
                 photo_url=build_photo_url(eq.photo_chemin),
                 type=eq_type,
@@ -607,9 +641,15 @@ async def create_equipment(
     user: RequireStaff,
     db: DbSession,
 ) -> EquipmentDetail:
-    """Crée un équipement (standard/vrac/consommable, option location externe)."""
+    """Crée un équipement (standard/vrac/consommable, flight, option location externe)."""
+    if payload.est_contenant and payload.type != "standard":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Seul un équipement standard peut être un flight.",
+        )
     # Règle de frontière : ranger dans un contenant exclut l'emplacement fixe.
     if payload.contenant_id is not None:
+        await _ensure_flight(db, payload.contenant_id)
         await _check_no_cycle(db, None, payload.contenant_id)
     eq = Equipment(
         barcode_uid=f"tmp-{uuid_lib.uuid4().hex}",
@@ -617,6 +657,7 @@ async def create_equipment(
         categorie_id=payload.categorie_id,
         emplacement_id=None if payload.contenant_id is not None else payload.emplacement_id,
         contenant_id=payload.contenant_id,
+        est_contenant=payload.est_contenant,
         statut_actuel=payload.statut_actuel,
         created_by_membre_id=user.id,
     )
@@ -690,9 +731,12 @@ async def update_equipment(
         eq.emplacement_id = payload.emplacement_id
         eq.contenant_id = None
     if payload.contenant_id is not None:
+        await _ensure_flight(db, payload.contenant_id)
         await _check_no_cycle(db, eq.id, payload.contenant_id)
         eq.contenant_id = payload.contenant_id
         eq.emplacement_id = None
+    if payload.est_contenant is not None:
+        await _apply_est_contenant(db, eq, payload.est_contenant)
     if payload.statut_actuel is not None:
         if payload.statut_actuel != eq.statut_actuel:
             # Trace le changement de statut dans l'historique d'activité.

@@ -245,10 +245,13 @@ function Preview({ item }: { item: EquipmentListItem }) {
           {item.categorie_nom}
         </span>
       )}
-      {item.emplacement_nom && (
+      {(item.contenant_nom || item.emplacement_nom) && (
         <span className="inline-flex items-center gap-1">
-          <Icon name="location_on" className="text-sm" />
-          {item.emplacement_nom}
+          <Icon
+            name={item.contenant_nom ? "inventory_2" : "location_on"}
+            className="text-sm"
+          />
+          {item.contenant_nom ?? item.emplacement_nom}
         </span>
       )}
       {item.externe && (

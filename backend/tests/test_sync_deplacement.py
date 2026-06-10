@@ -34,7 +34,9 @@ async def test_deplacement_dans_contenant_et_idempotence(db_session):
     etagere = Emplacement(nom="Étagère Test")
     session.add(etagere)
     await session.flush()
-    flight = await _mk_eq(session, "Flight Test", emplacement_id=etagere.id)
+    flight = await _mk_eq(
+        session, "Flight Test", emplacement_id=etagere.id, est_contenant=True
+    )
     lyre = await _mk_eq(session, "Lyre Test", emplacement_id=etagere.id)
 
     item = _item({"equipment_id": lyre.id, "contenant_destination_id": flight.id})
@@ -56,10 +58,24 @@ async def test_deplacement_dans_contenant_et_idempotence(db_session):
 
 async def test_deplacement_boucle_refusee(db_session):
     session = db_session
-    flight = await _mk_eq(session, "Flight Test")
-    lyre = await _mk_eq(session, "Lyre Test", contenant_id=flight.id)
+    flight = await _mk_eq(session, "Flight Test", est_contenant=True)
+    sous_flight = await _mk_eq(
+        session, "Sous-flight Test", contenant_id=flight.id, est_contenant=True
+    )
 
     # Ranger le flight DANS son propre enfant doit lever un conflit.
-    item = _item({"equipment_id": flight.id, "contenant_destination_id": lyre.id})
+    item = _item({"equipment_id": flight.id, "contenant_destination_id": sous_flight.id})
     with pytest.raises(_Conflict):
         await _apply_deplacement(session, item, membre_id=1)
+
+
+async def test_deplacement_vers_non_flight_refuse(db_session):
+    session = db_session
+    lyre = await _mk_eq(session, "Lyre Test")
+    ampli = await _mk_eq(session, "Ampli Test")
+
+    # La destination n'est pas un flight (est_contenant=False) : conflit arbitrable.
+    item = _item({"equipment_id": ampli.id, "contenant_destination_id": lyre.id})
+    with pytest.raises(_Conflict):
+        await _apply_deplacement(session, item, membre_id=1)
+    assert ampli.contenant_id is None
