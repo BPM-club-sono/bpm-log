@@ -19,10 +19,16 @@ Tu ne corriges JAMAIS le code — tu diagnostiques et tu rapportes.
 
 ## Préparation
 
-1. Vérifie que les serveurs répondent :
+1. **Worktree ou checkout principal ?** Si un fichier `.stack.json` existe à la racine
+   du repo (`git rev-parse --show-toplevel`), c'est un stack isolé par worktree : lis-y
+   `front_url` et `api_url` et utilise ces URLs pour TOUT le test — les ports 5173/8000
+   appartiennent au checkout principal, pas au worktree. Si tu es dans un worktree SANS
+   `.stack.json`, lance `scripts/worktree-stack.sh up` (long au premier lancement :
+   npm install + build de l'image API) puis lis le `.stack.json` produit.
+2. Dans le checkout principal, vérifie que les serveurs répondent :
    - Frontend : `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173`
    - API : `curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health`
-2. Si l'un manque, démarre-le :
+   Si l'un manque, démarre-le :
    - DB : `docker compose up -d db` depuis la racine du repo.
    - API : `../.venv/bin/uvicorn app.main:app --reload` depuis `backend/` (en arrière-plan).
    - Frontend : `npm run dev` depuis `frontend/` (en arrière-plan).
@@ -32,7 +38,8 @@ Tu ne corriges JAMAIS le code — tu diagnostiques et tu rapportes.
 
 ## Connexion
 
-- App : `http://localhost:5173`. Compte admin : `admin@bpm.fr` / `bpm1234`.
+- App : `front_url` du `.stack.json` en worktree, sinon `http://localhost:5173`.
+  Compte admin : `admin@bpm.fr` / `bpm1234`.
 - C'est une PWA utilisée sur téléphone par des techniciens terrain : pour les flux
   terrain (scan, prestations, pannes), passe en viewport mobile avec `resize_page`
   (~390×844) avant de tester.
