@@ -33,8 +33,8 @@ export function RangementField({
   flights,
 }: RangementFieldProps) {
   return (
-    <div className="space-y-1">
-      <span className="text-xs font-medium text-fg-muted">Rangement</span>
+    <div>
+      <span className="mb-1 block text-xs font-medium text-fg-muted">Rangement</span>
       <div className="flex gap-1.5">
         {(["emplacement", "contenant"] as const).map((m) => (
           <button
@@ -55,7 +55,7 @@ export function RangementField({
           onChange={(e) =>
             onEmplacementChange(e.target.value === "" ? "" : Number(e.target.value))
           }
-          className={`${inputCls} mt-1`}
+          className={`${inputCls} mt-4`}
         >
           <option value="">—</option>
           {emplacements.map((em) => (
@@ -70,7 +70,7 @@ export function RangementField({
           onChange={(e) =>
             onContenantChange(e.target.value === "" ? "" : Number(e.target.value))
           }
-          className={`${inputCls} mt-1`}
+          className={`${inputCls} mt-4`}
         >
           <option value="">— choisir un flight —</option>
           {flights.map((c) => (
