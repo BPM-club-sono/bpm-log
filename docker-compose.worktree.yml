@@ -1,0 +1,40 @@
+# Stack isolé par worktree : db + api uniquement, sans container_name fixe et avec
+# ports hôte éphémères, pour que plusieurs stacks coexistent (un par worktree).
+# Ne pas lancer à la main : utiliser scripts/worktree-stack.sh, qui fournit le
+# nom de projet (-p), clone la DB de dev et démarre vite sur un port libre.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bpm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bpm}
+      POSTGRES_DB: ${POSTGRES_DB:-bpm_log}
+    ports:
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bpm} -d ${POSTGRES_DB:-bpm_log}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bpm}:${POSTGRES_PASSWORD:-bpm}@db:5432/${POSTGRES_DB:-bpm_log}
+    ports:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - photos:/var/bpm/photos
+
+volumes:
+  pgdata:
+  photos:

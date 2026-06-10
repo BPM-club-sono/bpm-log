@@ -543,6 +543,36 @@
         "secondSchemaName": "public",
         "secondRelation": "1",
         "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "contenant_id"
+        ],
+        "firstTableName": "equipments",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "parent_id"
+        ],
+        "firstTableName": "emplacements",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "emplacements",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
       }
     ]
   },

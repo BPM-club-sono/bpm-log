@@ -60,7 +60,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8000",
+      // Surchargé par scripts/worktree-stack.sh (port API dynamique par worktree).
+      "/api": process.env.API_PROXY_TARGET || "http://localhost:8000",
     },
   },
 });

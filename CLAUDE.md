@@ -45,6 +45,18 @@ docker compose up -d           # db + adminer (:8081) + api (:8000) + frontend (
 
 The API container runs migrations automatically on start (`backend/entrypoint.sh` → `alembic upgrade head`). `docker-compose.prod.yml` + `Caddyfile` are the production setup (Caddy reverse proxy, TLS).
 
+### Stack par worktree (tests en parallèle)
+
+Dans un worktree git, ne jamais utiliser `docker compose up` ni supposer les ports 5173/8000 (ils appartiennent au checkout principal). Chaque worktree a son stack isolé :
+
+```bash
+scripts/worktree-stack.sh up      # db+api docker isolés (ports dynamiques) + vite dev ; clone la DB de dev
+scripts/worktree-stack.sh down    # détruit le stack du worktree courant (down --all : tous + orphelins)
+scripts/worktree-stack.sh status  # liste les stacks actifs
+```
+
+`up` écrit **`.stack.json`** à la racine du worktree avec `front_url` / `api_url` : c'est là qu'il faut lire les URLs à tester. La DB du worktree est un clone de la DB de dev (`bpm_log_db` doit tourner), par-dessus lequel l'entrypoint applique les migrations du worktree ; elle est jetable (`down` la détruit).
+
 ## Architecture
 
 ### Offline-first sync — the core invariant
