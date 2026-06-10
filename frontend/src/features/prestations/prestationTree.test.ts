@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Allocation } from "@/lib/types";
-import { buildAllocTree, current, target } from "./prestationTree";
+import { buildAllocTree, current, fournisseurChips, target } from "./prestationTree";
 
 function alloc(
   id: number,
@@ -64,6 +64,44 @@ describe("buildAllocTree", () => {
     const { descendantsOf } = buildAllocTree([a, b]);
     // Pas de top-level (chacun a un parent présent), mais descendantsOf termine.
     expect(ids(descendantsOf(a))).toEqual([2]);
+  });
+});
+
+describe("fournisseurChips", () => {
+  const externe = (id: number, fid: number, fnom: string | null) =>
+    alloc(id, id * 10, {
+      equipment_externe: true,
+      fournisseur_id: fid,
+      fournisseur_nom: fnom,
+    });
+
+  it("ignore le matériel BPM (non externe)", () => {
+    const chips = fournisseurChips([alloc(1, 10), externe(2, 5, "Trocadéro")]);
+    expect(chips).toEqual([{ id: 5, nom: "Trocadéro" }]);
+  });
+
+  it("dédoublonne par fournisseur_id et trie par nom", () => {
+    const chips = fournisseurChips([
+      externe(1, 7, "SoundLight"),
+      externe(2, 5, "Trocadéro"),
+      externe(3, 5, "Trocadéro"),
+    ]);
+    expect(chips).toEqual([
+      { id: 7, nom: "SoundLight" },
+      { id: 5, nom: "Trocadéro" },
+    ]);
+  });
+
+  it("repli « Location » quand le nom manque", () => {
+    const chips = fournisseurChips([externe(1, 9, null)]);
+    expect(chips).toEqual([{ id: 9, nom: "Location" }]);
+  });
+
+  it("ignore un externe sans fournisseur_id", () => {
+    const chips = fournisseurChips([
+      alloc(1, 10, { equipment_externe: true, fournisseur_id: null }),
+    ]);
+    expect(chips).toEqual([]);
   });
 });
 

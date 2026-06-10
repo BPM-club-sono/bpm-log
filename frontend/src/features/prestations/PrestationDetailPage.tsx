@@ -14,7 +14,7 @@ import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
-import { buildAllocTree } from "./prestationTree";
+import { buildAllocTree, fournisseurChips } from "./prestationTree";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
 
@@ -343,7 +343,8 @@ function InfoView({
   const [results, setResults] = useState<EquipmentListItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [filter, setFilter] = useState<"tous" | "interne" | "location">("tous");
+  // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
+  const [filter, setFilter] = useState<string>("tous");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allocatedIds = useMemo(
     () => new Set(allocs.map((a) => a.equipment_id)),
@@ -406,13 +407,15 @@ function InfoView({
 
   const editable = canManage && detail.statut === "En_preparation";
 
-  const hasBoth =
-    allocs.some((a) => a.equipment_externe) &&
-    allocs.some((a) => !a.equipment_externe);
+  const hasInterne = allocs.some((a) => !a.equipment_externe);
+  const chips = fournisseurChips(allocs);
+  const filterGroups: [string, string][] = [["tous", "Tous"]];
+  if (hasInterne) filterGroups.push(["interne", "Matériel BPM"]);
+  for (const c of chips) filterGroups.push([String(c.id), c.nom]);
   const visibleAllocs = allocs.filter((a) => {
+    if (filter === "tous") return true;
     if (filter === "interne") return !a.equipment_externe;
-    if (filter === "location") return a.equipment_externe;
-    return true;
+    return a.equipment_externe && String(a.fournisseur_id) === filter;
   });
 
   // Arbre des contenants : les items d'un flight sont affichés imbriqués sous
@@ -504,15 +507,9 @@ function InfoView({
           </p>
         </div>
 
-        {hasBoth && (
-          <div className="flex gap-1.5">
-            {(
-              [
-                ["tous", "Tous"],
-                ["interne", "Matériel BPM"],
-                ["location", "Location"],
-              ] as const
-            ).map(([f, label]) => (
+        {filterGroups.length > 2 && (
+          <div className="flex flex-wrap gap-1.5">
+            {filterGroups.map(([f, label]) => (
               <button
                 key={f}
                 type="button"
@@ -674,6 +671,19 @@ function ClotureView({
   );
   const [decisions, setDecisions] = useState<Record<number, ClotureDecision>>({});
   const [saving, setSaving] = useState(false);
+  // Filtre par loueur : trancher les écarts un prestataire à la fois.
+  const [filter, setFilter] = useState<string>("tous");
+
+  const hasInterne = ecarts.some((a) => !a.equipment_externe);
+  const chips = fournisseurChips(ecarts);
+  const filterGroups: [string, string][] = [["tous", "Tous"]];
+  if (hasInterne) filterGroups.push(["interne", "Matériel BPM"]);
+  for (const c of chips) filterGroups.push([String(c.id), c.nom]);
+  const visibleEcarts = ecarts.filter((a) => {
+    if (filter === "tous") return true;
+    if (filter === "interne") return !a.equipment_externe;
+    return a.equipment_externe && String(a.fournisseur_id) === filter;
+  });
 
   async function submit() {
     setSaving(true);
@@ -719,8 +729,26 @@ function ClotureView({
         {ecarts.length} ligne{ecarts.length > 1 ? "s" : ""} avec un écart. Tranche
         chaque cas :
       </p>
+      {filterGroups.length > 2 && (
+        <div className="flex flex-wrap gap-1.5">
+          {filterGroups.map(([f, label]) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                filter === f
+                  ? "border-fg bg-fg text-bg"
+                  : "border-line bg-bg-soft text-fg-muted"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       <ul className="divide-y divide-line">
-        {ecarts.map((a) => (
+        {visibleEcarts.map((a) => (
           <li
             key={a.id}
             className="space-y-2 py-3"

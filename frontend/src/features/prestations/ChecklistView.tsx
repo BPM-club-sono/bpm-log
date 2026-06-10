@@ -1,7 +1,13 @@
 import { useState } from "react";
 import type { Allocation, TypePrestation } from "@/lib/types";
 import { Icon } from "@/shared/Icon";
-import { buildAllocTree, current, target, type ChecklistSens } from "./prestationTree";
+import {
+  buildAllocTree,
+  current,
+  fournisseurChips,
+  target,
+  type ChecklistSens,
+} from "./prestationTree";
 
 export type { ChecklistSens };
 
@@ -27,7 +33,8 @@ function flightVerb(externe: boolean, sens: ChecklistSens): string {
   return externe ? "Rendre" : "Retourner";
 }
 
-type Filter = "tous" | "interne" | "location";
+// "tous" | "interne" (matériel BPM) | String(fournisseur_id) (un loueur précis).
+type Filter = string;
 
 export function ChecklistView({
   sens,
@@ -47,13 +54,17 @@ export function ChecklistView({
       ? allocations.filter((a) => a.equipment_externe)
       : allocations;
 
-  const hasBoth =
-    base.some((a) => a.equipment_externe) && base.some((a) => !a.equipment_externe);
+  // Chips de filtre : Tous, Matériel BPM (si présent), puis un chip par loueur.
+  const hasInterne = base.some((a) => !a.equipment_externe);
+  const chips = fournisseurChips(base);
+  const filterGroups: [Filter, string][] = [["tous", "Tous"]];
+  if (hasInterne) filterGroups.push(["interne", "Matériel BPM"]);
+  for (const c of chips) filterGroups.push([String(c.id), c.nom]);
 
   const visible = base.filter((a) => {
+    if (filter === "tous") return true;
     if (filter === "interne") return !a.equipment_externe;
-    if (filter === "location") return a.equipment_externe;
-    return true;
+    return a.equipment_externe && String(a.fournisseur_id) === filter;
   });
 
   // Arbre des contenants : un flight est affiché en une seule ligne ; ses
@@ -245,15 +256,9 @@ export function ChecklistView({
         />
       </form>
 
-      {hasBoth && (
-        <div className="flex gap-1.5">
-          {(
-            [
-              ["tous", "Tous"],
-              ["interne", "Matériel BPM"],
-              ["location", "Location"],
-            ] as [Filter, string][]
-          ).map(([f, label]) => (
+      {filterGroups.length > 2 && (
+        <div className="flex flex-wrap gap-1.5">
+          {filterGroups.map(([f, label]) => (
             <button
               key={f}
               type="button"
