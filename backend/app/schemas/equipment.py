@@ -196,6 +196,8 @@ class EquipmentCreate(BaseModel):
     categorie_id: int | None = None
     emplacement_id: int | None = None
     contenant_id: int | None = None
+    # Flight : équipement contenant (rangement). Réservé au type standard.
+    est_contenant: bool = False
     statut_actuel: StatutEquipment = StatutEquipment.FONCTIONNEL
     barcode_uid: str | None = None
     # Vrac
@@ -216,6 +218,7 @@ class EquipmentUpdate(BaseModel):
     categorie_id: int | None = None
     emplacement_id: int | None = None
     contenant_id: int | None = None
+    est_contenant: bool | None = None
     statut_actuel: StatutEquipment | None = None
     barcode_uid: str | None = None
     # Vrac

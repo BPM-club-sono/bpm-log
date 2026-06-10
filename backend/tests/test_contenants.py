@@ -31,13 +31,24 @@ async def test_chemin_contenu_et_anti_boucle(db_session):
     await session.flush()
 
     # Flight Test sur l'Étagère, contenant une Lyre Test
-    flight = await _mk_eq(session, "Flight Test", emplacement_id=etagere.id)
+    flight = await _mk_eq(
+        session, "Flight Test", emplacement_id=etagere.id, est_contenant=True
+    )
     lyre = await _mk_eq(session, "Lyre Test", contenant_id=flight.id)
 
     # Contenu : le flight contient la lyre
     contenu = await _build_contenu(session, flight.id)
     assert [c.id for c in contenu] == [lyre.id]
     assert contenu[0].nom == "Lyre Test"
+    assert contenu[0].est_contenant is False
+
+    # Un flight vide rangé dans le flight reste signalé contenant (colonne stockée).
+    sous_flight = await _mk_eq(
+        session, "Sous-flight Test", contenant_id=flight.id, est_contenant=True
+    )
+    contenu = await _build_contenu(session, flight.id)
+    par_id = {c.id: c for c in contenu}
+    assert par_id[sous_flight.id].est_contenant is True
 
     # Chemin de la lyre : Dépôt > Étagère > Flight (exclut la lyre elle-même)
     chemin = await _compute_chemin(session, lyre)

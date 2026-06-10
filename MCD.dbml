@@ -103,6 +103,7 @@ Table emplacements {
   id integer [primary key, increment]
   nom varchar // ex: 'Étagère A', 'Bac Câbles XLR', 'Dépôt Principal'
   zone_stockage varchar
+  parent_id integer [note: 'Self-FK — rangement fixe imbriqué (Dépôt > Étagère A)']
 }
 
 Table equipments {
@@ -111,6 +112,8 @@ Table equipments {
   nom varchar // ex: 'Lyre Beam 7R', 'Ampli Crown XTi'
   categorie_id integer
   emplacement_id integer
+  contenant_id integer [note: 'Self-FK — rangé DANS un autre équipement (flight). Exclusif avec emplacement_id']
+  est_contenant boolean [default: false, note: 'Flight/contenant : seul un équipement marqué peut recevoir du contenu']
   statut_actuel statut_equipment
   created_at timestamp
   created_by_membre_id integer
@@ -243,7 +246,9 @@ Table allocations_presta {
 
 Ref: equipments.categorie_id > categories.id
 Ref: equipments.emplacement_id > emplacements.id
+Ref: equipments.contenant_id > equipments.id
 Ref: equipments.created_by_membre_id > membres.id
+Ref: emplacements.parent_id > emplacements.id
 
 // Relation faible : equipments_vrac dépend totalement de equipments
 Ref: equipments_vrac.equipment_id - equipments.id

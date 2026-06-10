@@ -129,6 +129,8 @@ class Equipment(Base):
     # Contenant direct (flight case…) : un équipement rangé DANS un autre équipement.
     # Exclusif avec emplacement_id (cf. règle de frontière, PLAN). NULL = pas dans une caisse.
     contenant_id: Mapped[int | None] = mapped_column(ForeignKey("equipments.id"), index=True)
+    # Flight/contenant explicite : seul un équipement marqué peut recevoir du contenu.
+    est_contenant: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     statut_actuel: Mapped[StatutEquipment] = mapped_column(
         _enum(StatutEquipment, "statut_equipment"),
         default=StatutEquipment.FONCTIONNEL,

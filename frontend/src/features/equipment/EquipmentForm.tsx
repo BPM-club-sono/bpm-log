@@ -12,14 +12,19 @@ import type {
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { ExterneFields, Field } from "./EquipmentDetailPage";
+import { RangementField, type RangementMode } from "./RangementField";
 
 const inputCls =
   "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
 
-const TYPES: { value: EquipmentType; label: string }[] = [
+/** Choix du formulaire : « flight » = équipement standard marqué contenant (est_contenant). */
+type FormType = EquipmentType | "flight";
+
+const TYPES: { value: FormType; label: string }[] = [
   { value: "standard", label: "Standard" },
   { value: "vrac", label: "Vrac" },
   { value: "consommable", label: "Consommable" },
+  { value: "flight", label: "Flight" },
 ];
 
 interface EquipmentFormProps {
@@ -44,8 +49,9 @@ export function EquipmentForm({
   onCreated,
 }: EquipmentFormProps) {
   const [nom, setNom] = useState("");
-  const [type, setType] = useState<EquipmentType>("standard");
+  const [type, setType] = useState<FormType>("standard");
   const [categorieId, setCategorieId] = useState<number | "">("");
+  const [rangementMode, setRangementMode] = useState<RangementMode>("emplacement");
   const [emplacementId, setEmplacementId] = useState<number | "">("");
   const [contenantId, setContenantId] = useState<number | "">("");
   const [overrideBarcode, setOverrideBarcode] = useState(false);
@@ -103,13 +109,18 @@ export function EquipmentForm({
     try {
       const body: Record<string, unknown> = {
         nom: nom.trim(),
-        type,
+        // « Flight » = équipement standard marqué contenant.
+        type: type === "flight" ? "standard" : type,
+        est_contenant: type === "flight",
         categorie_id: categorieId === "" ? null : categorieId,
         externe,
       };
-      // Rangement : contenant prioritaire sur emplacement (exclusifs côté serveur).
-      if (contenantId !== "") body.contenant_id = contenantId;
-      else body.emplacement_id = emplacementId === "" ? null : emplacementId;
+      // Rangement : emplacement fixe OU contenant (exclusifs côté serveur).
+      if (rangementMode === "contenant" && contenantId !== "") {
+        body.contenant_id = contenantId;
+      } else {
+        body.emplacement_id = emplacementId === "" ? null : emplacementId;
+      }
       if (overrideBarcode && barcode.trim()) body.barcode_uid = barcode.trim();
       if (type === "vrac") body.quantite_theorique = quantiteTheo;
       if (type === "consommable") {
@@ -185,7 +196,7 @@ export function EquipmentForm({
       )}
 
       <Field label="Type">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {TYPES.map((t) => (
             <button
               key={t.value}
@@ -216,41 +227,16 @@ export function EquipmentForm({
           ))}
         </select>
       </Field>
-      <Field label="Emplacement">
-        <select
-          value={emplacementId}
-          onChange={(e) => {
-            setEmplacementId(e.target.value === "" ? "" : Number(e.target.value));
-            if (e.target.value !== "") setContenantId("");
-          }}
-          disabled={contenantId !== ""}
-          className={inputCls}
-        >
-          <option value="">—</option>
-          {emplacements.map((em) => (
-            <option key={em.id} value={em.id}>
-              {em.nom}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Ou ranger dans un contenant (flight…)">
-        <select
-          value={contenantId}
-          onChange={(e) => {
-            setContenantId(e.target.value === "" ? "" : Number(e.target.value));
-            if (e.target.value !== "") setEmplacementId("");
-          }}
-          className={inputCls}
-        >
-          <option value="">—</option>
-          {containers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <RangementField
+        mode={rangementMode}
+        onModeChange={setRangementMode}
+        emplacementId={emplacementId}
+        onEmplacementChange={setEmplacementId}
+        contenantId={contenantId}
+        onContenantChange={setContenantId}
+        emplacements={emplacements}
+        flights={containers.filter((c) => c.est_contenant)}
+      />
 
       {type === "vrac" && (
         <Field label="Quantité théorique">

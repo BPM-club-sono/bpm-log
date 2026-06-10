@@ -378,6 +378,8 @@ async def _apply_deplacement(
         contenant = await db.get(Equipment, cid)
         if contenant is None:
             raise _Conflict("Contenant de destination introuvable.")
+        if not contenant.est_contenant:
+            raise _Conflict("La destination n'est pas un flight (contenant).")
         await _ensure_no_cycle(db, equipment.id, cid)
         equipment.contenant_id = cid
         equipment.emplacement_id = None

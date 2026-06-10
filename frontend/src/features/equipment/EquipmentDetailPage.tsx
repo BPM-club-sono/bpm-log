@@ -22,6 +22,7 @@ import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { StatusBadge } from "@/shared/StatusBadge";
 import { useToast } from "@/shared/Toast";
+import { RangementField, type RangementMode } from "./RangementField";
 
 const STATUTS: { value: StatutEquipment; label: string }[] = [
   { value: "Fonctionnel", label: "Fonctionnel" },
@@ -162,7 +163,21 @@ export function EquipmentDetailPage() {
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
           <Info label="Catégorie" value={eq.categorie_nom} />
-          <Info label="Emplacement" value={eq.emplacement_nom} />
+          <Info
+            label="Rangement"
+            value={
+              eq.contenant_id ? (
+                <Link
+                  to={`/inventaire/${eq.contenant_id}`}
+                  className="font-medium hover:text-fg-muted"
+                >
+                  {eq.contenant_nom}
+                </Link>
+              ) : (
+                eq.emplacement_nom
+              )
+            }
+          />
           {eq.externe && (
             <>
               <Info label="Fournisseur" value={eq.location?.fournisseur_nom ?? null} />
@@ -212,7 +227,7 @@ export function EquipmentDetailPage() {
   );
 }
 
-function Info({ label, value }: { label: string; value: string | null }) {
+function Info({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wide text-fg-muted">{label}</dt>
@@ -322,8 +337,8 @@ function MoveBlock({
           api<EquipmentListItem[]>("/equipments"),
         ]);
         setEmplacements(emp);
-        // Cibles contenant possibles : tout sauf soi-même (le serveur refuse les boucles).
-        setContainers(eqs.filter((e) => e.id !== equipmentId));
+        // Cibles : seulement les flights, sauf soi-même (le serveur refuse les boucles).
+        setContainers(eqs.filter((e) => e.est_contenant && e.id !== equipmentId));
       } catch {
         // listes non bloquantes
       }
@@ -357,7 +372,7 @@ function MoveBlock({
               mode === m ? "border-fg bg-fg text-bg" : "border-line bg-bg-elev text-fg"
             }`}
           >
-            {m === "emplacement" ? "Emplacement" : "Dans un contenant"}
+            {m === "emplacement" ? "Emplacement" : "Dans un flight"}
           </button>
         ))}
       </div>
@@ -823,10 +838,11 @@ function EditForm({
   const [emplacementId, setEmplacementId] = useState<number | "">(
     eq.emplacement_id ?? "",
   );
-  const [rangementMode, setRangementMode] = useState<"emplacement" | "contenant">(
+  const [rangementMode, setRangementMode] = useState<RangementMode>(
     eq.contenant_id ? "contenant" : "emplacement",
   );
   const [contenantId, setContenantId] = useState<number | "">(eq.contenant_id ?? "");
+  const [estContenant, setEstContenant] = useState(eq.est_contenant);
   const [containers, setContainers] = useState<EquipmentListItem[]>([]);
   const [statut, setStatut] = useState<StatutEquipment>(eq.statut_actuel);
   const [quantiteTheo, setQuantiteTheo] = useState<number>(
@@ -861,8 +877,8 @@ function EditForm({
         setCategories(cat);
         setEmplacements(emp);
         setFournisseurs(four);
-        // Cibles contenant : tout sauf soi-même (le serveur refuse les boucles).
-        setContainers(eqs.filter((e) => e.id !== eq.id));
+        // Cibles : seulement les flights, sauf soi-même (le serveur refuse les boucles).
+        setContainers(eqs.filter((e) => e.est_contenant && e.id !== eq.id));
       } catch {
         // listes non bloquantes
       }
@@ -891,6 +907,7 @@ function EditForm({
       } else {
         body.emplacement_id = emplacementId === "" ? null : emplacementId;
       }
+      if (eq.type === "standard") body.est_contenant = estContenant;
       if (eq.type === "vrac") body.quantite_theorique = quantiteTheo;
       if (eq.type === "consommable") {
         body.seuil_alerte = seuil;
@@ -983,56 +1000,27 @@ function EditForm({
           ))}
         </select>
       </Field>
-      <div className="space-y-1">
-        <span className="text-xs font-medium text-fg-muted">Rangement</span>
-        <div className="flex gap-1.5">
-          {(["emplacement", "contenant"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setRangementMode(m)}
-              className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                rangementMode === m
-                  ? "border-fg bg-fg text-bg"
-                  : "border-line bg-bg-elev text-fg"
-              }`}
-            >
-              {m === "emplacement" ? "Emplacement" : "Dans un contenant"}
-            </button>
-          ))}
-        </div>
-        {rangementMode === "emplacement" ? (
-          <select
-            value={emplacementId}
-            onChange={(e) =>
-              setEmplacementId(e.target.value === "" ? "" : Number(e.target.value))
-            }
-            className={`${inputCls} mt-1`}
-          >
-            <option value="">—</option>
-            {emplacements.map((em) => (
-              <option key={em.id} value={em.id}>
-                {em.nom}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <select
-            value={contenantId}
-            onChange={(e) =>
-              setContenantId(e.target.value === "" ? "" : Number(e.target.value))
-            }
-            className={`${inputCls} mt-1`}
-          >
-            <option value="">— choisir un contenant —</option>
-            {containers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nom}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      <RangementField
+        mode={rangementMode}
+        onModeChange={setRangementMode}
+        emplacementId={emplacementId}
+        onEmplacementChange={setEmplacementId}
+        contenantId={contenantId}
+        onContenantChange={setContenantId}
+        emplacements={emplacements}
+        flights={containers}
+      />
+      {eq.type === "standard" && (
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            checked={estContenant}
+            onChange={(e) => setEstContenant(e.target.checked)}
+            className="h-4 w-4 accent-fg"
+          />
+          Flight (peut contenir du matériel)
+        </label>
+      )}
       <Field label="Statut">
         <select
           value={statut}
