@@ -70,3 +70,30 @@ export function buildAllocTree(allocations: Allocation[]): AllocTree {
 
   return { topLevel, descendantsOf };
 }
+
+export interface FournisseurChip {
+  id: number;
+  nom: string;
+}
+
+/**
+ * Prestataires de location distincts présents dans les allocations, triés par
+ * nom. Sert à construire une chip de filtre par loueur (sortie/retour/détail) :
+ * on pointe le matériel un prestataire à la fois pour ne rien oublier.
+ *
+ * Le `fournisseur_nom` peut manquer sur un vieux snapshot offline → libellé de
+ * repli « Location ».
+ */
+export function fournisseurChips(allocations: Allocation[]): FournisseurChip[] {
+  const byId = new Map<number, string>();
+  for (const a of allocations) {
+    if (!a.equipment_externe) continue;
+    if (a.fournisseur_id == null) continue;
+    if (!byId.has(a.fournisseur_id)) {
+      byId.set(a.fournisseur_id, a.fournisseur_nom ?? "Location");
+    }
+  }
+  return [...byId.entries()]
+    .map(([id, nom]) => ({ id, nom }))
+    .sort((a, b) => a.nom.localeCompare(b.nom));
+}

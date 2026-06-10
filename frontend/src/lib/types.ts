@@ -70,6 +70,8 @@ export interface Allocation {
   equipment_nom: string | null;
   equipment_barcode: string | null;
   equipment_externe?: boolean;
+  fournisseur_id?: number | null;
+  fournisseur_nom?: string | null;
   equipment_contenant_id?: number | null;
 }
 

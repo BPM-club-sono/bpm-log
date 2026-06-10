@@ -18,6 +18,7 @@ from app.models import (
     EquipmentConsommable,
     EquipmentLocation,
     EquipmentVrac,
+    Fournisseur,
     Prestation,
     TicketReparation,
 )
@@ -40,7 +41,10 @@ from app.security.rbac import RequireStaff
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
 
-def _allocation_read(alloc: AllocationPresta, externe: bool = False) -> AllocationRead:
+def _allocation_read(
+    alloc: AllocationPresta, loc: tuple[int, str] | None = None
+) -> AllocationRead:
+    """`loc` = (fournisseur_id, fournisseur_nom) si l'équipement est loué, sinon None."""
     eq = alloc.equipment if "equipment" in alloc.__dict__ else None
     return AllocationRead(
         id=alloc.id,
@@ -52,7 +56,9 @@ def _allocation_read(alloc: AllocationPresta, externe: bool = False) -> Allocati
         statut=alloc.statut,
         equipment_nom=eq.nom if eq is not None else None,
         equipment_barcode=eq.barcode_uid if eq is not None else None,
-        equipment_externe=externe,
+        equipment_externe=loc is not None,
+        fournisseur_id=loc[0] if loc is not None else None,
+        fournisseur_nom=loc[1] if loc is not None else None,
         equipment_contenant_id=eq.contenant_id if eq is not None else None,
     )
 
@@ -138,11 +144,17 @@ async def _descendant_ids(db: DbSession, root_id: int) -> list[int]:
     return collected
 
 
-async def _location_ids(db: DbSession) -> set[int]:
-    """Ids des équipements en location externe (pour le filtre interne/location)."""
-    return {
-        eid for (eid,) in (await db.execute(select(EquipmentLocation.equipment_id))).all()
-    }
+async def _location_map(db: DbSession) -> dict[int, tuple[int, str]]:
+    """equipment_id → (fournisseur_id, fournisseur_nom) pour le matériel loué.
+
+    Sert au filtre interne/location et au regroupement par prestataire côté UI.
+    """
+    rows = await db.execute(
+        select(EquipmentLocation.equipment_id, Fournisseur.id, Fournisseur.nom).join(
+            Fournisseur, Fournisseur.id == EquipmentLocation.fournisseur_id
+        )
+    )
+    return {eid: (fid, fnom) for eid, fid, fnom in rows.all()}
 
 
 async def _get_presta_or_404(db: DbSession, presta_id: int) -> Prestation:
@@ -192,11 +204,11 @@ async def get_prestation(
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
-    loc_ids = await _location_ids(db)
+    loc_map = await _location_map(db)
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
         allocations=[
-            _allocation_read(a, a.equipment_id in loc_ids) for a in allocs.all()
+            _allocation_read(a, loc_map.get(a.equipment_id)) for a in allocs.all()
         ],
     )
 
@@ -299,8 +311,15 @@ async def add_allocation(
 
     await db.commit()
     await db.refresh(alloc, attribute_names=["equipment"])
-    externe = await db.get(EquipmentLocation, alloc.equipment_id) is not None
-    return _allocation_read(alloc, externe)
+    loc_row = (
+        await db.execute(
+            select(EquipmentLocation.equipment_id, Fournisseur.id, Fournisseur.nom)
+            .join(Fournisseur, Fournisseur.id == EquipmentLocation.fournisseur_id)
+            .where(EquipmentLocation.equipment_id == alloc.equipment_id)
+        )
+    ).first()
+    loc = (loc_row[1], loc_row[2]) if loc_row is not None else None
+    return _allocation_read(alloc, loc)
 
 
 @router.delete(
@@ -392,10 +411,10 @@ async def cloturer_prestation(
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
-    loc_ids = await _location_ids(db)
+    loc_map = await _location_map(db)
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
         allocations=[
-            _allocation_read(a, a.equipment_id in loc_ids) for a in refreshed.all()
+            _allocation_read(a, loc_map.get(a.equipment_id)) for a in refreshed.all()
         ],
     )

@@ -61,6 +61,9 @@ class AllocationRead(BaseModel):
     equipment_nom: str | None = None
     equipment_barcode: str | None = None
     equipment_externe: bool = False
+    # Prestataire de location (matériel loué) — pour grouper par loueur côté UI.
+    fournisseur_id: int | None = None
+    fournisseur_nom: str | None = None
     # Contenant de l'équipement (pour grouper la checklist sous son flight).
     equipment_contenant_id: int | None = None
 
