@@ -16,6 +16,10 @@ dist/
 dist-ssr/
 *.local
 
+# Stack par worktree (scripts/worktree-stack.sh)
+.stack.json
+.stack/
+
 # Editor
 .DS_Store
 .vscode/*

@@ -498,6 +498,81 @@
         "secondSchemaName": "public",
         "secondRelation": "1",
         "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "assigne_membre_id"
+        ],
+        "firstTableName": "tickets_reparation",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "ticket_id"
+        ],
+        "firstTableName": "evenements_ticket",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "tickets_reparation",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "membre_id"
+        ],
+        "firstTableName": "evenements_ticket",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "membres",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "contenant_id"
+        ],
+        "firstTableName": "equipments",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "equipments",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "parent_id"
+        ],
+        "firstTableName": "emplacements",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "emplacements",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
       }
     ]
   },
