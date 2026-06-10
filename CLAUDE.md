@@ -67,7 +67,7 @@ When adding a new offline action: add the type to `SyncItemType` (db.ts), write 
 - **Auth**: JWT access (30min) + refresh (30d). `CurrentUser` decodes the bearer token, loads the `Membre`, and checks the linked `UserAuth.is_active`. Also supports WebAuthn (passkeys) via `routers/webauthn.py`.
 - **RBAC** ([rbac.py](backend/app/security/rbac.py)): `require_role(...)` dependency; `RequireAdmin/RequireStaff/RequireTech` shortcuts. **Admin implicitly passes every role check.** Roles: Admin, Staff, Tech.
 - **Equipment polymorphism**: a base `Equipment` row optionally has a `EquipmentVrac` (bulk bin), `EquipmentConsommable` (consumable stock), or `EquipmentLocation` (rented) extension, joined 1:1 on `equipment_id`. Handlers resolve which kind via `db.get(EquipmentVrac, id)` etc.
-- **Data model authority**: `MCD.dbml` / `MCD.dbdiagram` at the repo root are the canonical entity-relationship spec; `PLAN.md` is the full product/architecture plan (sync scenarios A/B/C referenced in code comments live there).
+- **Data model authority**: `MCD.dbml` / `MCD.dbdiagram` at the repo root are the canonical entity-relationship spec; `PLAN.md` is the full product/architecture plan (sync scenarios A/B/C referenced in code comments live there). **Keep `MCD.dbml` up to date**: whenever you change the data model (new/renamed tables, columns, enums, or relationships in `db_models.py` / migrations), update `MCD.dbml` in the same change so it stays an accurate, reviewable mirror of the schema — it's the reference used during code review.
 
 ### Frontend layout (`frontend/src/`)
 
@@ -78,3 +78,7 @@ When adding a new offline action: add the type to `SyncItemType` (db.ts), write 
 - PWA via `vite-plugin-pwa` (autoUpdate). `/api/*` uses NetworkFirst (5s timeout) runtime caching; `push-sw.js` is imported into the generated service worker for web-push.
 
 All API access goes through `api()` in [api.ts](frontend/src/lib/api.ts) — it injects the bearer token and transparently refreshes on 401. Don't call `fetch` directly for API routes.
+
+### Vérification navigateur
+
+Après avoir terminé une modification frontend significative (nouvelle page, changement de flux, refonte de composant — pas pour un ajustement de style trivial), lancer le subagent `ui-tester` (outil Agent, `subagent_type: ui-tester`) avec la description de ce qui a changé et le parcours à vérifier, et inclure son verdict dans le rapport final. Pour un test manuel : `/uitest <flux>`.
