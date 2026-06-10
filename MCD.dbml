@@ -44,6 +44,7 @@ Enum type_prestation {
 }
 
 Enum statut_prestation {
+  Ebauche // construction/ajustement juste après création
   En_preparation
   En_cours
   Terminee
@@ -226,8 +227,8 @@ Table prestations {
   nom varchar // ex: 'Mariage Dupont', 'Nuketown 2024'
   type type_prestation
   client_nom varchar [note: 'Nullable — uniquement pour les prestas externes']
-  date_debut timestamp
-  date_fin timestamp
+  date_debut date [note: 'Jour de début de l’événement — temporalité au jour près']
+  date_fin date [note: 'Jour de fin — nullable, événement ouvert si absent']
   statut statut_prestation
   responsable_membre_id integer
 }

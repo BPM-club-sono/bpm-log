@@ -1,22 +1,37 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import type { Prestation, TypePrestation } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { formatPeriode } from "@/lib/prestationDate";
 
 const STATUT_LABEL: Record<Prestation["statut"], string> = {
+  Ebauche: "Ébauche",
   En_preparation: "En préparation",
   En_cours: "En cours",
   Terminee: "Terminée",
 };
 
 const STATUT_STYLE: Record<Prestation["statut"], string> = {
+  Ebauche: "bg-fg-muted/15 text-fg-muted",
   En_preparation: "bg-warning/15 text-warning",
   En_cours: "bg-fg text-bg",
   Terminee: "bg-success/15 text-success",
 };
+
+// Tri chronologique : datées d'abord (plus proche en premier), sans date à la fin.
+function compareParDate(a: Prestation, b: Prestation): number {
+  if (a.date_debut && b.date_debut) {
+    if (a.date_debut !== b.date_debut)
+      return a.date_debut < b.date_debut ? -1 : 1;
+    return a.id - b.id;
+  }
+  if (a.date_debut) return -1;
+  if (b.date_debut) return 1;
+  return a.id - b.id;
+}
 
 export function PrestationsPage() {
   const { user } = useAuth();
@@ -28,7 +43,18 @@ export function PrestationsPage() {
   const [nom, setNom] = useState("");
   const [type, setType] = useState<TypePrestation>("Interne");
   const [clientNom, setClientNom] = useState("");
+  const [dateDebut, setDateDebut] = useState("");
+  const [dateFin, setDateFin] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const periodeInvalide =
+    dateDebut !== "" && dateFin !== "" && dateFin < dateDebut;
+
+  // Tri côté client : garantit l'ordre chronologique même sur la liste en cache.
+  const triees = useMemo(
+    () => [...prestations].sort(compareParDate),
+    [prestations],
+  );
 
   async function load() {
     setLoading(true);
@@ -52,16 +78,24 @@ export function PrestationsPage() {
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
-    if (!nom.trim()) return;
+    if (!nom.trim() || periodeInvalide) return;
     setSaving(true);
     try {
       await api<Prestation>("/prestations", {
         method: "POST",
-        body: { nom: nom.trim(), type, client_nom: clientNom.trim() || null },
+        body: {
+          nom: nom.trim(),
+          type,
+          client_nom: clientNom.trim() || null,
+          date_debut: dateDebut || null,
+          date_fin: dateFin || null,
+        },
       });
       setNom("");
       setClientNom("");
       setType("Interne");
+      setDateDebut("");
+      setDateFin("");
       setShowForm(false);
       await load();
     } catch {
@@ -110,6 +144,32 @@ export function PrestationsPage() {
             className="h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg"
           />
           <div className="flex gap-2">
+            <label className="flex-1 space-y-1">
+              <span className="px-1 text-xs text-fg-muted">Début</span>
+              <input
+                type="date"
+                value={dateDebut}
+                onChange={(e) => setDateDebut(e.target.value)}
+                className="h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg"
+              />
+            </label>
+            <label className="flex-1 space-y-1">
+              <span className="px-1 text-xs text-fg-muted">Fin</span>
+              <input
+                type="date"
+                value={dateFin}
+                min={dateDebut || undefined}
+                onChange={(e) => setDateFin(e.target.value)}
+                className="h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg"
+              />
+            </label>
+          </div>
+          {periodeInvalide && (
+            <p className="text-xs text-danger">
+              La date de fin doit être après la date de début.
+            </p>
+          )}
+          <div className="flex gap-2">
             {(["Interne", "Externe"] as const).map((t) => (
               <button
                 key={t}
@@ -125,7 +185,12 @@ export function PrestationsPage() {
               </button>
             ))}
           </div>
-          <Button type="submit" className="w-full" disabled={!nom.trim()} loading={saving}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!nom.trim() || periodeInvalide}
+            loading={saving}
+          >
             Créer la prestation
           </Button>
         </form>
@@ -145,27 +210,36 @@ export function PrestationsPage() {
 
       {!loading && prestations.length > 0 && (
         <ul className="divide-y divide-line">
-          {prestations.map((p) => (
-            <li key={p.id}>
-              <Link
-                to={`/prestations/${p.id}`}
-                className="flex items-center justify-between gap-3 py-4 transition-opacity hover:opacity-70"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{p.nom}</p>
-                  <p className="text-xs text-fg-muted">
-                    {p.type}
-                    {p.client_nom ? ` · ${p.client_nom}` : ""}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${STATUT_STYLE[p.statut]}`}
+          {triees.map((p) => {
+            const periode = formatPeriode(p.date_debut, p.date_fin);
+            return (
+              <li key={p.id}>
+                <Link
+                  to={`/prestations/${p.id}`}
+                  className="flex items-center justify-between gap-3 py-4 transition-opacity hover:opacity-70"
                 >
-                  {STATUT_LABEL[p.statut]}
-                </span>
-              </Link>
-            </li>
-          ))}
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{p.nom}</p>
+                    <p className="text-xs text-fg-muted">
+                      {p.type}
+                      {p.client_nom ? ` · ${p.client_nom}` : ""}
+                    </p>
+                    {periode && (
+                      <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-fg-muted">
+                        <Icon name="event" className="text-sm" />
+                        {periode}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${STATUT_STYLE[p.statut]}`}
+                  >
+                    {STATUT_LABEL[p.statut]}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

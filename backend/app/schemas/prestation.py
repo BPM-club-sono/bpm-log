@@ -1,30 +1,45 @@
 """Schémas Pydantic pour les prestations et leurs allocations (M6)."""
 
-from datetime import datetime
+from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import StatutAllocation, StatutPrestation, TypePrestation
+
+
+def _check_periode(debut: date | None, fin: date | None) -> None:
+    if debut is not None and fin is not None and fin < debut:
+        raise ValueError("date_fin doit être postérieure ou égale à date_debut")
 
 
 class PrestationCreate(BaseModel):
     nom: str = Field(min_length=1, max_length=200)
     type: TypePrestation = TypePrestation.INTERNE
     client_nom: str | None = None
-    date_debut: datetime | None = None
-    date_fin: datetime | None = None
+    date_debut: date | None = None
+    date_fin: date | None = None
     responsable_membre_id: int | None = None
+
+    @model_validator(mode="after")
+    def _valide_periode(self) -> "PrestationCreate":
+        _check_periode(self.date_debut, self.date_fin)
+        return self
 
 
 class PrestationUpdate(BaseModel):
     nom: str | None = Field(default=None, min_length=1, max_length=200)
     type: TypePrestation | None = None
     client_nom: str | None = None
-    date_debut: datetime | None = None
-    date_fin: datetime | None = None
+    date_debut: date | None = None
+    date_fin: date | None = None
     statut: StatutPrestation | None = None
     responsable_membre_id: int | None = None
+
+    @model_validator(mode="after")
+    def _valide_periode(self) -> "PrestationUpdate":
+        _check_periode(self.date_debut, self.date_fin)
+        return self
 
 
 class PrestationRead(BaseModel):
@@ -34,8 +49,8 @@ class PrestationRead(BaseModel):
     nom: str
     type: TypePrestation
     client_nom: str | None
-    date_debut: datetime | None
-    date_fin: datetime | None
+    date_debut: date | None
+    date_fin: date | None
     statut: StatutPrestation
     responsable_membre_id: int | None
 

@@ -1,6 +1,6 @@
 """Schémas du tableau de bord d'accueil : stats parc, presta courante, activité."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -32,8 +32,8 @@ class PrestationCourante(BaseModel):
     nom: str
     type: TypePrestation
     client_nom: str | None
-    date_debut: datetime | None
-    date_fin: datetime | None
+    date_debut: date | None
+    date_fin: date | None
     statut: StatutPrestation
     responsable_nom: str | None
     nb_objets: int
@@ -47,8 +47,8 @@ class PrestationApercu(BaseModel):
     nom: str
     type: TypePrestation
     client_nom: str | None
-    date_debut: datetime | None
-    date_fin: datetime | None
+    date_debut: date | None
+    date_fin: date | None
     statut: StatutPrestation
     responsable_nom: str | None
     nb_objets: int

@@ -45,7 +45,11 @@ export interface Emplacement {
 }
 
 export type TypePrestation = "Interne" | "Externe";
-export type StatutPrestation = "En_preparation" | "En_cours" | "Terminee";
+export type StatutPrestation =
+  | "Ebauche"
+  | "En_preparation"
+  | "En_cours"
+  | "Terminee";
 export type StatutAllocation = "Planifie" | "Sorti" | "Retourne";
 
 export interface Prestation {
@@ -53,6 +57,7 @@ export interface Prestation {
   nom: string;
   type: TypePrestation;
   client_nom: string | null;
+  // Dates jour-près au format ISO `YYYY-MM-DD` (cf. lib/prestationDate).
   date_debut: string | null;
   date_fin: string | null;
   statut: StatutPrestation;

@@ -11,6 +11,7 @@ import type {
   PrestationCourante,
 } from "@/lib/types";
 import { Icon } from "@/shared/Icon";
+import { formatPeriode, temporalite, type Temporalite } from "@/lib/prestationDate";
 
 const maintenanceShortcuts = [
   { icon: "build", label: "Déclarer une panne", to: "/pannes" },
@@ -48,12 +49,17 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function formatJour(iso: string | null): string | null {
-  if (!iso) return null;
-  return new Date(iso).toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-  });
+// Temporalité d'une presta, avec repli sur `a_venir` (backend) quand elle n'a
+// pas de date — un événement non daté n'a pas de position sur la timeline.
+function tempoPresta(presta: {
+  date_debut: string | null;
+  date_fin: string | null;
+  a_venir: boolean;
+}): Exclude<Temporalite, null> {
+  return (
+    temporalite(presta.date_debut, presta.date_fin) ??
+    (presta.a_venir ? "a_venir" : "en_cours")
+  );
 }
 
 export function HomePage() {
@@ -465,20 +471,25 @@ function PrestationBlock({
     );
   }
 
-  const debut = formatJour(presta.date_debut);
-  const fin = formatJour(presta.date_fin);
-  const periode = debut && fin ? `${debut} → ${fin}` : (debut ?? fin);
+  const periode = formatPeriode(presta.date_debut, presta.date_fin);
+  const tempo = tempoPresta(presta);
+  const titre =
+    tempo === "a_venir"
+      ? "Prochaine prestation"
+      : tempo === "passee"
+        ? "Dernière prestation"
+        : "Prestation en cours";
 
   return (
     <section>
       <div className="mb-2 flex items-center gap-2">
         <span
           className={`h-1.5 w-1.5 rounded-full ${
-            presta.a_venir ? "bg-fg-muted" : "bg-success"
+            tempo === "en_cours" ? "bg-success" : "bg-fg-muted"
           }`}
         />
         <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          {presta.a_venir ? "Prochaine prestation" : "Prestation en cours"}
+          {titre}
         </h2>
       </div>
       <button
@@ -519,17 +530,18 @@ function PrestaCard({
   presta: PrestationApercu;
   onOpen: () => void;
 }) {
-  const debut = formatJour(presta.date_debut);
-  const fin = formatJour(presta.date_fin);
-  const periode = debut && fin ? `${debut} → ${fin}` : (debut ?? fin);
+  const periode = formatPeriode(presta.date_debut, presta.date_fin);
+  const tempo = tempoPresta(presta);
+  const tempoLabel =
+    tempo === "a_venir" ? "À venir" : tempo === "passee" ? "Passée" : "En cours";
 
   const prepPct =
     presta.qte_prevue > 0
       ? Math.round((presta.qte_sortie / presta.qte_prevue) * 100)
       : 0;
-  // Pour une presta en cours dont le retour a commencé, on montre aussi le rendu.
+  // Pour une presta commencée dont le retour a débuté, on montre aussi le rendu.
   const retourPct =
-    !presta.a_venir && presta.qte_sortie > 0
+    tempo !== "a_venir" && presta.qte_sortie > 0
       ? Math.round((presta.qte_retournee / presta.qte_sortie) * 100)
       : null;
 
@@ -541,14 +553,14 @@ function PrestaCard({
       <div className="flex items-start gap-3">
         <span
           className={`mt-1.5 h-1.5 w-1.5 flex-none rounded-full ${
-            presta.a_venir ? "bg-fg-muted" : "bg-success"
+            tempo === "en_cours" ? "bg-success" : "bg-fg-muted"
           }`}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-base font-semibold">{presta.nom}</p>
             <span className="flex-none text-[10px] font-semibold uppercase tracking-wide text-fg-muted">
-              {presta.a_venir ? "À venir" : "En cours"}
+              {tempoLabel}
             </span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">

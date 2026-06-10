@@ -168,7 +168,13 @@ async def _get_presta_or_404(db: DbSession, presta_id: int) -> Prestation:
 
 @router.get("", response_model=list[PrestationRead])
 async def list_prestations(_user: CurrentUser, db: DbSession) -> list[Prestation]:
-    result = await db.scalars(select(Prestation).order_by(Prestation.id.desc()))
+    # Chronologique : les événements datés d'abord (plus proche en premier),
+    # les prestations sans date en dernier.
+    result = await db.scalars(
+        select(Prestation).order_by(
+            Prestation.date_debut.asc().nulls_last(), Prestation.id.asc()
+        )
+    )
     return list(result.all())
 
 
@@ -185,7 +191,7 @@ async def create_prestation(
         date_debut=data.date_debut,
         date_fin=data.date_fin,
         responsable_membre_id=data.responsable_membre_id,
-        statut=StatutPrestation.EN_PREPARATION,
+        statut=StatutPrestation.EBAUCHE,
     )
     db.add(presta)
     await db.commit()

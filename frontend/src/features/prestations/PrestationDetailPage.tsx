@@ -15,6 +15,7 @@ import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
 import { buildAllocTree, fournisseurChips } from "./prestationTree";
+import { formatPeriode } from "@/lib/prestationDate";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
 
@@ -220,6 +221,16 @@ export function PrestationDetailPage() {
           {detail.client_nom ? ` · ${detail.client_nom}` : ""}
           {offline && " · hors-ligne"}
         </p>
+        {(() => {
+          const periode = formatPeriode(detail.date_debut, detail.date_fin);
+          if (!periode) return null;
+          return (
+            <p className="inline-flex items-center gap-1 text-sm text-fg-muted">
+              <Icon name="event" className="text-sm" />
+              {periode}
+            </p>
+          );
+        })()}
       </header>
 
       {error && (
@@ -343,6 +354,7 @@ function InfoView({
   const [results, setResults] = useState<EquipmentListItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
   // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
   const [filter, setFilter] = useState<string>("tous");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -405,7 +417,23 @@ function InfoView({
     await onReload();
   }
 
-  const editable = canManage && detail.statut === "En_preparation";
+  async function passerEnPreparation() {
+    setAdvancing(true);
+    try {
+      await api(`/prestations/${detail.id}`, {
+        method: "PATCH",
+        body: { statut: "En_preparation" },
+      });
+      await onReload();
+    } finally {
+      setAdvancing(false);
+    }
+  }
+
+  // Construction (Ébauche) et préparation : on peut encore ajuster le matériel.
+  const editable =
+    canManage &&
+    (detail.statut === "Ebauche" || detail.statut === "En_preparation");
 
   const hasInterne = allocs.some((a) => !a.equipment_externe);
   const chips = fournisseurChips(allocs);
@@ -446,6 +474,24 @@ function InfoView({
 
   return (
     <div className="space-y-4">
+      {canManage && detail.statut === "Ebauche" && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-line bg-bg-soft p-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Ébauche</p>
+            <p className="text-xs text-fg-muted">
+              Finalise le matériel, puis valide pour passer en
+              préparation.
+            </p>
+          </div>
+          <Button
+            className="h-9 shrink-0 px-3 text-xs"
+            onClick={passerEnPreparation}
+            loading={advancing}
+          >
+            Valider la préparation
+          </Button>
+        </div>
+      )}
       {editable && (
         <div className="space-y-2">
           <div className="relative">
