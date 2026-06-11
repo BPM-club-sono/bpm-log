@@ -35,6 +35,7 @@ from app.schemas.prestation import (
     PrestationDetail,
     PrestationRead,
     PrestationUpdate,
+    valide_periode,
 )
 from app.security.rbac import RequireStaff
 
@@ -168,7 +169,13 @@ async def _get_presta_or_404(db: DbSession, presta_id: int) -> Prestation:
 
 @router.get("", response_model=list[PrestationRead])
 async def list_prestations(_user: CurrentUser, db: DbSession) -> list[Prestation]:
-    result = await db.scalars(select(Prestation).order_by(Prestation.id.desc()))
+    # Chronologique : prestations datées d'abord (date_debut croissante), puis sans date.
+    # Tri stable : date_debut, puis id.
+    result = await db.scalars(
+        select(Prestation).order_by(
+            Prestation.date_debut.asc().nulls_last(), Prestation.id.asc()
+        )
+    )
     return list(result.all())
 
 
@@ -185,7 +192,7 @@ async def create_prestation(
         date_debut=data.date_debut,
         date_fin=data.date_fin,
         responsable_membre_id=data.responsable_membre_id,
-        statut=StatutPrestation.EN_PREPARATION,
+        statut=StatutPrestation.EBAUCHE,
     )
     db.add(presta)
     await db.commit()
@@ -223,6 +230,15 @@ async def update_prestation(
     presta = await _get_presta_or_404(db, presta_id)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(presta, field, value)
+    # Un PATCH partiel (une seule borne) doit rester cohérent avec la valeur déjà
+    # en base : on revalide la période sur l'état final fusionné, pas seulement
+    # sur le payload (que le validateur du schéma ne voit que partiellement).
+    try:
+        valide_periode(presta.date_debut, presta.date_fin)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
     await db.commit()
     await db.refresh(presta)
     return presta

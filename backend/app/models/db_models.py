@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -302,11 +303,11 @@ class Prestation(Base):
     nom: Mapped[str] = mapped_column(String(200))
     type: Mapped[TypePrestation] = mapped_column(_enum(TypePrestation, "type_prestation"))
     client_nom: Mapped[str | None] = mapped_column(String(200))
-    date_debut: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    date_fin: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_debut: Mapped[date | None] = mapped_column(Date)
+    date_fin: Mapped[date | None] = mapped_column(Date)
     statut: Mapped[StatutPrestation] = mapped_column(
         _enum(StatutPrestation, "statut_prestation"),
-        default=StatutPrestation.EN_PREPARATION,
+        default=StatutPrestation.EBAUCHE,
     )
     responsable_membre_id: Mapped[int | None] = mapped_column(ForeignKey("membres.id"))
 

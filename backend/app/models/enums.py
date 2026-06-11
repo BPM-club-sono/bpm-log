@@ -47,6 +47,7 @@ class TypePrestation(enum.StrEnum):
 
 
 class StatutPrestation(enum.StrEnum):
+    EBAUCHE = "Ebauche"  # phase de construction/ajustement juste après création
     EN_PREPARATION = "En_preparation"
     EN_COURS = "En_cours"
     TERMINEE = "Terminee"

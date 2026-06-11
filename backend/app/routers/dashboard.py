@@ -119,22 +119,62 @@ async def _parc_stats(db: DbSession) -> ParcStats:
 
 
 async def _prestation_courante(db: DbSession) -> PrestationCourante | None:
-    """Prestation en cours ; à défaut la prochaine à venir (en préparation)."""
+    """Prestation à mettre en avant, choisie sur les **dates** (pas le statut).
+
+    1. en cours aujourd'hui (today ∈ [début, fin], fin ouverte si absente) ;
+    2. à défaut, la prochaine à venir (début > today) ;
+    3. à défaut (prestas sans date), repli sur le statut opérationnel.
+    Le statut `Terminée` est exclu des fenêtres datées 1 et 2.
+    """
+    today = func.current_date()
+
+    # 1. En cours aujourd'hui : la plus récemment commencée d'abord.
     a_venir = False
     presta = await db.scalar(
         select(Prestation)
-        .where(Prestation.statut == StatutPrestation.EN_COURS)
-        .order_by(Prestation.date_debut.asc())
+        .where(
+            Prestation.statut != StatutPrestation.TERMINEE,
+            Prestation.date_debut <= today,
+            (Prestation.date_fin >= today) | (Prestation.date_fin.is_(None)),
+        )
+        .order_by(Prestation.date_debut.desc(), Prestation.id.desc())
         .limit(1)
     )
+
+    # 2. Sinon la prochaine à venir.
     if presta is None:
         a_venir = True
         presta = await db.scalar(
             select(Prestation)
-            .where(Prestation.statut == StatutPrestation.EN_PREPARATION)
+            .where(
+                Prestation.statut != StatutPrestation.TERMINEE,
+                Prestation.date_debut > today,
+            )
+            .order_by(Prestation.date_debut.asc(), Prestation.id.asc())
+            .limit(1)
+        )
+
+    # 3. Repli pour les prestations sans date : statut opérationnel.
+    if presta is None:
+        presta = await db.scalar(
+            select(Prestation)
+            .where(Prestation.statut == StatutPrestation.EN_COURS)
             .order_by(Prestation.date_debut.asc().nulls_last())
             .limit(1)
         )
+        if presta is None:
+            presta = await db.scalar(
+                select(Prestation)
+                .where(
+                    Prestation.statut.in_(
+                        [StatutPrestation.EBAUCHE, StatutPrestation.EN_PREPARATION]
+                    )
+                )
+                .order_by(Prestation.date_debut.asc().nulls_last())
+                .limit(1)
+            )
+        if presta is not None:
+            a_venir = presta.statut != StatutPrestation.EN_COURS
     if presta is None:
         return None
 
@@ -171,6 +211,12 @@ async def _prestations_apercu(db: DbSession, limit: int = 6) -> list[PrestationA
     prévues / sorties / retournées (somme de ses allocations) afin de calculer
     une barre d'avancement côté client.
     """
+    today = func.current_date()
+    # Événements en cours aujourd'hui d'abord, puis les prochains par date.
+    en_cours_auj = (
+        (Prestation.date_debut <= today)
+        & ((Prestation.date_fin >= today) | (Prestation.date_fin.is_(None)))
+    )
     rows = (
         await db.execute(
             select(
@@ -183,13 +229,16 @@ async def _prestations_apercu(db: DbSession, limit: int = 6) -> list[PrestationA
             .outerjoin(AllocationPresta, AllocationPresta.presta_id == Prestation.id)
             .where(
                 Prestation.statut.in_(
-                    [StatutPrestation.EN_COURS, StatutPrestation.EN_PREPARATION]
+                    [
+                        StatutPrestation.EBAUCHE,
+                        StatutPrestation.EN_PREPARATION,
+                        StatutPrestation.EN_COURS,
+                    ]
                 )
             )
             .group_by(Prestation.id)
-            # En cours d'abord (a_venir=False), puis à venir par date de début.
             .order_by(
-                (Prestation.statut == StatutPrestation.EN_PREPARATION).asc(),
+                en_cours_auj.desc(),
                 Prestation.date_debut.asc().nulls_last(),
             )
             .limit(limit)
@@ -197,6 +246,8 @@ async def _prestations_apercu(db: DbSession, limit: int = 6) -> list[PrestationA
     ).all()
     if not rows:
         return []
+
+    today_val = await db.scalar(select(today))
 
     membre_ids = {p.responsable_membre_id for p, *_ in rows if p.responsable_membre_id}
     membres = {
@@ -222,7 +273,11 @@ async def _prestations_apercu(db: DbSession, limit: int = 6) -> list[PrestationA
                 qte_prevue=int(qte_prevue or 0),
                 qte_sortie=int(qte_sortie or 0),
                 qte_retournee=int(qte_retournee or 0),
-                a_venir=presta.statut == StatutPrestation.EN_PREPARATION,
+                a_venir=(
+                    presta.date_debut > today_val
+                    if presta.date_debut is not None
+                    else presta.statut != StatutPrestation.EN_COURS
+                ),
             )
         )
     return apercus
