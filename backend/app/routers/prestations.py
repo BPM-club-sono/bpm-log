@@ -168,8 +168,8 @@ async def _get_presta_or_404(db: DbSession, presta_id: int) -> Prestation:
 
 @router.get("", response_model=list[PrestationRead])
 async def list_prestations(_user: CurrentUser, db: DbSession) -> list[Prestation]:
-    # Chronologique : les événements datés d'abord (plus proche en premier),
-    # les prestations sans date en dernier.
+    # Chronologique : prestations datées d'abord (date_debut croissante), puis sans date.
+    # Tri stable : date_debut, puis id.
     result = await db.scalars(
         select(Prestation).order_by(
             Prestation.date_debut.asc().nulls_last(), Prestation.id.asc()
