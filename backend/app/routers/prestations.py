@@ -35,6 +35,7 @@ from app.schemas.prestation import (
     PrestationDetail,
     PrestationRead,
     PrestationUpdate,
+    valide_periode,
 )
 from app.security.rbac import RequireStaff
 
@@ -229,6 +230,15 @@ async def update_prestation(
     presta = await _get_presta_or_404(db, presta_id)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(presta, field, value)
+    # Un PATCH partiel (une seule borne) doit rester cohérent avec la valeur déjà
+    # en base : on revalide la période sur l'état final fusionné, pas seulement
+    # sur le payload (que le validateur du schéma ne voit que partiellement).
+    try:
+        valide_periode(presta.date_debut, presta.date_fin)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
     await db.commit()
     await db.refresh(presta)
     return presta

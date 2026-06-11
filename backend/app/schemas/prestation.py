@@ -8,7 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.enums import StatutAllocation, StatutPrestation, TypePrestation
 
 
-def _check_periode(debut: date | None, fin: date | None) -> None:
+def valide_periode(debut: date | None, fin: date | None) -> None:
+    """Lève si les deux bornes sont posées et incohérentes (fin < debut).
+
+    Partagé par les schémas (validation du payload) et le routeur PATCH, qui
+    revalide sur l'état final fusionné (DB + champs patchés) — cf. update_prestation.
+    """
     if debut is not None and fin is not None and fin < debut:
         raise ValueError("date_fin doit être postérieure ou égale à date_debut")
 
@@ -23,7 +28,7 @@ class PrestationCreate(BaseModel):
 
     @model_validator(mode="after")
     def _valide_periode(self) -> "PrestationCreate":
-        _check_periode(self.date_debut, self.date_fin)
+        valide_periode(self.date_debut, self.date_fin)
         return self
 
 
@@ -38,7 +43,7 @@ class PrestationUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _valide_periode(self) -> "PrestationUpdate":
-        _check_periode(self.date_debut, self.date_fin)
+        valide_periode(self.date_debut, self.date_fin)
         return self
 
 

@@ -8,12 +8,14 @@ malgré les données de la base clonée. Rien n'est commité.
 from datetime import date, timedelta
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import delete, update
 
 from app.models import AllocationPresta, InventaireVrac, Prestation
 from app.models.enums import StatutPrestation, TypePrestation
 from app.routers.dashboard import _prestation_courante
+from app.routers.prestations import update_prestation
 from app.schemas.prestation import PrestationCreate, PrestationUpdate
 
 
@@ -157,3 +159,53 @@ def test_create_accepte_periode_valide_et_partielle():
 def test_update_rejette_fin_avant_debut():
     with pytest.raises(ValidationError):
         PrestationUpdate(date_debut=date(2026, 6, 12), date_fin=date(2026, 6, 10))
+
+
+# --- PATCH partiel : période revalidée sur l'état final (DB + payload) ------
+
+
+async def _presta_datee(s, monkeypatch) -> Prestation:
+    # update_prestation commit ; on remplace commit par flush pour rester dans la
+    # transaction rollback-able du test (cf. promesse « aucune écriture commitée »).
+    monkeypatch.setattr(s, "commit", s.flush)
+    await _clear_prestations(s)
+    presta = _presta("Dejala", date(2026, 6, 12), date(2026, 6, 14))
+    s.add(presta)
+    await s.flush()
+    return presta
+
+
+async def test_patch_fin_seule_incoherente_avec_debut_existant(db_session, monkeypatch):
+    s = db_session
+    presta = await _presta_datee(s, monkeypatch)
+
+    # On ne patche que date_fin, en-dessous du date_debut déjà en base.
+    with pytest.raises(HTTPException) as exc:
+        await update_prestation(
+            presta.id, PrestationUpdate(date_fin=date(2026, 6, 10)), s, None
+        )
+    assert exc.value.status_code == 422
+
+
+async def test_patch_debut_seul_incoherent_avec_fin_existante(db_session, monkeypatch):
+    s = db_session
+    presta = await _presta_datee(s, monkeypatch)
+
+    # On ne patche que date_debut, au-delà du date_fin déjà en base.
+    with pytest.raises(HTTPException) as exc:
+        await update_prestation(
+            presta.id, PrestationUpdate(date_debut=date(2026, 6, 20)), s, None
+        )
+    assert exc.value.status_code == 422
+
+
+async def test_patch_borne_seule_coherente_accepte(db_session, monkeypatch):
+    s = db_session
+    presta = await _presta_datee(s, monkeypatch)
+
+    # date_fin repoussée mais toujours >= date_debut existant : accepté.
+    updated = await update_prestation(
+        presta.id, PrestationUpdate(date_fin=date(2026, 6, 18)), s, None
+    )
+    assert updated.date_fin == date(2026, 6, 18)
+    assert updated.date_debut == date(2026, 6, 12)
