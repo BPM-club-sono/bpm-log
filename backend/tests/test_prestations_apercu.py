@@ -79,8 +79,8 @@ async def test_apercu_interne_seul_materiel_interne_quantites_nulles(db_session)
     assert len(apercus) == 1
     ap = apercus[0]
     assert ap.id == presta.id
-    assert ap.nb_objets == 1       # allocation comptée
-    assert ap.qte_prevue == 0     # matériel interne exclu
+    assert ap.nb_objets == 1  # allocation comptée
+    assert ap.qte_prevue == 0  # matériel interne exclu
     assert ap.qte_sortie == 0
     assert ap.qte_retournee == 0
 
@@ -123,7 +123,7 @@ async def test_apercu_interne_mixte_seul_loue_contribue(db_session):
     assert len(apercus) == 1
     ap = apercus[0]
     assert ap.id == presta.id
-    assert ap.nb_objets == 2       # les deux allocations comptées
-    assert ap.qte_prevue == 2     # uniquement le loué
+    assert ap.nb_objets == 2  # les deux allocations comptées
+    assert ap.qte_prevue == 2  # uniquement le loué
     assert ap.qte_sortie == 2
     assert ap.qte_retournee == 0
