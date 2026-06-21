@@ -31,7 +31,6 @@ export function PrestationDetailPage() {
 
   const [detail, setDetail] = useState<PrestationDetail | null>(null);
   const [allocs, setAllocs] = useState<Allocation[]>([]);
-  const [prepared, setPrepared] = useState(false);
   const [mode, setMode] = useState<Mode>("info");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,15 +45,27 @@ export function PrestationDetailPage() {
       setDetail(d);
       setAllocs(d.allocations);
       setOffline(false);
-      const snap = await db.presta_snapshots.get(prestaId);
-      setPrepared(snap != null);
+      // Préchargement auto : tout accès en ligne rafraîchit le snapshot offline.
+      void db.presta_snapshots
+        .get(prestaId)
+        .then((existing) =>
+          db.presta_snapshots.put({
+            presta_id: prestaId,
+            presta: d,
+            allocations: d.allocations,
+            // Conserve la 1re date de préparation ; sinon stamp à l'ouverture.
+            prepared_at: existing?.prepared_at ?? new Date().toISOString(),
+          }),
+        )
+        .catch(() => {
+          // IndexedDB indisponible/quota : ne pas bloquer l'affichage en ligne.
+        });
     } catch (err) {
       // Hors-ligne : on retombe sur le snapshot préchargé.
       const snap = await db.presta_snapshots.get(prestaId);
       if (snap) {
         setDetail(snap.presta);
         setAllocs(snap.allocations);
-        setPrepared(true);
         setOffline(true);
       } else {
         setError(
@@ -86,23 +97,6 @@ export function PrestationDetailPage() {
     },
     [detail, prestaId],
   );
-
-  async function prepareForField() {
-    try {
-      const d = await api<PrestationDetail>(`/prestations/${prestaId}`);
-      setDetail(d);
-      setAllocs(d.allocations);
-      await db.presta_snapshots.put({
-        presta_id: prestaId,
-        presta: d,
-        allocations: d.allocations,
-        prepared_at: new Date().toISOString(),
-      });
-      setPrepared(true);
-    } catch {
-      setError("Préparation impossible (réseau requis).");
-    }
-  }
 
   // --- Checklist : application d'un delta unitaire -----------------------
   const applyDelta = useCallback(
@@ -255,49 +249,18 @@ export function PrestationDetailPage() {
                 ["retour", "Retour"],
                 ["cloture", "Clôture"],
               ]) as [Mode, string][]
-        ).map(([m, label]) => {
-          const locked = m !== "info" && !prepared;
-          return (
-            <button
-              key={m}
-              onClick={() => !locked && setMode(m)}
-              disabled={locked}
-              className={`-mb-px h-10 flex-1 border-b-2 text-xs font-medium transition-colors ${
-                mode === m ? "border-fg text-fg" : "border-transparent text-fg-muted"
-              } ${locked ? "opacity-40" : ""}`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      {!prepared && (
-        <div className="space-y-3 rounded-xl border border-dashed border-line bg-bg-soft p-4">
-          <div className="flex items-start gap-3">
-            <Icon name="cloud_download" className="mt-0.5 text-2xl text-fg-muted" />
-            <div className="space-y-0.5 text-left">
-              <p className="text-sm font-medium">Télécharger pour le terrain</p>
-              <p className="text-xs text-fg-muted">
-                Enregistre la liste du matériel sur cet appareil pour pointer la
-                sortie et le retour même sans réseau.
-              </p>
-            </div>
-          </div>
-          <Button className="w-full" onClick={prepareForField}>
-            <Icon name="download_for_offline" className="text-lg" />
-            Télécharger pour utilisation hors-ligne
-          </Button>
+        ).map(([m, label]) => (
           <button
-            type="button"
-            disabled
-            className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-line text-sm font-medium text-fg-muted opacity-50"
+            key={m}
+            onClick={() => setMode(m)}
+            className={`-mb-px h-10 flex-1 border-b-2 text-xs font-medium transition-colors ${
+              mode === m ? "border-fg text-fg" : "border-transparent text-fg-muted"
+            }`}
           >
-            <Icon name="request_quote" className="text-lg" />
-            Importer depuis un devis — bientôt
+            {label}
           </button>
-        </div>
-      )}
+        ))}
+      </div>
 
       {mode === "info" && (
         <InfoView

@@ -292,7 +292,7 @@ Le même mécanisme couvre : tentative de retour d'un item déjà retourné, mod
 
 ### Mitigation préventive : réduire la surface de conflit
 
-- **Préchargement obligatoire** : avant de partir en presta offline, le responsable doit appuyer sur "Préparer pour terrain" qui télécharge la presta + ses allocations + le catalogue à jour. Tant que ce n'est pas fait, l'app refuse de basculer en mode "session presta".
+- **Préchargement automatique** : ouvrir une prestation en ligne télécharge silencieusement la presta + ses allocations dans Dexie (`presta_snapshots`), et **rafraîchit** ce snapshot à chaque ouverture en ligne (corrige toute péremption). Aucun bouton ni autorisation navigateur (l'écriture IndexedDB ne nécessite pas de permission). Seule limite : une presta **jamais ouverte en ligne** reste indisponible offline — dans ce cas la page affiche "Hors-ligne et non préparée".
 - **Heartbeat de catalogue** : tant que l'app est online, elle pull les deltas catalogue toutes les 60 s. La fenêtre d'inconscience est minimale.
 - **Affichage de fraîcheur** : chaque écran montre discrètement "Données à jour il y a 3 min" / "Hors-ligne depuis 12 min". Les utilisateurs développent un réflexe.
 
@@ -485,10 +485,10 @@ Wrapper React :
 - CRUD prestations (online)
 - Allocation matériel (multi-select depuis catalogue, recherche par catégorie/lieu)
 - **Checklist unifiée** (§3.1) pour sortie + retour : compteur `−`/`+` par ligne, scan = raccourci `+1`, pas de "tout valider" magique
-- Bouton "Préparer pour terrain" : précharge presta + allocations + delta catalogue dans Dexie, bascule l'app en mode session
+- Préchargement **automatique à l'ouverture** : ouvrir une presta en ligne précharge presta + allocations dans Dexie (`presta_snapshots`) et rafraîchit le snapshot à chaque ouverture — pas de bouton, pas de gate manuel
 - Scan d'un item non alloué → modal "Ajouter à la presta ?" qui crée une ligne ad-hoc
 - Clôture : récap items dont `retourné < sorti` avec choix individuel (retourné quand même · perdu · cassé · laisser ouvert)
-- **Pièges** : la liste pré-établie doit être disponible offline ; refuser le mode session si "Préparer pour terrain" n'a pas été fait.
+- **Pièges** : la liste pré-établie doit être disponible offline ; une presta jamais ouverte en ligne n'a pas de snapshot et reste donc indisponible sur le terrain offline (gate naturel par disponibilité des données).
 
 ### M7 · Vrac, consommables, inventaires
 - Même composant checklist que §3.1 (`−` / valeur / `+`)
