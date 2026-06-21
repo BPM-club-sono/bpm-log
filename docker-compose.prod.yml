@@ -93,6 +93,3 @@ volumes:
   bpm_photos:
   caddy_data:
   caddy_config:
-
-  bpm_pgdata:
-  bpm_photos:
