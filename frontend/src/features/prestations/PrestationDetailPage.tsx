@@ -46,14 +46,20 @@ export function PrestationDetailPage() {
       setAllocs(d.allocations);
       setOffline(false);
       // Préchargement auto : tout accès en ligne rafraîchit le snapshot offline.
-      const existing = await db.presta_snapshots.get(prestaId);
-      await db.presta_snapshots.put({
-        presta_id: prestaId,
-        presta: d,
-        allocations: d.allocations,
-        // Conserve la 1re date de préparation ; sinon stamp à l'ouverture.
-        prepared_at: existing?.prepared_at ?? new Date().toISOString(),
-      });
+      void db.presta_snapshots
+        .get(prestaId)
+        .then((existing) =>
+          db.presta_snapshots.put({
+            presta_id: prestaId,
+            presta: d,
+            allocations: d.allocations,
+            // Conserve la 1re date de préparation ; sinon stamp à l'ouverture.
+            prepared_at: existing?.prepared_at ?? new Date().toISOString(),
+          }),
+        )
+        .catch(() => {
+          // IndexedDB indisponible/quota : ne pas bloquer l'affichage en ligne.
+        });
     } catch (err) {
       // Hors-ligne : on retombe sur le snapshot préchargé.
       const snap = await db.presta_snapshots.get(prestaId);
