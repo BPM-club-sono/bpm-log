@@ -592,7 +592,7 @@ function PrestaCard({
       </div>
 
       <div className="space-y-1.5">
-        <ProgressBar label="Préparé" pct={prepPct} />
+        {presta.qte_prevue > 0 && <ProgressBar label="Préparé" pct={prepPct} />}
         {retourPct !== null && <ProgressBar label="Rendu" pct={retourPct} />}
       </div>
     </button>
