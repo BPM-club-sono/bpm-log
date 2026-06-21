@@ -6,13 +6,14 @@ en cours (ou la prochaine à venir) et un fil d'activité global récent
 """
 
 from fastapi import APIRouter
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 
 from app.deps import CurrentUser, DbSession
 from app.models import (
     AllocationPresta,
     Equipment,
     EquipmentConsommable,
+    EquipmentLocation,
     EvenementTicket,
     LogScan,
     Membre,
@@ -25,6 +26,7 @@ from app.models.enums import (
     StatutPrestation,
     TypeActionScan,
     TypeEvenementTicket,
+    TypePrestation,
 )
 from app.schemas.dashboard import (
     ActiviteItem,
@@ -217,16 +219,37 @@ async def _prestations_apercu(db: DbSession, limit: int = 6) -> list[PrestationA
         (Prestation.date_debut <= today)
         & ((Prestation.date_fin >= today) | (Prestation.date_fin.is_(None)))
     )
+    # Matériel externe (loué) = présent dans equipments_location ; le matériel BPM
+    # interne est masqué des vues entrée/sortie donc exclu de l'avancement « Préparé »
+    # pour une presta interne (mais compté dans nb_objets).
+    externe = EquipmentLocation.equipment_id.isnot(None)
+    prep_inclus = or_(Prestation.type == TypePrestation.EXTERNE, externe)
     rows = (
         await db.execute(
             select(
                 Prestation,
-                func.coalesce(func.sum(AllocationPresta.quantite), 0),
-                func.coalesce(func.sum(AllocationPresta.quantite_sortie), 0),
-                func.coalesce(func.sum(AllocationPresta.quantite_retournee), 0),
+                func.coalesce(
+                    func.sum(case((prep_inclus, AllocationPresta.quantite), else_=0)), 0
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((prep_inclus, AllocationPresta.quantite_sortie), else_=0)
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((prep_inclus, AllocationPresta.quantite_retournee), else_=0)
+                    ),
+                    0,
+                ),
                 func.count(AllocationPresta.id),
             )
             .outerjoin(AllocationPresta, AllocationPresta.presta_id == Prestation.id)
+            .outerjoin(
+                EquipmentLocation,
+                EquipmentLocation.equipment_id == AllocationPresta.equipment_id,
+            )
             .where(
                 Prestation.statut.in_(
                     [
