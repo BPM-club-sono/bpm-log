@@ -106,6 +106,7 @@ personnels, écran de consentement en *External*. Google ne filtre donc rien —
 | Client type | **Public** (SPA : aucun secret possible → PKCE) |
 | Client ID | `k9fTwpGGVAgN92wiNHOwH3QQp63eNOICUWIzUGMl` — pas un secret, il circule dans l'URL |
 | Authorization flow | `default-provider-authorization-implicit-consent` |
+| Grant types | **`Authorization Code` + `Refresh token` uniquement** — les 6 autres décochés |
 | Redirect URIs | `https://log.bpmclubsono.com/auth/callback` et `http://localhost:5173/auth/callback` — **littérales, mode Strict** |
 | Signing key | certificat auto-signé authentik (RS256) |
 | Scopes | `openid`, `email`, `profile` |
@@ -241,20 +242,11 @@ devient indisponible.
 | Rien dans les logs authentik | logs en **JSON structuré**, `grep -i traceback` ne trouve rien. Utiliser l'en-tête `x-authentik-id` de la réponse 500 comme clé de recherche |
 | `[emerg] cannot load certificate` | bloc `ssl_certificate` écrit avant d'avoir lancé certbot → impasse. Repasser le fichier en HTTP seul, recharger, puis certbot (qui écrit lui-même le bloc 443) |
 | `ssl_session_timeout is duplicate` | `include options-ssl-nginx.conf` présent deux fois : certbot l'a déjà ajouté |
+| `invalid_grant` sur `/token` | **ne prouve rien** sur les grant types activés : un grant autorisé (`authorization_code`) et un grant désactivé (`password`) renvoient la même erreur, les identifiants étant validés avant. `implicit` renvoie `unsupported_grant_type` parce qu'il n'est pas un grant du token endpoint, pas parce qu'il est décoché. Seule l'UI du provider fait foi |
 | 401 sur tous les appels API après un login réussi | `OIDC_CLIENT_ID` du backend ≠ `client_id` du provider |
 
 ## Reste à faire
 
-- **Grant types** : `implicit` est bloqué, mais `password`, `client_credentials` et
-  `device_code` répondent encore `invalid_grant` (et non `unsupported_grant_type`) →
-  toujours actifs. Ne garder que `authorization_code` et `refresh_token`. `password`
-  est le plus important : il court-circuite les flows d'authentik, donc la règle
-  « Google uniquement », et le client étant public rien ne le protège.
-  ```bash
-  curl -s -X POST https://auth.bpmclubsono.com/application/o/token/ \
-    -d "grant_type=password&client_id=<id>&username=x&password=y" | jq -r .error
-  # attendu : unsupported_grant_type
-  ```
 - **bpm-log n'est pas déployé sur la VM** : pas de conteneur, pas de bloc nginx
   `log.bpmclubsono.com`. La bascule n'a été testée qu'en local.
 - Vérifier `email_verified` dans le backend (`is False` → rejet ; l'absence du claim
