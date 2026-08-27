@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Membre, UserAuth
-from app.security.jwt import decode_token
+from app.security.oidc import decode_oidc_token
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -20,27 +20,35 @@ async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     db: DbSession,
 ) -> Membre:
-    """Décode le JWT access, vérifie le membre et son compte actif."""
+    """Valide l'id_token authentik puis retrouve le membre par son email.
+
+    L'identité vient du claim `email` : authentik répond « qui es-tu », la base
+    reste la source de vérité métier (rôle, activation).
+    """
     invalid = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Token invalide ou expiré.",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_token(credentials.credentials)
-    if payload is None or payload.get("type") != "access":
+    payload = await decode_oidc_token(credentials.credentials)
+    if payload is None:
         raise invalid
 
-    membre_id = payload.get("sub")
-    if membre_id is None:
+    email = payload.get("email")
+    if not email:
         raise invalid
 
-    membre = await db.get(Membre, int(membre_id))
+    membre = await db.scalar(select(Membre).where(Membre.email == email))
     if membre is None:
-        raise invalid
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Compte Google non rattaché à un membre.",
+        )
 
+    # Permet de couper l'accès sans attendre l'expiration du token authentik.
     auth = await db.scalar(select(UserAuth).where(UserAuth.membre_id == membre.id))
-    if auth is None or not auth.is_active:
+    if auth is not None and not auth.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Compte désactivé.",

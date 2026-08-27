@@ -8,17 +8,18 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "@/lib/api";
-import { tokenStore } from "@/lib/tokenStore";
+import { getIdToken, userManager } from "@/lib/oidc";
 import { syncEngine } from "@/lib/syncEngine";
-import { loginWithPasskey } from "@/lib/webauthn";
-import type { Membre, TokenPair } from "@/lib/types";
+import type { Membre } from "@/lib/types";
 
 interface AuthState {
   user: Membre | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  loginPasskey: (email: string) => Promise<void>;
-  logout: () => void;
+  /** Redirige vers authentik, qui redirige lui-même vers Google. */
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  /** Recharge le profil, après le retour sur /auth/callback notamment. */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -28,15 +29,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadMe = useCallback(async () => {
-    if (!tokenStore.getAccess()) {
+    if (!(await getIdToken())) {
+      setUser(null);
       setLoading(false);
       return;
     }
     try {
-      const me = await api<Membre>("/auth/me");
-      setUser(me);
+      setUser(await api<Membre>("/auth/me"));
     } catch {
-      tokenStore.clear();
+      await userManager.removeUser();
       setUser(null);
     } finally {
       setLoading(false);
@@ -47,6 +48,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void loadMe();
   }, [loadMe]);
 
+  // Un renouvellement silencieux ou une déconnexion ailleurs doit se refléter ici.
+  useEffect(() => {
+    const onLoaded = () => void loadMe();
+    const onUnloaded = () => setUser(null);
+    userManager.events.addUserLoaded(onLoaded);
+    userManager.events.addUserUnloaded(onUnloaded);
+    return () => {
+      userManager.events.removeUserLoaded(onLoaded);
+      userManager.events.removeUserUnloaded(onUnloaded);
+    };
+  }, [loadMe]);
+
   // Le moteur de sync ne tourne que lorsqu'un membre est authentifié.
   useEffect(() => {
     if (user) {
@@ -55,32 +68,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const tokens = await api<TokenPair>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-      auth: false,
-    });
-    tokenStore.set(tokens.access_token, tokens.refresh_token);
-    const me = await api<Membre>("/auth/me");
-    setUser(me);
+  const login = useCallback(async () => {
+    await userManager.signinRedirect();
   }, []);
 
-  const loginPasskey = useCallback(async (email: string) => {
-    const tokens = await loginWithPasskey(email);
-    tokenStore.set(tokens.access_token, tokens.refresh_token);
-    const me = await api<Membre>("/auth/me");
-    setUser(me);
-  }, []);
-
-  const logout = useCallback(() => {
-    tokenStore.clear();
+  const logout = useCallback(async () => {
     setUser(null);
+    // Ferme aussi la session authentik : sinon le cookie SSO encore valide
+    // reconnecterait immédiatement sans rien demander.
+    await userManager.signoutRedirect();
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, loginPasskey, logout }),
-    [user, loading, login, loginPasskey, logout],
+    () => ({ user, loading, login, logout, refreshUser: loadMe }),
+    [user, loading, login, logout, loadMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -21,7 +21,6 @@ from app.routers import (
     prestations,
     sync,
     tickets,
-    webauthn,
 )
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 
@@ -53,7 +52,6 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api")
-app.include_router(webauthn.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(fournisseurs.router, prefix="/api")
