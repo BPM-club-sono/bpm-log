@@ -4,6 +4,14 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
+
+# Les variables VITE_* sont inlinées dans le bundle au moment du build :
+# elles doivent exister ici, pas au runtime du conteneur nginx.
+ARG VITE_OIDC_ISSUER
+ARG VITE_OIDC_CLIENT_ID
+ENV VITE_OIDC_ISSUER=$VITE_OIDC_ISSUER \
+    VITE_OIDC_CLIENT_ID=$VITE_OIDC_CLIENT_ID
+
 RUN npm run build
 
 # Étape 2 : servir avec nginx

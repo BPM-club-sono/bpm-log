@@ -61,6 +61,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_OIDC_ISSUER: ${VITE_OIDC_ISSUER}
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID}
     container_name: bpm_log_frontend
     restart: unless-stopped
     # Pas de `ports:` → servi par Caddy via le réseau Docker interne.
