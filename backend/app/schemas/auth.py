@@ -1,28 +1,8 @@
-"""Schémas Pydantic pour l'authentification."""
+"""Schémas Pydantic pour l'authentification (identité fournie par authentik)."""
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.models.enums import RoleMembre
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class TokenPair(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
-class AccessToken(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
 
 
 class MembreRead(BaseModel):

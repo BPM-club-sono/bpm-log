@@ -1,4 +1,4 @@
-import { tokenStore } from "./tokenStore";
+import { getIdToken, userManager } from "./oidc";
 
 const BASE = "/api";
 
@@ -12,18 +12,14 @@ export class ApiError extends Error {
   }
 }
 
-async function refreshAccess(): Promise<boolean> {
-  const refresh = tokenStore.getRefresh();
-  if (!refresh) return false;
-  const res = await fetch(`${BASE}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refresh }),
-  });
-  if (!res.ok) return false;
-  const data = (await res.json()) as { access_token: string };
-  tokenStore.setAccess(data.access_token);
-  return true;
+/** Renouvelle l'id_token via authentik (iframe caché), sans interaction. */
+async function renewToken(): Promise<boolean> {
+  try {
+    const user = await userManager.signinSilent();
+    return user?.id_token != null;
+  } catch {
+    return false;
+  }
 }
 
 interface RequestOptions {
@@ -39,7 +35,7 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
   if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (auth) {
-    const token = tokenStore.getAccess();
+    const token = await getIdToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
 
@@ -50,10 +46,10 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   });
 
   if (res.status === 401 && auth && retry) {
-    if (await refreshAccess()) {
+    if (await renewToken()) {
       return api<T>(path, { ...opts, retry: false });
     }
-    tokenStore.clear();
+    await userManager.removeUser();
   }
 
   if (!res.ok) {

@@ -4,9 +4,10 @@ import { api, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
 import { syncEngine } from "@/lib/syncEngine";
 import { compressImage } from "@/lib/image";
-import type { Equipment, TicketDetail } from "@/lib/types";
+import type { EquipmentListItem, TicketDetail } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { StatusBadge } from "@/shared/StatusBadge";
 
 interface LocalPhoto {
   id: string;
@@ -22,8 +23,9 @@ export function PannesPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [barcode, setBarcode] = useState(params.get("barcode") ?? "");
-  const [equipment, setEquipment] = useState<Equipment | null>(null);
-  const [checking, setChecking] = useState(false);
+  const [equipment, setEquipment] = useState<EquipmentListItem | null>(null);
+  const [results, setResults] = useState<EquipmentListItem[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [submitted, setSubmitted] = useState(false);
@@ -31,33 +33,36 @@ export function PannesPage() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Vérifie l'existence de l'équipement (best-effort, échoue silencieusement offline).
+  // Recherche serveur (nom ou code-barres), debounce 300ms. En ligne seulement :
+  // hors-ligne le champ reste une saisie libre de code-barres (file de synchro).
   useEffect(() => {
-    const code = barcode.trim();
-    if (!code) {
-      setEquipment(null);
+    const q = barcode.trim();
+    // Équipement déjà sélectionné pour ce texte : pas de re-recherche.
+    if (!q || !navigator.onLine || equipment?.barcode_uid === q) {
+      setResults([]);
       return;
     }
-    let active = true;
-    setChecking(true);
-    const t = setTimeout(async () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
       try {
-        const eq = await api<Equipment>(
-          `/equipments/by-barcode/${encodeURIComponent(code)}`,
+        const r = await api<EquipmentListItem[]>(
+          `/equipments?q=${encodeURIComponent(q)}`,
         );
-        if (active) setEquipment(eq);
-      } catch (err) {
-        if (active) setEquipment(null);
-        void (err instanceof ApiError);
-      } finally {
-        if (active) setChecking(false);
+        setResults(r.slice(0, 8));
+      } catch {
+        setResults([]);
       }
-    }, 350);
+    }, 300);
     return () => {
-      active = false;
-      clearTimeout(t);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [barcode]);
+  }, [barcode, equipment]);
+
+  function selectEquipment(eq: EquipmentListItem) {
+    setEquipment(eq);
+    setBarcode(eq.barcode_uid);
+    setResults([]);
+  }
 
   // Libère les object URLs.
   useEffect(() => () => photos.forEach((p) => URL.revokeObjectURL(p.url)), [photos]);
@@ -158,6 +163,7 @@ export function PannesPage() {
     photos.forEach((p) => URL.revokeObjectURL(p.url));
     setBarcode("");
     setEquipment(null);
+    setResults([]);
     setDescription("");
     setPhotos([]);
     setSubmitted(false);
@@ -201,21 +207,51 @@ export function PannesPage() {
 
       <div className="space-y-1.5">
         <label className="block text-xs font-medium text-fg-muted">
-          Code-barres du matériel
+          Matériel
         </label>
-        <input
-          value={barcode}
-          onChange={(e) => setBarcode(e.target.value)}
-          placeholder="BPM-LUM-0001"
-          className="h-11 w-full rounded-xl border border-line bg-bg-soft px-3 font-mono text-sm outline-none focus:border-fg"
-        />
-        {checking && <p className="text-xs text-fg-muted">Vérification…</p>}
+        <div className="relative">
+          <Icon
+            name="search"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
+          />
+          <input
+            value={barcode}
+            onChange={(e) => {
+              // Texte modifié : la sélection précédente ne vaut plus.
+              if (equipment) setEquipment(null);
+              setBarcode(e.target.value);
+            }}
+            placeholder="Nom ou code-barres…"
+            className="h-11 w-full rounded-xl border border-line bg-bg-soft pl-10 pr-3 text-sm outline-none focus:border-fg"
+          />
+        </div>
+        {results.length > 0 && !equipment && (
+          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-bg-soft">
+            {results.map((e) => (
+              <li key={e.id}>
+                <button
+                  type="button"
+                  onClick={() => selectEquipment(e)}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-opacity hover:opacity-70"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{e.nom}</p>
+                    <p className="font-mono text-xs text-fg-muted">
+                      {e.barcode_uid}
+                    </p>
+                  </div>
+                  <StatusBadge statut={e.statut_actuel} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {equipment && (
           <p className="text-xs text-success">
             <Icon name="check" className="align-middle text-sm" /> {equipment.nom}
           </p>
         )}
-        {!checking && !equipment && barcode.trim() && (
+        {!equipment && results.length === 0 && barcode.trim() && (
           <p className="text-xs text-fg-muted">
             Inconnu en ligne — sera vérifié à la synchro.
           </p>

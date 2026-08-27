@@ -20,16 +20,18 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    # JWT
+    # OIDC (authentik) — seule source d'authentification.
+    # Le backend ne signe plus aucun token : il vérifie ceux d'authentik via JWKS.
+    oidc_issuer: str = "https://auth.bpmclubsono.com/application/o/bpm-log/"
+    oidc_client_id: str = ""
+    oidc_jwks_url: str = "https://auth.bpmclubsono.com/application/o/bpm-log/jwks/"
+    oidc_jwks_cache_seconds: int = 3600
+
+    # JWT — conservé pour le seed uniquement (comptes locaux historiques).
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
-
-    # WebAuthn
-    webauthn_rp_id: str = "localhost"
-    webauthn_rp_name: str = "BPM Log"
-    webauthn_origin: list[str] = ["http://localhost", "http://localhost:5173"]
 
     # Web-Push
     vapid_public_key: str = ""
@@ -44,16 +46,6 @@ class Settings(BaseSettings):
     def split_cors(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value
-
-    @field_validator("webauthn_origin", mode="before")
-    @classmethod
-    def split_webauthn_origin(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, str):
-            stripped = value.strip()
-            if stripped.startswith("["):
-                return value  # JSON list, parsé par pydantic
-            return [o.strip() for o in value.split(",") if o.strip()]
         return value
 
 

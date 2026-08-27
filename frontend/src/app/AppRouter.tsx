@@ -8,6 +8,9 @@ import { ProtectedRoute } from "./ProtectedRoute";
 const LoginPage = lazy(() =>
   import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
 );
+const AuthCallbackPage = lazy(() =>
+  import("@/features/auth/AuthCallbackPage").then((m) => ({ default: m.AuthCallbackPage })),
+);
 const HomePage = lazy(() =>
   import("@/features/home/HomePage").then((m) => ({ default: m.HomePage })),
 );
@@ -76,6 +79,7 @@ function lazyRoute(element: React.ReactNode) {
 
 const router = createBrowserRouter([
   { path: "/login", element: lazyRoute(<LoginPage />) },
+  { path: "/auth/callback", element: lazyRoute(<AuthCallbackPage />) },
   {
     element: <ProtectedRoute />,
     children: [
