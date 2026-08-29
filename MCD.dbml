@@ -65,23 +65,12 @@ Table membres {
   mandat integer [note: 'Numero du mandat dans lequel le membre à fait son entrée dans l\'association (ex: 28)']
 }
 
-// Identité technique (compte de connexion) séparée de l'identité métier (membre asso)
+// Etat d'acces local. L'authentification elle-meme est deleguee a authentik
+// (OIDC) : aucun secret n'est stocke ici, seulement le droit d'entrer.
 Table users_auth {
   membre_id integer [primary key, note: 'FK et PK — un compte par membre']
-  password_hash varchar [note: 'Argon2']
   last_login timestamp
-  is_active boolean [default: true]
-}
-
-// Une ou plusieurs Passkeys WebAuthn par membre (téléphone perso, laptop perso...)
-Table webauthn_credentials {
-  id integer [primary key, increment]
-  membre_id integer
-  credential_id bytea [unique]
-  public_key bytea
-  sign_count integer [default: 0]
-  device_name varchar
-  created_at timestamp
+  is_active boolean [default: true, note: 'Coupe l\'acces sans attendre l\'expiration du token authentik']
 }
 
 // Abonnements Web-Push (VAPID) — un par appareil
@@ -293,5 +282,4 @@ Ref: allocations_presta.equipment_id > equipments.id
 
 // Identité technique & sécurité
 Ref: users_auth.membre_id - membres.id
-Ref: webauthn_credentials.membre_id > membres.id
 Ref: push_subscriptions.membre_id > membres.id

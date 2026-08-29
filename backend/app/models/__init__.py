@@ -19,7 +19,6 @@ from app.models.db_models import (
     PushSubscription,
     TicketReparation,
     UserAuth,
-    WebauthnCredential,
 )
 
 __all__ = [
@@ -41,5 +40,4 @@ __all__ = [
     "PushSubscription",
     "TicketReparation",
     "UserAuth",
-    "WebauthnCredential",
 ]

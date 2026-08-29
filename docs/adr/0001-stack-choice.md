@@ -1,6 +1,6 @@
 # 0001 — Choix de la stack technique
 
-- **Statut** : Accepté
+- **Statut** : Accepté — la ligne « Auth » est remplacée par [0002](0002-auth-authentik.md)
 - **Date** : 2026-05-29
 - **Contexte** : Application PWA offline-first de gestion du parc matériel de l'association BPM.
 
@@ -13,8 +13,7 @@
 | ORM | SQLAlchemy 2.x (style async) | Mature, typé, compatible Alembic |
 | API | FastAPI + Uvicorn | Validation Pydantic v2, OpenAPI auto, async natif |
 | Migrations | Alembic | Standard, migrations versionnées et réversibles |
-| Auth | JWT (access + refresh) + WebAuthn/Passkey | Mot de passe au 1er login, puis biométrie via Passkey |
-| Hash mot de passe | Argon2 (`argon2-cffi`) | Recommandation OWASP actuelle |
+| Auth | ~~JWT (access + refresh) + WebAuthn/Passkey~~ | Abandonné : OIDC via authentik, cf. [0002](0002-auth-authentik.md) |
 | RBAC | Rôles `Admin` / `Staff` / `Tech` | Contrôle d'accès dès la V1 |
 | Frontend | React 18 + TypeScript + Vite | Cohérent avec Site-BPM |
 | Styles | Tailwind CSS | Productivité, design system noir/blanc sobre |
@@ -25,6 +24,6 @@
 
 ## Conséquences
 
-- L'idempotence de la sync repose sur un `uuid_client` généré côté client (cf. PLAN.md §3.3).
+- L'idempotence de la sync repose sur un `uuid_client` généré côté client (cf. ../plan-initial.md §3.3).
 - L'état dérivé (statuts, stocks) est recalculé par replay chronologique du log d'évènements.
 - Toute évolution de schéma passe par une nouvelle migration Alembic, jamais par édition d'une migration appliquée.

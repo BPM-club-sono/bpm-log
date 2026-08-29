@@ -1,8 +1,13 @@
-"""Script de seed : crée un membre Admin initial avec un compte de connexion.
+"""Script de seed : crée le membre Admin initial.
 
 Usage :
-    python -m app.seed --email admin@bpm.example --password "motdepasse" \
-        --nom Dupont --prenom Jean
+    python -m app.seed --email admin@bpm.example --nom Dupont --prenom Jean
+
+L'authentification passe par authentik (cf. docs/authentik-sso.md) : ce script
+ne crée aucun identifiant, seulement la ligne `membres` avec le rôle Admin.
+Sans lui, un compte inconnu est provisionné en `Staff` à sa première requête et
+il n'y aurait aucun Admin. L'email doit être **exactement** celui du compte
+authentik, c'est la clé de rapprochement.
 
 À lancer après `alembic upgrade head`.
 """
@@ -31,10 +36,9 @@ from app.models.enums import (
     StatutPrestation,
     TypePrestation,
 )
-from app.security.passwords import hash_password
 
 
-async def seed_admin(email: str, password: str, nom: str, prenom: str) -> None:
+async def seed_admin(email: str, nom: str, prenom: str) -> None:
     async with async_session_factory() as db:
         existing = await db.scalar(select(Membre).where(Membre.email == email))
         if existing is not None:
@@ -50,7 +54,8 @@ async def seed_admin(email: str, password: str, nom: str, prenom: str) -> None:
         db.add(membre)
         await db.flush()
 
-        db.add(UserAuth(membre_id=membre.id, password_hash=hash_password(password)))
+        # Ligne d'activation : permet de couper l'accès sans toucher à authentik.
+        db.add(UserAuth(membre_id=membre.id))
         await db.commit()
         print(f"Admin créé : {email} (membre id={membre.id}).")
 
@@ -253,7 +258,6 @@ async def seed_demo_inventaire() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crée un administrateur BPM Log.")
     parser.add_argument("--email", required=True)
-    parser.add_argument("--password", required=True)
     parser.add_argument("--nom", default="Admin")
     parser.add_argument("--prenom", default="BPM")
     parser.add_argument(
@@ -264,7 +268,7 @@ def main() -> None:
     args = parser.parse_args()
 
     async def run() -> None:
-        await seed_admin(args.email, args.password, args.nom, args.prenom)
+        await seed_admin(args.email, args.nom, args.prenom)
         if args.demo:
             await seed_demo()
             await seed_demo_prestation()

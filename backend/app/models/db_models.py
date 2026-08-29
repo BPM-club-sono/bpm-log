@@ -1,4 +1,4 @@
-"""Modèles SQLAlchemy 2.x — reflètent le MCD révisé (cf. MCD.dbml et PLAN.md §2)."""
+"""Modèles SQLAlchemy 2.x — reflètent le MCD révisé (cf. MCD.dbml et docs/plan-initial.md §2)."""
 
 from __future__ import annotations
 
@@ -6,14 +6,12 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
-    LargeBinary,
     String,
     Text,
     func,
@@ -57,7 +55,6 @@ class Membre(Base):
     mandat: Mapped[int | None] = mapped_column(Integer)
 
     auth: Mapped[UserAuth | None] = relationship(back_populates="membre", uselist=False)
-    credentials: Mapped[list[WebauthnCredential]] = relationship(back_populates="membre")
     push_subscriptions: Mapped[list[PushSubscription]] = relationship(back_populates="membre")
 
 
@@ -65,25 +62,10 @@ class UserAuth(Base):
     __tablename__ = "users_auth"
 
     membre_id: Mapped[int] = mapped_column(ForeignKey("membres.id"), primary_key=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     membre: Mapped[Membre] = relationship(back_populates="auth")
-
-
-class WebauthnCredential(Base):
-    __tablename__ = "webauthn_credentials"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    membre_id: Mapped[int] = mapped_column(ForeignKey("membres.id"), index=True)
-    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
-    public_key: Mapped[bytes] = mapped_column(LargeBinary)
-    sign_count: Mapped[int] = mapped_column(BigInteger, default=0)
-    device_name: Mapped[str | None] = mapped_column(String(120))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    membre: Mapped[Membre] = relationship(back_populates="credentials")
 
 
 class PushSubscription(Base):

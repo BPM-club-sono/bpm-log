@@ -1,6 +1,6 @@
 """Routes prestations (M6) : CRUD, allocations, préparation terrain, clôture.
 
-La création et la gestion des allocations sont *online-only* (cf. PLAN.md §1).
+La création et la gestion des allocations sont *online-only* (cf. docs/plan-initial.md §1).
 Le déroulé sortie/retour sur le terrain passe par la checklist offline et le
 moteur de synchronisation (`POST /sync/batch`, type `presta_check`).
 """

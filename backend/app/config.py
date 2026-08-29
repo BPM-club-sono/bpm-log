@@ -27,12 +27,6 @@ class Settings(BaseSettings):
     oidc_jwks_url: str = "https://auth.bpmclubsono.com/application/o/bpm-log/jwks/"
     oidc_jwks_cache_seconds: int = 3600
 
-    # JWT — conservé pour le seed uniquement (comptes locaux historiques).
-    jwt_secret: str = "change-me-in-production"
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    refresh_token_expire_days: int = 30
-
     # Web-Push
     vapid_public_key: str = ""
     vapid_private_key: str = ""

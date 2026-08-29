@@ -25,10 +25,19 @@ async def test_protected_route_requires_auth(client):
     assert res.status_code in (401, 403)
 
 
-async def test_login_rejects_bad_credentials(client):
+async def test_api_issues_no_token(client):
+    # L'authentification appartient à authentik : l'API n'expose plus de login.
     res = await client.post(
         "/api/auth/login",
         json={"email": "nope@bpm.fr", "password": "wrong"},
     )
-    # Identifiants invalides → 401 (jamais 200, jamais 500).
-    assert res.status_code in (400, 401)
+    assert res.status_code == 404
+
+
+async def test_forged_token_is_rejected(client):
+    # Un jeton qui n'est pas signé par authentik ne doit jamais passer.
+    res = await client.get(
+        "/api/auth/me",
+        headers={"Authorization": "Bearer pas.un.vrai.token"},
+    )
+    assert res.status_code == 401
