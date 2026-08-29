@@ -74,9 +74,9 @@ When adding a new offline action: add the type to `SyncItemType` (db.ts), write 
 
 ### Backend layout (`backend/app/`)
 
-`main.py` (app, CORS, router wiring, `/health`, static photo mount at `/api/photos`, scheduler lifespan) · `config.py` (pydantic-settings, env-driven) · `database.py` (async engine/session) · `deps.py` (`DbSession`, `CurrentUser`) · `models/` (SQLAlchemy 2 async ORM in `db_models.py`, business enums in `enums.py` mirroring PG ENUMs) · `schemas/` (Pydantic I/O) · `routers/` (one per domain) · `security/` (argon2 passwords, JWT, RBAC) · `services/` (web-push, APScheduler) · `alembic/versions/` (hand-maintained migrations).
+`main.py` (app, CORS, router wiring, `/health`, static photo mount at `/api/photos`, scheduler lifespan) · `config.py` (pydantic-settings, env-driven) · `database.py` (async engine/session) · `deps.py` (`DbSession`, `CurrentUser`) · `models/` (SQLAlchemy 2 async ORM in `db_models.py`, business enums in `enums.py` mirroring PG ENUMs) · `schemas/` (Pydantic I/O) · `routers/` (one per domain) · `security/` (OIDC id_token verification, RBAC) · `services/` (web-push, APScheduler) · `alembic/versions/` (hand-maintained migrations).
 
-- **Auth**: JWT access (30min) + refresh (30d). `CurrentUser` decodes the bearer token, loads the `Membre`, and checks the linked `UserAuth.is_active`. Also supports WebAuthn (passkeys) via `routers/webauthn.py`.
+- **Auth**: OIDC via authentik — the API issues no tokens. `CurrentUser` verifies the authentik `id_token` (signature via JWKS, plus `iss`/`aud`/`exp`, in `security/oidc.py`), finds the `Membre` by the `email` claim, **provisions one as `Staff` if unknown**, and refuses if the linked `UserAuth.is_active` is false. See [docs/authentik-sso.md](docs/authentik-sso.md).
 - **RBAC** ([rbac.py](backend/app/security/rbac.py)): `require_role(...)` dependency; `RequireAdmin/RequireStaff/RequireTech` shortcuts. **Admin implicitly passes every role check.** Roles: Admin, Staff, Tech.
 - **Equipment polymorphism**: a base `Equipment` row optionally has a `EquipmentVrac` (bulk bin), `EquipmentConsommable` (consumable stock), or `EquipmentLocation` (rented) extension, joined 1:1 on `equipment_id`. Handlers resolve which kind via `db.get(EquipmentVrac, id)` etc.
 - **Data model authority**: `MCD.dbml` / `MCD.dbdiagram` at the repo root are the canonical entity-relationship spec; `PLAN.md` is the full product/architecture plan (sync scenarios A/B/C referenced in code comments live there). **Keep `MCD.dbml` up to date**: whenever you change the data model (new/renamed tables, columns, enums, or relationships in `db_models.py` / migrations), update `MCD.dbml` in the same change so it stays an accurate, reviewable mirror of the schema — it's the reference used during code review.
@@ -85,11 +85,11 @@ When adding a new offline action: add the type to `SyncItemType` (db.ts), write 
 
 - `app/` — `AppRouter` (route table, **all pages lazy-loaded** for per-route code-splitting cached by the SW), `AppLayout`, `AuthContext`, `ProtectedRoute`.
 - `features/<domain>/` — page components (auth, catalog, equipment, prestations, pannes, scan, labels, fournisseurs, profile, sync).
-- `lib/` — `api.ts` (fetch wrapper with auto 401→refresh retry), `syncEngine.ts`, `db.ts` (Dexie schema), `tokenStore.ts`, `webauthn.ts`, `push.ts`, `useSync.ts`, `types.ts`. Path alias `@/` → `src/`.
+- `lib/` — `api.ts` (fetch wrapper, silent-renew retry on 401), `oidc.ts` (`oidc-client-ts` UserManager, code+PKCE), `syncEngine.ts`, `db.ts` (Dexie schema), `push.ts`, `useSync.ts`, `types.ts`. Path alias `@/` → `src/`.
 - `shared/` — reusable UI (Button, Icon, StatusBadge, TabBar, Toast, OfflineIndicator).
 - PWA via `vite-plugin-pwa` (autoUpdate). `/api/*` uses NetworkFirst (5s timeout) runtime caching; `push-sw.js` is imported into the generated service worker for web-push.
 
-All API access goes through `api()` in [api.ts](frontend/src/lib/api.ts) — it injects the bearer token and transparently refreshes on 401. Don't call `fetch` directly for API routes.
+All API access goes through `api()` in [api.ts](frontend/src/lib/api.ts) — it injects the authentik `id_token` as bearer and retries once after a silent renew on 401. Don't call `fetch` directly for API routes.
 
 ### Vérification navigateur
 
