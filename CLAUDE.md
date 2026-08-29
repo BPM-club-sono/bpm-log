@@ -43,7 +43,7 @@ cp .env.example .env
 docker compose up -d           # db + adminer (:8081) + api (:8000) + frontend (:80)
 ```
 
-The API container runs migrations automatically on start (`backend/entrypoint.sh` → `alembic upgrade head`). `docker-compose.prod.yml` + `Caddyfile` are the production setup (Caddy reverse proxy, TLS).
+The API container runs migrations automatically on start (`backend/entrypoint.sh` → `alembic upgrade head`). `docker-compose.prod.yml` is the production setup: db + api + frontend only, the frontend published on `127.0.0.1:8082` behind the VM's **host nginx** (TLS via certbot) — see `docs/authentik-sso.md`.
 
 ### Stack par worktree (tests en parallèle)
 

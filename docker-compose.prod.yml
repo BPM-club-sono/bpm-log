@@ -1,15 +1,23 @@
 # Production — déploiement sur VM avec sous-domaine propre.
 #
 # Architecture :
-#   Internet → Caddy (80/443, TLS Let's Encrypt auto)
-#               ├── /api/*  → api:8000  (FastAPI)
-#               └── /*      → frontend:80 (nginx, fichiers statiques)
+#   Internet → nginx de l'hôte (80/443, TLS certbot)
+#               └── log.bpmclubsono.com → 127.0.0.1:8082 → frontend:80
+#                                                            └── /api/* → api:8000
 #
-# La base, l'API et le frontend n'ont AUCUN port exposé publiquement.
-# Seul Caddy répond sur 80/443.
+# Le reverse proxy public est le nginx **de la VM**, partagé avec les autres
+# sites (bpmclubsono.com, auth.bpmclubsono.com) : la stack ne peut donc pas
+# prendre les ports 80/443 et n'embarque aucun proxy à elle.
+# Le nginx *de l'image frontend* (frontend/nginx.conf) route déjà /api/ vers
+# l'API : l'hôte n'a qu'un seul upstream à connaître, le frontend.
+#
+# La base et l'API n'ont aucun port exposé. Le frontend n'est publié que sur la
+# loopback : rien n'est joignable depuis l'extérieur sans passer par nginx.
 #
 # Pré-requis sur la VM :
-#   - Ports 80 et 443 ouverts (firewall)
+#   - nginx : vhost log.bpmclubsono.com → proxy_pass http://127.0.0.1:8082
+#     (+ client_max_body_size 20M pour les photos de tickets)
+#   - certbot --nginx -d log.bpmclubsono.com
 #   - Enregistrement DNS A : log.bpmclubsono.com → IP de la VM
 #
 # Lancer :
@@ -44,7 +52,7 @@ services:
     environment:
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bpm_log}
-    # Pas de `ports:` → joignable uniquement par Caddy via le réseau Docker interne.
+    # Pas de `ports:` → joignable uniquement par le frontend, via le réseau Docker interne.
     depends_on:
       db:
         condition: service_healthy
@@ -66,7 +74,9 @@ services:
         VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID}
     container_name: bpm_log_frontend
     restart: unless-stopped
-    # Pas de `ports:` → servi par Caddy via le réseau Docker interne.
+    # Publié sur la loopback uniquement : seul le nginx de l'hôte y accède.
+    ports:
+      - "127.0.0.1:8082:80"
     depends_on:
       - api
     healthcheck:
@@ -76,23 +86,6 @@ services:
       retries: 3
       start_period: 10s
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: bpm_log_caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"    # Requis pour le challenge ACME HTTP-01 (renouvellement Let's Encrypt).
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data        # Certificats TLS (persistés entre redémarrages).
-      - caddy_config:/config
-    depends_on:
-      - frontend
-      - api
-
 volumes:
   bpm_pgdata:
   bpm_photos:
-  caddy_data:
-  caddy_config:
