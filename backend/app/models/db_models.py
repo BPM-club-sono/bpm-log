@@ -1,4 +1,4 @@
-"""Modèles SQLAlchemy 2.x — reflètent le MCD révisé (cf. MCD.dbml et PLAN.md §2)."""
+"""Modèles SQLAlchemy 2.x — reflètent le MCD révisé (cf. MCD.dbml et docs/plan-initial.md §2)."""
 
 from __future__ import annotations
 

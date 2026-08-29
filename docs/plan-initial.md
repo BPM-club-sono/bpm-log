@@ -1,5 +1,19 @@
 # BPM Log — Plan d'architecture & plan d'action
 
+> **Document historique — mai 2026.** Plan de départ du projet, conservé parce
+> que le code y renvoie (scénarios de sync A/B/C en §3.3, périmètre online-only
+> en §1, modèle de données en §2). Il n'est **pas** tenu à jour et décrit par
+> endroits un projet qui n'existe plus tel quel :
+>
+> - §0 acte « Auth : JWT + WebAuthn » — remplacé par l'OIDC via authentik
+>   (cf. [adr/0002-auth-authentik.md](adr/0002-auth-authentik.md) et
+>   [authentik-sso.md](authentik-sso.md)).
+> - §9 « Prochaines étapes immédiates » décrit la création du backend et du
+>   frontend, faite depuis.
+>
+> Pour l'état réel du système : `CLAUDE.md` (architecture), `MCD.dbml` (schéma),
+> `docs/adr/` (décisions).
+
 > Application PWA offline-first de gestion du parc matériel de l'association BPM.
 > Backend FastAPI / PostgreSQL · Frontend React + TypeScript + Vite + Tailwind · PWA installable.
 
