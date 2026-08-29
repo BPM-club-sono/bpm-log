@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Allocation, TypePrestation } from "@/lib/types";
+import { normaliser } from "@/lib/barcode";
 import { Icon } from "@/shared/Icon";
 import {
   buildAllocTree,
@@ -238,7 +239,7 @@ export function ChecklistView({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const code = scanInput.trim();
+          const code = normaliser(scanInput);
           if (code) onScan(code);
           setScanInput("");
         }}

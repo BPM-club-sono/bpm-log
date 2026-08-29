@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import type { Equipment } from "@/lib/types";
+import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { QrScanner } from "./QrScanner";
@@ -19,7 +20,7 @@ export function ScanPage() {
 
   const resolve = useCallback(
     async (code: string) => {
-      const trimmed = code.trim();
+      const trimmed = normaliser(code);
       if (!trimmed) return;
       setLoading(true);
       try {
@@ -53,7 +54,7 @@ export function ScanPage() {
 
   function onManualSubmit(e: FormEvent) {
     e.preventDefault();
-    lastCodeRef.current = manual.trim();
+    lastCodeRef.current = normaliser(manual);
     void resolve(manual);
   }
 

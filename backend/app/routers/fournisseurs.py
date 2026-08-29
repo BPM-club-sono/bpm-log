@@ -7,8 +7,33 @@ from app.deps import CurrentUser, DbSession
 from app.models import EquipmentLocation, Fournisseur
 from app.schemas.equipment import FournisseurCreate, FournisseurRead, FournisseurUpdate
 from app.security.rbac import RequireStaff
+from app.services import barcode
 
 router = APIRouter(tags=["fournisseurs"])
+
+
+async def _verifier_code(
+    db: DbSession, code: str | None, fournisseur_id: int | None
+) -> None:
+    """Refuse un trigramme réservé ou déjà pris.
+
+    Le format est déjà validé par le schéma ; restent les collisions et les
+    préfixes que le parc s'est réservés (BPM en interne, EXT pour le matériel
+    loué sans trigramme, TST pour les fixtures de test).
+    """
+    if code is None:
+        return
+    if code in barcode.PREFIXES_RESERVES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Le trigramme {code} est réservé.",
+        )
+    existing = await db.scalar(select(Fournisseur).where(Fournisseur.code == code))
+    if existing is not None and existing.id != fournisseur_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Le trigramme {code} est déjà utilisé par « {existing.nom} ».",
+        )
 
 
 @router.get("/fournisseurs", response_model=list[FournisseurRead])
@@ -29,8 +54,10 @@ async def create_fournisseur(
     _user: RequireStaff,
     db: DbSession,
 ) -> Fournisseur:
+    await _verifier_code(db, payload.code, None)
     fournisseur = Fournisseur(
         nom=payload.nom.strip(),
+        code=payload.code,
         contact=payload.contact,
         favori=payload.favori,
     )
@@ -54,6 +81,9 @@ async def update_fournisseur(
         )
     if payload.nom is not None:
         fournisseur.nom = payload.nom.strip()
+    if payload.code is not None:
+        await _verifier_code(db, payload.code, fournisseur.id)
+        fournisseur.code = payload.code
     if payload.contact is not None:
         fournisseur.contact = payload.contact
     if payload.favori is not None:

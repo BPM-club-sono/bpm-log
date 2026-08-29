@@ -4,9 +4,8 @@ Session non commitée (rollback en teardown) pour ne pas polluer la base. On
 exerce directement les helpers du routeur équipement, comme test_contenants.
 """
 
-import uuid
-
 import pytest
+from conftest import make_equipment
 from fastapi import HTTPException
 
 from app.models import Equipment, EquipmentVrac
@@ -14,10 +13,7 @@ from app.routers.equipment import _apply_est_contenant, _ensure_flight
 
 
 async def _mk_eq(session, nom: str, **kw) -> Equipment:
-    eq = Equipment(barcode_uid=f"test-{uuid.uuid4().hex}", nom=nom, **kw)
-    session.add(eq)
-    await session.flush()
-    return eq
+    return await make_equipment(session, nom, **kw)
 
 
 async def test_ensure_flight(db_session):

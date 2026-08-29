@@ -8,7 +8,31 @@ import { Icon } from "@/shared/Icon";
 
 interface Label {
   equipment: Equipment;
-  dataUrl: string;
+  /** `null` si la référence ne tient pas dans un QR v1 (cf. genererQr). */
+  dataUrl: string | null;
+}
+
+/** Génère l'étiquette d'un équipement, ou `null` si sa référence déborde.
+ *
+ *  Correction d'erreur **H** (~30 % de récupération) pour que l'étiquette
+ *  survive à la poussière et aux frottements, et **version 1** imposée pour que
+ *  le symbole ne grossisse pas. La lib lève si le contenu ne rentre pas : c'est
+ *  le comportement voulu — une référence non conforme doit se voir, pas produire
+ *  un QR plus dense en silence. On isole l'échec sur la seule étiquette fautive
+ *  plutôt que de casser la planche entière. La zone de silence passe à 4
+ *  modules, ce que demande la norme (1 seul auparavant).
+ */
+async function genererQr(reference: string): Promise<string | null> {
+  try {
+    return await QRCode.toDataURL(reference, {
+      margin: 4,
+      width: 240,
+      errorCorrectionLevel: "H",
+      version: 1,
+    });
+  } catch {
+    return null;
+  }
 }
 
 export function LabelsPage() {
@@ -30,11 +54,7 @@ export function LabelsPage() {
         const generated = await Promise.all(
           eq.map(async (equipment) => ({
             equipment,
-            dataUrl: await QRCode.toDataURL(equipment.barcode_uid, {
-              margin: 1,
-              width: 240,
-              errorCorrectionLevel: "M",
-            }),
+            dataUrl: await genererQr(equipment.barcode_uid),
           })),
         );
         if (!active) return;
@@ -161,7 +181,16 @@ export function LabelsPage() {
                   <Icon name="bookmark" className="text-sm" filled />
                 </span>
               )}
-              <img src={dataUrl} alt={equipment.barcode_uid} className="w-full" />
+              {dataUrl ? (
+                <img src={dataUrl} alt={equipment.barcode_uid} className="w-full" />
+              ) : (
+                <span className="flex aspect-square w-full flex-col items-center justify-center gap-1 border border-dashed border-danger/60 text-danger">
+                  <Icon name="error" className="text-2xl" />
+                  <span className="px-1 text-[9px] leading-tight">
+                    Référence trop longue pour une étiquette
+                  </span>
+                </span>
+              )}
               <span className="font-mono text-[10px] leading-tight">
                 {equipment.barcode_uid}
               </span>

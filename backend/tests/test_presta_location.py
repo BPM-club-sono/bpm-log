@@ -3,17 +3,14 @@
 Session non commitée (rollback en teardown).
 """
 
-import uuid
+from conftest import make_equipment
 
 from app.models import Equipment, EquipmentLocation, Fournisseur
 from app.routers.prestations import _location_map
 
 
 async def _mk_eq(session, nom: str, **kw) -> Equipment:
-    eq = Equipment(barcode_uid=f"test-{uuid.uuid4().hex}", nom=nom, **kw)
-    session.add(eq)
-    await session.flush()
-    return eq
+    return await make_equipment(session, nom, **kw)
 
 
 async def test_location_map_lie_equipement_a_son_prestataire(db_session):

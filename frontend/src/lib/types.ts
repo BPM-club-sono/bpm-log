@@ -312,6 +312,8 @@ export interface EquipmentDetail {
 export interface Fournisseur {
   id: number;
   nom: string;
+  /** Trigramme qui préfixe les références du matériel loué ici (ex. NOV). */
+  code?: string | null;
   contact: string | null;
   favori?: boolean;
 }

@@ -125,7 +125,14 @@ export function FournisseursPage() {
               <Icon name={f.favori ? "star" : "star_border"} className="text-xl" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{f.nom}</p>
+              <p className="truncate text-sm font-medium">
+                {f.nom}
+                {f.code && (
+                  <span className="ml-2 rounded bg-bg-elev px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">
+                    {f.code}
+                  </span>
+                )}
+              </p>
               <p className="truncate text-xs text-fg-muted">{f.contact ?? "—"}</p>
             </div>
             {canManage && (
@@ -166,6 +173,7 @@ function FournisseurForm({
 }) {
   const { toast } = useToast();
   const [nom, setNom] = useState(initial?.nom ?? "");
+  const [code, setCode] = useState(initial?.code ?? "");
   const [contact, setContact] = useState(initial?.contact ?? "");
   const [favori, setFavori] = useState(initial?.favori ?? false);
   const [saving, setSaving] = useState(false);
@@ -179,7 +187,12 @@ function FournisseurForm({
     setSaving(true);
     setErr(null);
     try {
-      const body = { nom: nom.trim(), contact: contact.trim() || null, favori };
+      const body = {
+        nom: nom.trim(),
+        code: code.trim() || null,
+        contact: contact.trim() || null,
+        favori,
+      };
       if (initial) {
         await api(`/fournisseurs/${initial.id}`, { method: "PATCH", body });
       } else {
@@ -207,6 +220,23 @@ function FournisseurForm({
           placeholder="Impact, Novelty, …"
           className={inputCls}
         />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-xs font-medium text-fg-muted">
+          Trigramme <span className="font-normal">(facultatif)</span>
+        </span>
+        <input
+          value={code}
+          onChange={(e) =>
+            setCode(e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 3))
+          }
+          placeholder="NOV"
+          maxLength={3}
+          className={`${inputCls} font-mono uppercase`}
+        />
+        <span className="block text-xs text-fg-muted">
+          Préfixe des références du matériel loué ici : {code || "EXT"}-000042.
+        </span>
       </label>
       <label className="block space-y-1">
         <span className="text-xs font-medium text-fg-muted">Contact</span>

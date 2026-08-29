@@ -98,7 +98,7 @@ Table emplacements {
 
 Table equipments {
   id integer [primary key, increment]
-  barcode_uid varchar [unique, note: 'Le contenu unique du QR Code — stable et réimprimable à l\'identique']
+  barcode_uid varchar(10) [unique, not null, note: 'Contenu du QR Code, format PPP-NNNNNN (CHECK ^[A-Z]{3}-[0-9]{6}$) : trigramme du propriétaire puis id sur 6 chiffres. 10 caractères majuscules — la limite exacte d\'un QR version 1 en correction H, qui est ce qui rend l\'étiquette résistante à l\'usure sans grossir. Stable et réimprimable à l\'identique.']
   nom varchar // ex: 'Lyre Beam 7R', 'Ampli Crown XTi'
   categorie_id integer
   emplacement_id integer
@@ -199,6 +199,7 @@ Table logs_scans {
 Table fournisseurs {
   id integer [primary key, increment]
   nom varchar // ex: 'Impact Sonorisation', 'Novelty'
+  code varchar(3) [unique, null, note: 'Trigramme préfixant les références du matériel loué ici (ex: NOV). Facultatif : sans lui le matériel prend EXT. BPM, EXT et TST sont réservés.']
   contact varchar
   favori boolean [note: 'Fournisseur prioritaire affiché en accès rapide lors de l\'ajout de matériel loué']
 }
