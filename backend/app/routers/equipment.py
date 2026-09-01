@@ -5,7 +5,7 @@ import uuid as uuid_lib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -47,6 +47,7 @@ from app.schemas.equipment import (
 )
 from app.schemas.inventory import InventaireEntry, VracLock
 from app.security.rbac import RequireStaff
+from app.services import barcode, references
 
 router = APIRouter(tags=["catalogue"])
 
@@ -97,7 +98,15 @@ async def _resolve_fournisseur(
             )
         return f.id
     if fournisseur_nom and fournisseur_nom.strip():
-        f = Fournisseur(nom=fournisseur_nom.strip())
+        nom = fournisseur_nom.strip()
+        # Dédoublonne sur le nom : deux « Novelty » se disputeraient un trigramme
+        # unique, et le matériel du même loueur porterait deux préfixes.
+        existing = await db.scalar(
+            select(Fournisseur).where(func.lower(Fournisseur.nom) == nom.lower())
+        )
+        if existing is not None:
+            return existing.id
+        f = Fournisseur(nom=nom)
         db.add(f)
         await db.flush()
         return f.id
@@ -556,13 +565,12 @@ async def get_equipment_by_barcode(
     db: DbSession,
 ) -> Equipment:
     """Résout un code-barres scanné vers son équipement (utilisé par le scanner)."""
-    equipment = await db.scalar(
-        select(Equipment).where(Equipment.barcode_uid == barcode_uid)
-    )
+    code = barcode.normaliser(barcode_uid)
+    equipment = await db.scalar(select(Equipment).where(Equipment.barcode_uid == code))
     if equipment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Aucun équipement avec le code-barres {barcode_uid}.",
+            detail=f"Aucun équipement avec le code-barres {code}.",
         )
     return equipment
 
@@ -617,18 +625,44 @@ async def get_equipment_contenu(
 # --------------------------------------------------------------------------- #
 # Création / édition (Admin + Staff)
 # --------------------------------------------------------------------------- #
+async def _prefixe_equipment(
+    db: DbSession, externe: bool, fournisseur_id: int | None
+) -> str:
+    """Trigramme à imprimer : celui du fournisseur pour du loué, BPM sinon."""
+    if not externe or fournisseur_id is None:
+        return barcode.PREFIXE_INTERNE
+    f = await db.get(Fournisseur, fournisseur_id)
+    return (f.code if f is not None and f.code else None) or barcode.PREFIXE_EXTERNE
+
+
+async def _reserver_reference(db: DbSession, prefixe: str) -> tuple[int, str]:
+    """Réserve un id et sa référence, en traduisant les échecs en réponses HTTP."""
+    try:
+        return await references.reserver(db, prefixe)
+    except references.NumerotationEpuisee as exc:
+        raise HTTPException(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            detail=f"Plus de référence disponible : le numéro dépasse {barcode.NUMERO_MAX}.",
+        ) from exc
+    except references.ReferenceIndisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Impossible d'attribuer une référence libre.",
+        ) from exc
+
+
 async def _assign_barcode(db: DbSession, eq: Equipment, provided: str | None) -> None:
-    if provided and provided.strip():
-        code = provided.strip()
-        existing = await db.scalar(select(Equipment).where(Equipment.barcode_uid == code))
-        if existing is not None and existing.id != eq.id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Le code-barres {code} est déjà utilisé.",
-            )
-        eq.barcode_uid = code
-    elif not eq.barcode_uid:
-        eq.barcode_uid = f"BPM-{eq.id:06d}"
+    """Applique une référence fournie par le client (déjà validée par Pydantic)."""
+    if not (provided and provided.strip()):
+        return
+    code = barcode.normaliser(provided)
+    existing = await db.scalar(select(Equipment).where(Equipment.barcode_uid == code))
+    if existing is not None and existing.id != eq.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Le code-barres {code} est déjà utilisé.",
+        )
+    eq.barcode_uid = code
 
 
 @router.post(
@@ -651,8 +685,25 @@ async def create_equipment(
     if payload.contenant_id is not None:
         await _ensure_flight(db, payload.contenant_id)
         await _check_no_cycle(db, None, payload.contenant_id)
+    # Le fournisseur est résolu avant l'INSERT : son trigramme préfixe la
+    # référence, qui doit être connue dès la création de la ligne.
+    fournisseur_id: int | None = None
+    if payload.externe:
+        fournisseur_id = await _resolve_fournisseur(
+            db, payload.fournisseur_id, payload.fournisseur_nom
+        )
+        if fournisseur_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Un fournisseur est requis pour un matériel en location externe.",
+            )
+
+    prefixe = await _prefixe_equipment(db, payload.externe, fournisseur_id)
+    eq_id, reference = await _reserver_reference(db, prefixe)
+
     eq = Equipment(
-        barcode_uid=f"tmp-{uuid_lib.uuid4().hex}",
+        id=eq_id,
+        barcode_uid=reference,
         nom=payload.nom,
         categorie_id=payload.categorie_id,
         emplacement_id=None if payload.contenant_id is not None else payload.emplacement_id,
@@ -662,11 +713,9 @@ async def create_equipment(
         created_by_membre_id=user.id,
     )
     db.add(eq)
-    await db.flush()  # obtenir l'id pour le code-barres auto
-    if payload.barcode_uid and payload.barcode_uid.strip():
+    await db.flush()
+    if payload.barcode_uid:
         await _assign_barcode(db, eq, payload.barcode_uid)
-    else:
-        eq.barcode_uid = f"BPM-{eq.id:06d}"
 
     if payload.type == "vrac":
         db.add(
@@ -685,15 +734,7 @@ async def create_equipment(
             )
         )
 
-    if payload.externe:
-        fournisseur_id = await _resolve_fournisseur(
-            db, payload.fournisseur_id, payload.fournisseur_nom
-        )
-        if fournisseur_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Un fournisseur est requis pour un matériel en location externe.",
-            )
+    if fournisseur_id is not None:
         db.add(
             EquipmentLocation(
                 equipment_id=eq.id,

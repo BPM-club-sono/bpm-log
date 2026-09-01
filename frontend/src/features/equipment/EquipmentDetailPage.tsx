@@ -17,7 +17,9 @@ import type {
   StatutEquipment,
   VracDetailInfo,
 } from "@/lib/types";
+import { PREFIXE_INTERNE, decomposer } from "@/lib/barcode";
 import { useAuth } from "@/app/AuthContext";
+import { BarcodeInput } from "@/shared/BarcodeInput";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { StatusBadge } from "@/shared/StatusBadge";
@@ -978,10 +980,12 @@ function EditForm({
         />
       </Field>
       <Field label="Code-barres">
-        <input
+        {/* Le préfixe reste celui déjà imprimé sur l'étiquette : le changer
+            rendrait la ref incohérente avec l'autocollant posé sur le matériel. */}
+        <BarcodeInput
           value={barcode}
-          onChange={(e) => setBarcode(e.target.value)}
-          className={`${inputCls} font-mono`}
+          onChange={setBarcode}
+          prefixe={decomposer(eq.barcode_uid)?.prefixe ?? PREFIXE_INTERNE}
         />
       </Field>
       <Field label="Catégorie">

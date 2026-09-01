@@ -36,6 +36,7 @@ from app.models.enums import (
     StatutPrestation,
     TypePrestation,
 )
+from app.services import barcode, references
 
 
 async def seed_admin(email: str, nom: str, prenom: str) -> None:
@@ -74,23 +75,25 @@ _DEMO_EMPLACEMENTS = [
     ("Flight Son 1", "Zone départ"),
 ]
 
-# (nom, barcode_uid, index catégorie, index emplacement, statut)
+# (nom, index catégorie, index emplacement, statut) — les références sont
+# attribuées à l'insertion, à partir de l'id : elles ne peuvent pas être figées
+# ici, et l'idempotence se clée donc sur le nom.
 _DEMO_EQUIPMENTS = [
-    ("Lyre Beam 7R", "BPM-LUM-0001", 0, 0, StatutEquipment.FONCTIONNEL),
-    ("PAR LED 18x12W", "BPM-LUM-0002", 0, 0, StatutEquipment.FONCTIONNEL),
-    ("Lyre Wash 19x15W", "BPM-LUM-0003", 0, 0, StatutEquipment.EN_PANNE),
-    ("Ampli Crown XTi 6002", "BPM-SON-0001", 1, 2, StatutEquipment.FONCTIONNEL),
-    ("Enceinte RCF ART 745", "BPM-SON-0002", 1, 2, StatutEquipment.FONCTIONNEL),
-    ("Table Behringer X32", "BPM-SON-0003", 1, 2, StatutEquipment.EN_REPARATION),
-    ("Pied de levage 4m", "BPM-STR-0001", 2, 0, StatutEquipment.FONCTIONNEL),
-    ("Pont alu 290 - 2m", "BPM-STR-0002", 2, 0, StatutEquipment.FONCTIONNEL),
-    ("Câble XLR 10m", "BPM-CAB-0001", 3, 1, StatutEquipment.FONCTIONNEL),
-    ("Câble DMX 5m", "BPM-CAB-0002", 3, 1, StatutEquipment.FONCTIONNEL),
+    ("Lyre Beam 7R", 0, 0, StatutEquipment.FONCTIONNEL),
+    ("PAR LED 18x12W", 0, 0, StatutEquipment.FONCTIONNEL),
+    ("Lyre Wash 19x15W", 0, 0, StatutEquipment.EN_PANNE),
+    ("Ampli Crown XTi 6002", 1, 2, StatutEquipment.FONCTIONNEL),
+    ("Enceinte RCF ART 745", 1, 2, StatutEquipment.FONCTIONNEL),
+    ("Table Behringer X32", 1, 2, StatutEquipment.EN_REPARATION),
+    ("Pied de levage 4m", 2, 0, StatutEquipment.FONCTIONNEL),
+    ("Pont alu 290 - 2m", 2, 0, StatutEquipment.FONCTIONNEL),
+    ("Câble XLR 10m", 3, 1, StatutEquipment.FONCTIONNEL),
+    ("Câble DMX 5m", 3, 1, StatutEquipment.FONCTIONNEL),
 ]
 
 
 async def seed_demo() -> None:
-    """Insère un petit catalogue de démonstration (idempotent sur le code-barres)."""
+    """Insère un petit catalogue de démonstration (idempotent sur le nom)."""
     async with async_session_factory() as db:
         categories: list[Categorie] = []
         for nom, description in _DEMO_CATEGORIES:
@@ -111,16 +114,16 @@ async def seed_demo() -> None:
         await db.flush()
 
         created = 0
-        for nom, barcode, cat_idx, emp_idx, statut in _DEMO_EQUIPMENTS:
-            existing = await db.scalar(
-                select(Equipment).where(Equipment.barcode_uid == barcode)
-            )
+        for nom, cat_idx, emp_idx, statut in _DEMO_EQUIPMENTS:
+            existing = await db.scalar(select(Equipment).where(Equipment.nom == nom))
             if existing is not None:
                 continue
+            eq_id, reference = await references.reserver(db, barcode.PREFIXE_INTERNE)
             db.add(
                 Equipment(
+                    id=eq_id,
                     nom=nom,
-                    barcode_uid=barcode,
+                    barcode_uid=reference,
                     categorie_id=categories[cat_idx].id,
                     emplacement_id=emplacements[emp_idx].id,
                     statut_actuel=statut,
@@ -154,18 +157,16 @@ async def seed_demo_prestation() -> None:
         db.add(presta)
         await db.flush()
 
-        # (barcode, quantité prévue)
+        # (nom de l'équipement, quantité prévue)
         plan = [
-            ("BPM-LUM-0001", 2),
-            ("BPM-SON-0002", 2),
-            ("BPM-CAB-0001", 6),
-            ("BPM-STR-0001", 1),
+            ("Lyre Beam 7R", 2),
+            ("Enceinte RCF ART 745", 2),
+            ("Câble XLR 10m", 6),
+            ("Pied de levage 4m", 1),
         ]
         added = 0
-        for barcode, quantite in plan:
-            eq = await db.scalar(
-                select(Equipment).where(Equipment.barcode_uid == barcode)
-            )
+        for nom_eq, quantite in plan:
+            eq = await db.scalar(select(Equipment).where(Equipment.nom == nom_eq))
             if eq is None:
                 continue
             db.add(
@@ -182,17 +183,17 @@ async def seed_demo_prestation() -> None:
         print(f"Prestation de démo « Nuketown 2026 » créée avec {added} allocations.")
 
 
-# Caisses vrac de démo : (nom, barcode, catégorie idx, emplacement idx, qté théorique)
+# Caisses vrac de démo : (nom, catégorie idx, emplacement idx, qté théorique)
 _DEMO_VRAC = [
-    ("Caisse câbles XLR 3m", "BPM-VRAC-0001", 3, 1, 50),
-    ("Caisse multipaires", "BPM-VRAC-0002", 3, 1, 12),
+    ("Caisse câbles XLR 3m", 3, 1, 50),
+    ("Caisse multipaires", 3, 1, 12),
 ]
 
-# Consommables de démo : (nom, barcode, cat idx, emp idx, stock, seuil, unité)
+# Consommables de démo : (nom, cat idx, emp idx, stock, seuil, unité)
 _DEMO_CONSO = [
-    ("Gaffer noir 50mm", "BPM-CONSO-0001", 3, 0, 24, 5, "rouleau"),
-    ("Piles AA", "BPM-CONSO-0002", 0, 0, 40, 12, "pile"),
-    ("Colliers Rilsan", "BPM-CONSO-0003", 3, 0, 3, 20, "sachet"),
+    ("Gaffer noir 50mm", 3, 0, 24, 5, "rouleau"),
+    ("Piles AA", 0, 0, 40, 12, "pile"),
+    ("Colliers Rilsan", 3, 0, 3, 20, "sachet"),
 ]
 
 
@@ -207,15 +208,15 @@ async def seed_demo_inventaire() -> None:
         cat_list = [cats.get(nom) for nom, _ in _DEMO_CATEGORIES]
 
         vrac_n = 0
-        for nom, barcode, cat_idx, emp_idx, theorique in _DEMO_VRAC:
-            existing = await db.scalar(
-                select(Equipment).where(Equipment.barcode_uid == barcode)
-            )
+        for nom, cat_idx, emp_idx, theorique in _DEMO_VRAC:
+            existing = await db.scalar(select(Equipment).where(Equipment.nom == nom))
             if existing is not None:
                 continue
+            eq_id, reference = await references.reserver(db, barcode.PREFIXE_INTERNE)
             eq = Equipment(
+                id=eq_id,
                 nom=nom,
-                barcode_uid=barcode,
+                barcode_uid=reference,
                 categorie_id=cat_list[cat_idx].id if cat_list[cat_idx] else None,
                 emplacement_id=emps[emp_idx].id if emp_idx < len(emps) else None,
                 statut_actuel=StatutEquipment.FONCTIONNEL,
@@ -226,15 +227,15 @@ async def seed_demo_inventaire() -> None:
             vrac_n += 1
 
         conso_n = 0
-        for nom, barcode, cat_idx, emp_idx, stock, seuil, unite in _DEMO_CONSO:
-            existing = await db.scalar(
-                select(Equipment).where(Equipment.barcode_uid == barcode)
-            )
+        for nom, cat_idx, emp_idx, stock, seuil, unite in _DEMO_CONSO:
+            existing = await db.scalar(select(Equipment).where(Equipment.nom == nom))
             if existing is not None:
                 continue
+            eq_id, reference = await references.reserver(db, barcode.PREFIXE_INTERNE)
             eq = Equipment(
+                id=eq_id,
                 nom=nom,
-                barcode_uid=barcode,
+                barcode_uid=reference,
                 categorie_id=cat_list[cat_idx].id if cat_list[cat_idx] else None,
                 emplacement_id=emps[emp_idx].id if emp_idx < len(emps) else None,
                 statut_actuel=StatutEquipment.FONCTIONNEL,

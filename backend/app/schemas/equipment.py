@@ -1,12 +1,13 @@
 """Schémas Pydantic pour le catalogue : équipements, catégories, emplacements, fournisseurs."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from app.models.enums import AvancementTicket, StatutEquipment, TypeActionScan
 from app.schemas.inventory import InventaireEntry, VracLock
+from app.services import barcode
 
 EquipmentType = Literal["standard", "vrac", "consommable"]
 
@@ -33,23 +34,45 @@ class EmplacementRead(BaseModel):
     parent_id: int | None = None
 
 
+#: Référence saisie à la main : normalisée puis validée sur le format imprimable
+#: (QR version 1 + correction H, cf. app/services/barcode.py).
+BarcodeCustom = Annotated[
+    str,
+    BeforeValidator(lambda v: barcode.normaliser(v) if isinstance(v, str) else v),
+    Field(
+        pattern=barcode.FORMAT_REFERENCE,
+        description="Référence au format PPP-NNNNNN (3 lettres, 6 chiffres).",
+    ),
+]
+
+#: Trigramme fournisseur, même traitement.
+TrigrammeFournisseur = Annotated[
+    str,
+    BeforeValidator(lambda v: v.strip().upper() if isinstance(v, str) else v),
+    Field(pattern=barcode.FORMAT_TRIGRAMME, description="Trigramme (3 lettres)."),
+]
+
+
 class FournisseurRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     nom: str
+    code: str | None = None
     contact: str | None
     favori: bool = False
 
 
 class FournisseurCreate(BaseModel):
     nom: str
+    code: TrigrammeFournisseur | None = None
     contact: str | None = None
     favori: bool = False
 
 
 class FournisseurUpdate(BaseModel):
     nom: str | None = None
+    code: TrigrammeFournisseur | None = None
     contact: str | None = None
     favori: bool | None = None
 
@@ -199,7 +222,8 @@ class EquipmentCreate(BaseModel):
     # Flight : équipement contenant (rangement). Réservé au type standard.
     est_contenant: bool = False
     statut_actuel: StatutEquipment = StatutEquipment.FONCTIONNEL
-    barcode_uid: str | None = None
+    # Laisser vide pour une référence attribuée automatiquement.
+    barcode_uid: BarcodeCustom | None = None
     # Vrac
     quantite_theorique: int | None = None
     # Consommable
@@ -220,7 +244,7 @@ class EquipmentUpdate(BaseModel):
     contenant_id: int | None = None
     est_contenant: bool | None = None
     statut_actuel: StatutEquipment | None = None
-    barcode_uid: str | None = None
+    barcode_uid: BarcodeCustom | None = None
     # Vrac
     quantite_theorique: int | None = None
     # Consommable

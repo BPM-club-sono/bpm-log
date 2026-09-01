@@ -4,9 +4,10 @@ Session non commitée (rollback en teardown) pour ne pas polluer la base.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
+from conftest import make_equipment
 
 from app.models import Emplacement, Equipment
 from app.routers.sync import _apply_deplacement, _Conflict
@@ -14,17 +15,14 @@ from app.schemas.sync import SyncItemIn
 
 
 async def _mk_eq(session, nom: str, **kw) -> Equipment:
-    eq = Equipment(barcode_uid=f"test-{uuid.uuid4().hex}", nom=nom, **kw)
-    session.add(eq)
-    await session.flush()
-    return eq
+    return await make_equipment(session, nom, **kw)
 
 
 def _item(payload: dict) -> SyncItemIn:
     return SyncItemIn(
         uuid_client=uuid.uuid4(),
         type="deplacement",
-        offline_created_at=datetime.now(UTC),
+        offline_created_at=datetime.now(timezone.utc),
         payload=payload,
     )
 

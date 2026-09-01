@@ -4,9 +4,8 @@ On travaille dans une session non commitée (rollback en teardown) pour ne pas
 polluer la base de dev. On exerce directement les helpers du routeur équipement.
 """
 
-import uuid
-
 import pytest
+from conftest import make_equipment
 from fastapi import HTTPException
 
 from app.models import Emplacement, Equipment
@@ -14,10 +13,7 @@ from app.routers.equipment import _build_contenu, _check_no_cycle, _compute_chem
 
 
 async def _mk_eq(session, nom: str, **kw) -> Equipment:
-    eq = Equipment(barcode_uid=f"test-{uuid.uuid4().hex}", nom=nom, **kw)
-    session.add(eq)
-    await session.flush()
-    return eq
+    return await make_equipment(session, nom, **kw)
 
 
 async def test_chemin_contenu_et_anti_boucle(db_session):

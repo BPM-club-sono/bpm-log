@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { syncEngine } from "@/lib/syncEngine";
 import { compressImage } from "@/lib/image";
 import type { EquipmentListItem, TicketDetail } from "@/lib/types";
+import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { StatusBadge } from "@/shared/StatusBadge";
@@ -38,7 +39,7 @@ export function PannesPage() {
   useEffect(() => {
     const q = barcode.trim();
     // Équipement déjà sélectionné pour ce texte : pas de re-recherche.
-    if (!q || !navigator.onLine || equipment?.barcode_uid === q) {
+    if (!q || !navigator.onLine || equipment?.barcode_uid === normaliser(q)) {
       setResults([]);
       return;
     }
@@ -88,7 +89,7 @@ export function PannesPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const code = barcode.trim();
+    const code = normaliser(barcode);
     if (!code) return;
     setSaving(true);
 

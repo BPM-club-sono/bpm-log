@@ -46,6 +46,7 @@ from app.schemas.ticket import (
     TicketUpdate,
 )
 from app.security.rbac import require_role
+from app.services import barcode
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -84,7 +85,9 @@ async def _resolve_equipment(
         equipment = await db.get(Equipment, equipment_id)
     elif barcode_uid is not None:
         equipment = await db.scalar(
-            select(Equipment).where(Equipment.barcode_uid == barcode_uid)
+            select(Equipment).where(
+                Equipment.barcode_uid == barcode.normaliser(barcode_uid)
+            )
         )
     if equipment is None:
         raise HTTPException(

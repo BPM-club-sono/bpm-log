@@ -10,6 +10,7 @@ import type {
   PrestationDetail,
 } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
+import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
@@ -138,7 +139,12 @@ export function PrestationDetailPage() {
   );
 
   function handleScan(barcode: string, sens: ChecklistSens) {
-    const match = allocs.find((a) => a.equipment_barcode === barcode);
+    // Le code arrive déjà normalisé de ChecklistView ; on renormalise les deux
+    // côtés pour ne pas dépendre de la casse d'un snapshot pris avant la refonte.
+    const code = normaliser(barcode);
+    const match = allocs.find(
+      (a) => normaliser(a.equipment_barcode ?? "") === code,
+    );
     if (match) {
       // Scanner un flight pointe tout son contenu d'un coup (case + descendants).
       const { descendantsOf } = buildAllocTree(allocs);

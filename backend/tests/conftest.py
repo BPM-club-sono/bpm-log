@@ -26,6 +26,8 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models import Equipment  # noqa: E402
+from app.services import barcode, references  # noqa: E402
 
 
 @pytest.fixture
@@ -52,3 +54,18 @@ async def db_session():
         await session.rollback()
         await session.close()
         await engine.dispose()
+
+
+async def make_equipment(session, nom: str, **kw) -> Equipment:
+    """Crée un équipement de test avec une référence conforme au format imprimable.
+
+    Le numéro est tiré de la vraie séquence plutôt que d'un compteur de module :
+    un compteur deviendrait collisionnant dès qu'on ajouterait `pytest-xdist`, et
+    ce genre de flakiness coûte cher à diagnostiquer. La contrainte CHECK est
+    vérifiée au `flush()` par PostgreSQL, même si le test finit en rollback.
+    """
+    eq_id, reference = await references.reserver(session, barcode.PREFIXE_TEST)
+    eq = Equipment(id=eq_id, barcode_uid=reference, nom=nom, **kw)
+    session.add(eq)
+    await session.flush()
+    return eq

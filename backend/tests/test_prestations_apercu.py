@@ -7,7 +7,7 @@ Le matériel BPM interne est compté dans `nb_objets` mais exclu de l'avancement
 Session non commitée (rollback en teardown).
 """
 
-import uuid
+from conftest import make_equipment
 
 from app.models import (
     AllocationPresta,
@@ -31,10 +31,7 @@ async def _clear_prestations(session) -> None:
 
 
 async def _mk_eq(session, nom: str) -> Equipment:
-    eq = Equipment(barcode_uid=f"test-{uuid.uuid4().hex}", nom=nom)
-    session.add(eq)
-    await session.flush()
-    return eq
+    return await make_equipment(session, nom)
 
 
 async def _mk_loue(session, nom: str) -> Equipment:

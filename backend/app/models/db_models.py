@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -33,6 +34,7 @@ from app.models.enums import (
     TypeEvenementTicket,
     TypePrestation,
 )
+from app.services.barcode import FORMAT_REFERENCE
 
 
 def _enum(enum_cls: type, name: str) -> SAEnum:
@@ -103,9 +105,19 @@ class Emplacement(Base):
 
 class Equipment(Base):
     __tablename__ = "equipments"
+    __table_args__ = (
+        CheckConstraint(
+            f"barcode_uid ~ '{FORMAT_REFERENCE}'",
+            name="ck_equipments_barcode_uid_format",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    barcode_uid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Contenu du QR code. Tient en QR version 1 + correction H, ce qui impose
+    # 10 caractères majuscules — cf. app/services/barcode.py. Le préfixe est
+    # figé à la création : ce n'est PAS le propriétaire actuel (un matériel
+    # loué puis racheté garde son trigramme), seul EquipmentLocation fait foi.
+    barcode_uid: Mapped[str] = mapped_column(String(10), unique=True, index=True)
     nom: Mapped[str] = mapped_column(String(200))
     categorie_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
     emplacement_id: Mapped[int | None] = mapped_column(ForeignKey("emplacements.id"))
@@ -266,6 +278,9 @@ class Fournisseur(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(200))
+    # Trigramme qui préfixe les références du matériel loué chez ce fournisseur
+    # (ex. NOV pour Novelty). Facultatif : sans lui, le matériel prend EXT.
+    code: Mapped[str | None] = mapped_column(String(3), unique=True, index=True)
     contact: Mapped[str | None] = mapped_column(String(200))
     favori: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
@@ -308,4 +323,4 @@ class AllocationPresta(Base):
         default=StatutAllocation.PLANIFIE,
     )
 
-    equipment: Mapped["Equipment"] = relationship(lazy="raise")
+    equipment: Mapped[Equipment] = relationship(lazy="raise")

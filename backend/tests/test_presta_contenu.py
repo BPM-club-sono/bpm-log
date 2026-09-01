@@ -3,17 +3,14 @@
 Session non commitée (rollback en teardown).
 """
 
-import uuid
+from conftest import make_equipment
 
 from app.models import Equipment, EquipmentConsommable
 from app.routers.prestations import _standard_descendant_ids
 
 
 async def _mk_eq(session, nom: str, **kw) -> Equipment:
-    eq = Equipment(barcode_uid=f"test-{uuid.uuid4().hex}", nom=nom, **kw)
-    session.add(eq)
-    await session.flush()
-    return eq
+    return await make_equipment(session, nom, **kw)
 
 
 async def test_descendants_standard_excluent_conso(db_session):

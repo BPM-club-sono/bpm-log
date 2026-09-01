@@ -9,6 +9,8 @@ import type {
   EquipmentType,
   Fournisseur,
 } from "@/lib/types";
+import { PREFIXE_EXTERNE, PREFIXE_INTERNE } from "@/lib/barcode";
+import { BarcodeInput } from "@/shared/BarcodeInput";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { ExterneFields, Field } from "./EquipmentDetailPage";
@@ -121,7 +123,7 @@ export function EquipmentForm({
       } else {
         body.emplacement_id = emplacementId === "" ? null : emplacementId;
       }
-      if (overrideBarcode && barcode.trim()) body.barcode_uid = barcode.trim();
+      if (overrideBarcode && barcode) body.barcode_uid = barcode;
       if (type === "vrac") body.quantite_theorique = quantiteTheo;
       if (type === "consommable") {
         body.stock_actuel = stock;
@@ -150,6 +152,13 @@ export function EquipmentForm({
       setSaving(false);
     }
   }
+
+  // Le préfixe d'une référence identifie le propriétaire : celui du fournisseur
+  // pour du matériel loué, BPM sinon. Un fournisseur sans trigramme donne EXT.
+  const fournisseurSelectionne = fournisseurs.find((f) => f.id === fournisseurId);
+  const prefixeRef = externe
+    ? fournisseurSelectionne?.code || PREFIXE_EXTERNE
+    : PREFIXE_INTERNE;
 
   return (
     <div className="space-y-4">
@@ -300,15 +309,10 @@ export function EquipmentForm({
           Code-barres personnalisé
         </label>
         {overrideBarcode ? (
-          <input
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            placeholder="BPM-LUM-0001"
-            className={`${inputCls} font-mono`}
-          />
+          <BarcodeInput value={barcode} onChange={setBarcode} prefixe={prefixeRef} />
         ) : (
           <p className="text-xs text-fg-muted">
-            Généré automatiquement (BPM-000123).
+            Généré automatiquement ({prefixeRef}-000123).
           </p>
         )}
       </div>

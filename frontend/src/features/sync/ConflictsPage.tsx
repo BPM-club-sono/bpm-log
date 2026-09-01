@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { syncEngine } from "@/lib/syncEngine";
 import type { SyncQueueItem } from "@/lib/db";
+import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 
@@ -29,7 +30,9 @@ export function ConflictsPage() {
   }, [reload]);
 
   async function retry(item: SyncQueueItem) {
-    const newBarcode = edits[item.uuid_client]?.trim();
+    const newBarcode = edits[item.uuid_client]
+      ? normaliser(edits[item.uuid_client])
+      : undefined;
     const patch =
       newBarcode && newBarcode !== item.payload.barcode_uid
         ? { barcode_uid: newBarcode }

@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.models.enums import RoleMembre, StatutAllocation, StatutEquipment, TypeActionScan
 from app.schemas.sync import SyncBatchIn, SyncBatchOut, SyncConflict, SyncItemIn
+from app.services import barcode
 from app.services.push import notify_role
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -62,7 +63,7 @@ async def _resolve_equipment(db: DbSession, payload: dict[str, Any]) -> Equipmen
         equipment = await db.get(Equipment, int(eid))
     elif (code := payload.get("barcode_uid")) is not None:
         equipment = await db.scalar(
-            select(Equipment).where(Equipment.barcode_uid == code)
+            select(Equipment).where(Equipment.barcode_uid == barcode.normaliser(str(code)))
         )
     if equipment is None:
         raise _Conflict("Équipement introuvable.")
