@@ -34,6 +34,18 @@ class EmplacementRead(BaseModel):
     parent_id: int | None = None
 
 
+class EmplacementCreate(BaseModel):
+    nom: str
+    zone_stockage: str | None = None
+    parent_id: int | None = None
+
+
+class EmplacementUpdate(BaseModel):
+    nom: str | None = None
+    zone_stockage: str | None = None
+    parent_id: int | None = None
+
+
 #: Référence saisie à la main : normalisée puis validée sur le format imprimable
 #: (QR version 1 + correction H, cf. app/services/barcode.py).
 BarcodeCustom = Annotated[

@@ -77,6 +77,19 @@ export function ProfilePage() {
 
       {canManage && (
         <Link
+          to="/emplacements"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-bg-soft px-4 py-3"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Icon name="pin_drop" className="text-xl" />
+            Emplacements
+          </span>
+          <Icon name="chevron_right" className="text-xl text-fg-muted" />
+        </Link>
+      )}
+
+      {canManage && (
+        <Link
           to="/fournisseurs"
           className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-bg-soft px-4 py-3"
         >

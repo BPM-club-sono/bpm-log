@@ -29,7 +29,9 @@ from app.schemas.equipment import (
     CategorieRead,
     ConsoPreview,
     ContenuChild,
+    EmplacementCreate,
     EmplacementRead,
+    EmplacementUpdate,
     EquipmentCreate,
     EquipmentDetail,
     EquipmentListItem,
@@ -914,3 +916,113 @@ async def list_categories(_user: CurrentUser, db: DbSession) -> list[Categorie]:
 async def list_emplacements(_user: CurrentUser, db: DbSession) -> list[Emplacement]:
     result = await db.scalars(select(Emplacement).order_by(Emplacement.nom))
     return list(result.all())
+
+
+async def _verifier_parent(
+    db: DbSession, parent_id: int | None, emplacement_id: int | None
+) -> None:
+    """Refuse un parent inexistant ou qui créerait un cycle dans l'arbre de rangement."""
+    if parent_id is None:
+        return
+    parent = await db.get(Emplacement, parent_id)
+    if parent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Emplacement parent introuvable."
+        )
+    # Remonte la chaîne des parents : si on retombe sur l'emplacement édité,
+    # le déplacement fermerait une boucle (A dans B dans A).
+    courant: Emplacement | None = parent
+    vus: set[int] = set()
+    while courant is not None:
+        if courant.id == emplacement_id or courant.id in vus:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Un emplacement ne peut pas être rangé dans lui-même.",
+            )
+        vus.add(courant.id)
+        courant = (
+            await db.get(Emplacement, courant.parent_id)
+            if courant.parent_id is not None
+            else None
+        )
+
+
+@router.post("/emplacements", response_model=EmplacementRead, status_code=201)
+async def create_emplacement(
+    payload: EmplacementCreate,
+    _user: RequireStaff,
+    db: DbSession,
+) -> Emplacement:
+    await _verifier_parent(db, payload.parent_id, None)
+    emplacement = Emplacement(
+        nom=payload.nom.strip(),
+        zone_stockage=payload.zone_stockage,
+        parent_id=payload.parent_id,
+    )
+    db.add(emplacement)
+    await db.commit()
+    await db.refresh(emplacement)
+    return emplacement
+
+
+@router.patch("/emplacements/{emplacement_id}", response_model=EmplacementRead)
+async def update_emplacement(
+    emplacement_id: int,
+    payload: EmplacementUpdate,
+    _user: RequireStaff,
+    db: DbSession,
+) -> Emplacement:
+    emplacement = await db.get(Emplacement, emplacement_id)
+    if emplacement is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Emplacement introuvable."
+        )
+    donnees = payload.model_dump(exclude_unset=True)
+    if "nom" in donnees and donnees["nom"] is not None:
+        emplacement.nom = donnees["nom"].strip()
+    if "zone_stockage" in donnees:
+        emplacement.zone_stockage = donnees["zone_stockage"]
+    if "parent_id" in donnees:
+        await _verifier_parent(db, donnees["parent_id"], emplacement.id)
+        emplacement.parent_id = donnees["parent_id"]
+    await db.commit()
+    await db.refresh(emplacement)
+    return emplacement
+
+
+@router.delete("/emplacements/{emplacement_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_emplacement(
+    emplacement_id: int,
+    _user: RequireStaff,
+    db: DbSession,
+) -> None:
+    emplacement = await db.get(Emplacement, emplacement_id)
+    if emplacement is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Emplacement introuvable."
+        )
+    enfant = await db.scalar(
+        select(Emplacement).where(Emplacement.parent_id == emplacement_id)
+    )
+    if enfant is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cet emplacement contient des sous-emplacements et ne peut pas être supprimé.",
+        )
+    range_ici = await db.scalar(
+        select(Equipment).where(Equipment.emplacement_id == emplacement_id)
+    )
+    if range_ici is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Du matériel est rangé ici : suppression impossible.",
+        )
+    # L'historique des scans garde son contexte texte : on détache juste la FK
+    # pour ne pas bloquer la suppression d'un emplacement vide.
+    logs = await db.scalars(
+        select(LogScan).where(LogScan.emplacement_destination_id == emplacement_id)
+    )
+    for log in logs.all():
+        log.emplacement_destination_id = None
+    await db.delete(emplacement)
+    await db.commit()

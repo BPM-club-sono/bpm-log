@@ -63,6 +63,11 @@ const PrestationDetailPage = lazy(() =>
     default: m.PrestationDetailPage,
   })),
 );
+const EmplacementsPage = lazy(() =>
+  import("@/features/emplacements/EmplacementsPage").then((m) => ({
+    default: m.EmplacementsPage,
+  })),
+);
 const FournisseursPage = lazy(() =>
   import("@/features/fournisseurs/FournisseursPage").then((m) => ({
     default: m.FournisseursPage,
@@ -99,6 +104,7 @@ const router = createBrowserRouter([
           { path: "/conflits", element: lazyRoute(<ConflictsPage />) },
           { path: "/prestations", element: lazyRoute(<PrestationsPage />) },
           { path: "/prestations/:id", element: lazyRoute(<PrestationDetailPage />) },
+          { path: "/emplacements", element: lazyRoute(<EmplacementsPage />) },
           { path: "/fournisseurs", element: lazyRoute(<FournisseursPage />) },
           { path: "/profil", element: lazyRoute(<ProfilePage />) },
         ],
