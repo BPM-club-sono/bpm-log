@@ -7,6 +7,13 @@ import { Button } from "@/shared/Button";
 /**
  * Étape finale du flow OIDC : authentik nous renvoie ici avec un `code`,
  * échangé contre l'id_token via PKCE. Aucun rendu utile, on redirige.
+ *
+ * Cette route sert aussi de cible au renouvellement silencieux : faute de
+ * `silent_redirect_uri`, oidc-client-ts retombe sur `redirect_uri` et charge
+ * cette page dans un iframe caché. Il y attend le message de
+ * `signinSilentCallback` ; un `signinRedirectCallback` ne le poste jamais, donc
+ * le renouvellement partait en timeout de 10 s pendant que l'app entière se
+ * rechargeait dans l'iframe. D'où la distinction ci-dessous.
  */
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -20,6 +27,16 @@ export function AuthCallbackPage() {
     started.current = true;
 
     void (async () => {
+      // Dans l'iframe de renouvellement : rendre la main à la lib, sans toucher
+      // à la navigation de la fenêtre principale.
+      if (window.self !== window.top) {
+        try {
+          await userManager.signinSilentCallback();
+        } catch {
+          // Le parent tranche via son propre timeout ; rien à afficher ici.
+        }
+        return;
+      }
       try {
         await userManager.signinRedirectCallback();
         await refreshUser();
