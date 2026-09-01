@@ -90,6 +90,13 @@ cmd_up() {
     compose exec -T api python -m app.seed --email admin@bpm.fr --demo || true
   fi
 
+  # Données de base (catégories, fournisseurs) : le schéma vient d'être migré
+  # par l'entrypoint de l'API. Le script est idempotent, on le rejoue toujours,
+  # y compris sur une DB clonée depuis la dev.
+  echo "→ Injection des données de base (scripts/seed-base.sql)…"
+  docker exec -i "$db_cid" psql -q -v ON_ERROR_STOP=1 -U "$pguser" -d "$pgdb" \
+    < "$ROOT/scripts/seed-base.sql" >/dev/null
+
   echo "→ Frontend (vite dev)…"
   cd "$ROOT/frontend"
   [ -d node_modules ] || { echo "→ npm install (premier lancement dans ce worktree)…"; npm install --no-audit --no-fund; }
