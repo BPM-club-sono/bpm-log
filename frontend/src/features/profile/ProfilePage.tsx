@@ -27,6 +27,12 @@ const VIEW_MODES: {
   },
 ];
 
+/** Référentiels éditables par Admin/Staff, regroupés sous « Configuration ». */
+const CONFIG_LINKS: { to: string; label: string; icon: string }[] = [
+  { to: "/emplacements", label: "Emplacements", icon: "pin_drop" },
+  { to: "/fournisseurs", label: "Fournisseurs", icon: "local_shipping" },
+];
+
 export function ProfilePage() {
   const { user, logout } = useAuth();
   const [pushOn, setPushOn] = useState(false);
@@ -76,29 +82,30 @@ export function ProfilePage() {
       </dl>
 
       {canManage && (
-        <Link
-          to="/emplacements"
-          className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-bg-soft px-4 py-3"
-        >
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Icon name="pin_drop" className="text-xl" />
-            Emplacements
-          </span>
-          <Icon name="chevron_right" className="text-xl text-fg-muted" />
-        </Link>
-      )}
-
-      {canManage && (
-        <Link
-          to="/fournisseurs"
-          className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-bg-soft px-4 py-3"
-        >
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Icon name="local_shipping" className="text-xl" />
-            Fournisseurs
-          </span>
-          <Icon name="chevron_right" className="text-xl text-fg-muted" />
-        </Link>
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Icon name="tune" className="text-xl" />
+            <h2 className="text-sm font-semibold">Configuration</h2>
+          </div>
+          <p className="text-xs text-fg-muted">
+            Les référentiels partagés du parc.
+          </p>
+          <nav className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-bg-soft">
+            {CONFIG_LINKS.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className="flex items-center justify-between gap-3 px-4 py-3"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Icon name={l.icon} className="text-xl" />
+                  {l.label}
+                </span>
+                <Icon name="chevron_right" className="text-xl text-fg-muted" />
+              </Link>
+            ))}
+          </nav>
+        </section>
       )}
 
       <section className="space-y-3">
