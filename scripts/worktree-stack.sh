@@ -87,7 +87,7 @@ cmd_up() {
   api_port=$(compose port api 8000 | awk -F: '{print $NF}')
   wait_http "http://localhost:${api_port}/health" 90 "l'API"
   if [ "$seed" = 1 ]; then
-    compose exec -T api python -m app.seed --email admin@bpm.fr --password bpm1234 || true
+    compose exec -T api python -m app.seed --email admin@bpm.fr --demo || true
   fi
 
   echo "→ Frontend (vite dev)…"

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
+import { mergeEquipments, replaceEquipments } from "@/lib/equipmentMirror";
 import type { EquipmentListItem, EquipmentType } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { Icon } from "@/shared/Icon";
@@ -42,6 +43,9 @@ export function CatalogPage() {
         );
         if (!active) return;
         setEquipments(eq);
+        // Alimente le miroir hors ligne au passage : la liste est déjà là.
+        // Vue « archives » = liste partielle, donc fusion et non remplacement.
+        void (archived ? mergeEquipments(eq) : replaceEquipments(eq));
       } catch (err) {
         if (!active) return;
         setError(
