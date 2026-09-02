@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { syncEngine } from "@/lib/syncEngine";
 import { labelCart } from "@/lib/labelCart";
+import { refreshEquipmentMirror } from "@/lib/equipmentMirror";
 import { compressImage } from "@/lib/image";
 import type {
   Categorie,
@@ -149,7 +150,15 @@ export function EquipmentDetailPage() {
             <h1 className="text-xl font-bold">{eq.nom}</h1>
             <p className="font-mono text-xs text-fg-muted">{eq.barcode_uid}</p>
           </div>
-          <StatusBadge statut={eq.statut_actuel} />
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <StatusBadge statut={eq.statut_actuel} />
+            {eq.archive && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-warning px-2 py-0.5 text-[11px] font-semibold text-warning">
+                <Icon name="archive" className="text-xs" />
+                Archivé
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
           <span className="inline-flex items-center gap-1">
@@ -866,6 +875,9 @@ function EditForm({
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [dangerBusy, setDangerBusy] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     void (async () => {
@@ -890,6 +902,77 @@ function EditForm({
   function onPhotoChange(file: File | null) {
     setPhotoFile(file);
     setPhotoPreview(file ? URL.createObjectURL(file) : eq.photo_url);
+  }
+
+  /** Actions destructives : en ligne uniquement, comme le reste de l'édition. */
+  async function actionDangereuse(
+    appel: () => Promise<unknown>,
+    message: string,
+    apres?: () => void,
+  ) {
+    setDangerBusy(true);
+    setErr(null);
+    try {
+      await appel();
+      // Le miroir hors-ligne doit oublier (ou retrouver) l'objet pour le scan.
+      await refreshEquipmentMirror();
+      toast(message, "success");
+      if (apres) apres();
+      else await onSaved();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Opération impossible.", "error");
+    } finally {
+      setDangerBusy(false);
+    }
+  }
+
+  async function archiver() {
+    let contenuSuffixe = "";
+    if (eq.est_contenant) {
+      try {
+        const contenu = await api<ContenuChild[]>(
+          `/equipments/${eq.id}/contenu?recursif=true`,
+        );
+        if (contenu.length > 0) {
+          contenuSuffixe = ` et les ${contenu.length} objet(s) qu'il contient`;
+        }
+      } catch {
+        // Comptage indicatif : on n'empêche pas l'archivage s'il échoue.
+      }
+    }
+    if (
+      !window.confirm(
+        `Archiver « ${eq.nom} »${contenuSuffixe} ? L'objet sort du parc actif, l'opération est réversible.`,
+      )
+    ) {
+      return;
+    }
+    await actionDangereuse(
+      () => api(`/equipments/${eq.id}/archive`, { method: "POST" }),
+      "Équipement archivé.",
+    );
+  }
+
+  async function desarchiver() {
+    await actionDangereuse(
+      () => api(`/equipments/${eq.id}/desarchive`, { method: "POST" }),
+      "Équipement remis dans le parc.",
+    );
+  }
+
+  async function supprimer() {
+    if (
+      !window.confirm(
+        `Supprimer définitivement « ${eq.nom} » ? Cette action est irréversible.`,
+      )
+    ) {
+      return;
+    }
+    await actionDangereuse(
+      () => api(`/equipments/${eq.id}`, { method: "DELETE" }),
+      "Équipement supprimé.",
+      () => navigate("/inventaire"),
+    );
   }
 
   async function save() {
@@ -1085,6 +1168,55 @@ function EditForm({
       <Button onClick={() => void save()} loading={saving} className="w-full">
         Enregistrer
       </Button>
+
+      <div className="space-y-3 rounded-2xl border border-line p-4">
+        <h2 className="text-sm font-semibold text-danger">Zone dangereuse</h2>
+        {!eq.archive ? (
+          <>
+            <p className="text-xs text-fg-muted">
+              L'archivage sort l'objet du parc actif sans rien perdre : son historique
+              reste consultable et l'opération est réversible.
+              {eq.est_contenant && " Le contenu du flight est archivé avec lui."}
+            </p>
+            <Button
+              variant="danger"
+              onClick={() => void archiver()}
+              loading={dangerBusy}
+              className="w-full"
+            >
+              <Icon name="archive" className="text-base" />
+              Archiver
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-fg-muted">
+              Objet archivé. La suppression définitive est réservée aux administrateurs
+              et refusée dès que l'objet a un historique (scan, panne, prestation).
+            </p>
+            <Button
+              variant="ghost"
+              onClick={() => void desarchiver()}
+              loading={dangerBusy}
+              className="w-full"
+            >
+              <Icon name="unarchive" className="text-base" />
+              Désarchiver
+            </Button>
+            {user?.role === "Admin" && (
+              <Button
+                variant="danger"
+                onClick={() => void supprimer()}
+                loading={dangerBusy}
+                className="w-full"
+              >
+                <Icon name="delete_forever" className="text-base" />
+                Supprimer définitivement
+              </Button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

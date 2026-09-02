@@ -108,7 +108,7 @@ Table equipments {
   created_at timestamp
   created_by_membre_id integer
   photo_chemin varchar [note: 'Chemin relatif de la photo de l\'équipement sur le VPS (optionnel), servi par /api/photos']
-  archive boolean [note: 'Matériel de location rendu : conservé en base mais masqué du Parc par défaut']
+  archive boolean [note: 'Retiré du parc actif (location rendue, matériel réformé) : conservé pour l\'historique, masqué du Parc par défaut. Archiver un flight cascade sur tout son contenu ; le rangement est conservé pour rester réversible']
 }
 
 // Entité dépendante (spécialisation) — n'existe que si l'équipement est une caisse de vrac
