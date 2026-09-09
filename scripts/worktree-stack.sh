@@ -21,6 +21,37 @@ STACK_DIR="$ROOT/.stack"
 
 compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --project-directory "$ROOT" "$@"; }
 
+copy_env() { # copy_env CHEMIN_REL — installe le .env du checkout principal s'il manque
+  # Affectations séparées : dans un même « local », bash déclare tous les noms
+  # avant de les affecter, donc $rel y serait encore unbound (set -u).
+  local rel="$1"
+  local src="$MAIN_ROOT/$rel"
+  local dst="$ROOT/$rel"
+  local stray
+
+  # Un .env mal nommé (espace finale, glob non échappé) est ignoré *en silence*
+  # par vite comme par docker compose : les VITE_* valent alors undefined et le
+  # login OIDC casse sans le moindre message d'erreur. On rattrape le nom plutôt
+  # que de laisser chercher.
+  for stray in "$dst " "$dst*"; do
+    [ -f "$stray" ] || continue
+    if [ -f "$dst" ]; then
+      echo "⚠ « $(basename "$stray") » traîne à côté de $rel — ignoré par vite, à supprimer." >&2
+    else
+      echo "→ Renommage de « $(basename "$stray") » en $(basename "$dst") (nom mal formé)"
+      mv -- "$stray" "$dst"
+    fi
+  done
+
+  if [ -f "$dst" ]; then return 0; fi
+  if [ ! -f "$src" ]; then
+    echo "⚠ $rel absent du checkout principal ($src) — à créer à la main." >&2
+    return 0
+  fi
+  echo "→ Copie de $rel depuis $MAIN_ROOT"
+  cp -- "$src" "$dst"
+}
+
 env_val() { # env_val VAR DEFAUT — lit une variable simple dans .env
   local v
   v=$(grep -E "^$1=" "$ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
@@ -51,7 +82,11 @@ cmd_up() {
     exit 1
   fi
 
-  [ -f "$ROOT/.env" ] || { echo "→ Copie de .env depuis $MAIN_ROOT"; cp "$MAIN_ROOT/.env" "$ROOT/.env"; }
+  # Racine : lu par docker compose (env_file de l'API). frontend/ : lu par vite
+  # au démarrage pour les VITE_* (OIDC). Les deux sont gitignorés, donc absents
+  # d'un worktree neuf.
+  copy_env ".env"
+  copy_env "frontend/.env"
   local pguser pgdb
   pguser=$(env_val POSTGRES_USER bpm)
   pgdb=$(env_val POSTGRES_DB bpm_log)
