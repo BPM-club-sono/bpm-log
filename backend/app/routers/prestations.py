@@ -38,6 +38,7 @@ from app.schemas.prestation import (
     valide_periode,
 )
 from app.security.rbac import RequireStaff
+from app.services import contenants
 
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
@@ -64,9 +65,6 @@ def _allocation_read(
     )
 
 
-_DEPTH_GUARD = 32  # garde anti-boucle sur la descente de l'arbre des contenants
-
-
 async def _standard_descendant_ids(db: DbSession, root_id: int) -> list[int]:
     """Ids des descendants *standard* (hors vrac/conso) d'un contenant.
 
@@ -76,7 +74,7 @@ async def _standard_descendant_ids(db: DbSession, root_id: int) -> list[int]:
     collected: list[int] = []
     frontier = [root_id]
     seen: set[int] = {root_id}
-    for _ in range(_DEPTH_GUARD):
+    for _ in range(contenants.DEPTH_GUARD):
         if not frontier:
             break
         child_ids = [
@@ -112,35 +110,6 @@ async def _standard_descendant_ids(db: DbSession, root_id: int) -> list[int]:
             ).all()
         }
         collected.extend(c for c in child_ids if c not in vrac and c not in conso)
-        frontier = child_ids
-    return collected
-
-
-async def _descendant_ids(db: DbSession, root_id: int) -> list[int]:
-    """Tous les descendants (toutes natures) d'un contenant.
-
-    Sert à la suppression en cascade d'un flight : retirer la caisse retire aussi
-    tout ce qu'elle contient (miroir de l'ajout `inclure_contenu`).
-    """
-    collected: list[int] = []
-    frontier = [root_id]
-    seen: set[int] = {root_id}
-    for _ in range(_DEPTH_GUARD):
-        if not frontier:
-            break
-        child_ids = [
-            cid
-            for (cid,) in (
-                await db.execute(
-                    select(Equipment.id).where(Equipment.contenant_id.in_(frontier))
-                )
-            ).all()
-            if cid not in seen
-        ]
-        if not child_ids:
-            break
-        seen.update(child_ids)
-        collected.extend(child_ids)
         frontier = child_ids
     return collected
 
@@ -356,7 +325,7 @@ async def remove_allocation(
 
     # Supprimer un flight retire aussi les allocations de tout son contenu, pour
     # ne jamais laisser d'items orphelins dans la prestation.
-    descendant_ids = await _descendant_ids(db, alloc.equipment_id)
+    descendant_ids = await contenants.descendant_ids(db, alloc.equipment_id)
     if descendant_ids:
         await db.execute(
             AllocationPresta.__table__.delete().where(

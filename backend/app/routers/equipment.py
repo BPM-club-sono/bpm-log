@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from app.config import settings
 from app.deps import CurrentUser, DbSession
 from app.models import (
+    AllocationPresta,
     Categorie,
     Emplacement,
     Equipment,
@@ -48,8 +49,8 @@ from app.schemas.equipment import (
     build_photo_url,
 )
 from app.schemas.inventory import InventaireEntry, VracLock
-from app.security.rbac import RequireStaff
-from app.services import barcode, references
+from app.security.rbac import RequireAdmin, RequireStaff
+from app.services import barcode, contenants, references
 
 router = APIRouter(tags=["catalogue"])
 
@@ -452,7 +453,7 @@ async def list_equipments(
     ),
     archive: bool = Query(
         default=False,
-        description="false (défaut) = matériel actif ; true = locations archivées (rendues)",
+        description="false (défaut) = matériel actif ; true = matériel archivé",
     ),
 ) -> list[EquipmentListItem]:
     stmt = select(Equipment)
@@ -897,11 +898,148 @@ async def delete_equipment_photo(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
     if eq.photo_chemin:
-        path = Path(settings.photos_dir) / eq.photo_chemin
-        path.unlink(missing_ok=True)
-        eq.photo_chemin = None
+        _supprimer_photo(eq)
         await db.commit()
 
+
+def _supprimer_photo(eq: Equipment) -> None:
+    """Efface le fichier photo du disque et détache la référence. Ne commit pas."""
+    if not eq.photo_chemin:
+        return
+    (Path(settings.photos_dir) / eq.photo_chemin).unlink(missing_ok=True)
+    eq.photo_chemin = None
+
+
+async def _archiver_cascade(db: DbSession, eq: Equipment, valeur: bool) -> int:
+    """Pose `archive=valeur` sur l'équipement et sur tout son contenu. Ne commit pas.
+
+    Le rangement (`contenant_id`, `emplacement_id`) est laissé intact : un flight
+    archivé reste reconstituable à l'identique au désarchivage. Retourne le nombre
+    d'équipements touchés (la caisse comprise).
+    """
+    ids = await contenants.descendant_ids(db, eq.id)
+    eq.archive = valeur
+    touches = 1
+    if ids:
+        enfants = (
+            await db.scalars(select(Equipment).where(Equipment.id.in_(ids)))
+        ).all()
+        for enfant in enfants:
+            enfant.archive = valeur
+            touches += 1
+    return touches
+
+
+# --------------------------------------------------------------------------- #
+# Archivage / suppression
+# --------------------------------------------------------------------------- #
+@router.post("/equipments/{equipment_id}/archive", response_model=EquipmentDetail)
+async def archiver_equipment(
+    equipment_id: int, user: RequireStaff, db: DbSession
+) -> EquipmentDetail:
+    """Sort du parc actif un équipement et tout son contenu (geste réversible)."""
+    eq = await db.get(Equipment, equipment_id)
+    if eq is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
+        )
+    await _archiver_cascade(db, eq, True)
+    await db.commit()
+    await db.refresh(eq)
+    return await _build_detail(db, eq, user.id)
+
+
+@router.post("/equipments/{equipment_id}/desarchive", response_model=EquipmentDetail)
+async def desarchiver_equipment(
+    equipment_id: int, user: RequireStaff, db: DbSession
+) -> EquipmentDetail:
+    """Remet dans le parc actif un équipement et tout son contenu."""
+    eq = await db.get(Equipment, equipment_id)
+    if eq is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
+        )
+    # Un objet actif rangé dans un flight archivé serait invisible dans le Parc :
+    # on remonte l'arbre d'abord.
+    if eq.contenant_id is not None:
+        parent = await db.get(Equipment, eq.contenant_id)
+        if parent is not None and parent.archive:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Le flight qui contient cet objet est archivé : désarchivez-le d'abord.",
+            )
+    await _archiver_cascade(db, eq, False)
+    await db.commit()
+    await db.refresh(eq)
+    return await _build_detail(db, eq, user.id)
+
+
+@router.delete("/equipments/{equipment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_equipment(
+    equipment_id: int, _user: RequireAdmin, db: DbSession
+) -> None:
+    """Suppression définitive (Admin) : réservée aux fiches archivées et sans historique.
+
+    L'archive est le filet de sécurité et la mémoire du vieux matériel : dès qu'un
+    objet a été scanné, réparé ou sorti en prestation, on refuse de l'effacer pour
+    ne pas trouer l'historique. Le `DELETE` sert aux fiches créées par erreur.
+    """
+    eq = await db.get(Equipment, equipment_id)
+    if eq is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
+        )
+    if not eq.archive:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Archivez cet objet avant de le supprimer définitivement.",
+        )
+    contenu = await db.scalar(
+        select(Equipment.id).where(Equipment.contenant_id == equipment_id).limit(1)
+    )
+    if contenu is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ce flight contient encore du matériel. Videz-le d'abord.",
+        )
+    for modele, message in (
+        (
+            TicketReparation,
+            "Cet objet a un historique de pannes : il reste archivé.",
+        ),
+        (LogScan, "Cet objet a un historique de scans : il reste archivé."),
+        (
+            AllocationPresta,
+            "Cet objet a servi en prestation : il reste archivé.",
+        ),
+    ):
+        trace = await db.scalar(
+            select(modele.id).where(modele.equipment_id == equipment_id).limit(1)
+        )
+        if trace is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
+
+    # Aucun ON DELETE en base : on retire les lignes filles à la main, des plus
+    # profondes vers la ligne principale.
+    await db.execute(
+        InventoryLock.__table__.delete().where(
+            InventoryLock.equipment_id == equipment_id
+        )
+    )
+    await db.execute(
+        InventaireVrac.__table__.delete().where(
+            InventaireVrac.equipment_id == equipment_id
+        )
+    )
+    for extension in (EquipmentVrac, EquipmentConsommable, EquipmentLocation):
+        await db.execute(
+            extension.__table__.delete().where(
+                extension.equipment_id == equipment_id
+            )
+        )
+    _supprimer_photo(eq)
+    await db.delete(eq)
+    await db.commit()
 
 # --------------------------------------------------------------------------- #
 # Catégories / emplacements

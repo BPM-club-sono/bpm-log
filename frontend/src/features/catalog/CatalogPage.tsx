@@ -143,7 +143,7 @@ export function CatalogPage() {
           className="inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev data-[on=true]:border-warning data-[on=true]:bg-warning/15 data-[on=true]:text-warning"
         >
           <Icon name="archive" className="text-sm" />
-          <span>Locations archivées</span>
+          <span>Archives</span>
         </button>
       </div>
 
