@@ -51,7 +51,10 @@ cmd_up() {
     exit 1
   fi
 
+  # Racine : lu par docker compose (env_file de l'API). frontend/ : lu par vite
+  # pour les VITE_* (OIDC). Les deux sont gitignorés, donc absents d'un worktree neuf.
   [ -f "$ROOT/.env" ] || { echo "→ Copie de .env depuis $MAIN_ROOT"; cp "$MAIN_ROOT/.env" "$ROOT/.env"; }
+  [ -f "$ROOT/frontend/.env" ] || { echo "→ Copie de frontend/.env depuis $MAIN_ROOT"; cp "$MAIN_ROOT/frontend/.env" "$ROOT/frontend/.env"; }
   local pguser pgdb
   pguser=$(env_val POSTGRES_USER bpm)
   pgdb=$(env_val POSTGRES_DB bpm_log)
