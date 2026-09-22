@@ -1,4 +1,4 @@
-import { getIdToken, userManager } from "./oidc";
+import { getIdToken, renewToken, userManager } from "./oidc";
 
 const BASE = "/api";
 
@@ -9,16 +9,6 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
-  }
-}
-
-/** Renouvelle l'id_token via authentik (iframe caché), sans interaction. */
-async function renewToken(): Promise<boolean> {
-  try {
-    const user = await userManager.signinSilent();
-    return user?.id_token != null;
-  } catch {
-    return false;
   }
 }
 
@@ -46,10 +36,13 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
   });
 
   if (res.status === 401 && auth && retry) {
-    if (await renewToken()) {
+    const renewed = await renewToken();
+    if (renewed === "ok") {
       return api<T>(path, { ...opts, retry: false });
     }
-    await userManager.removeUser();
+    // Seul un refus d'authentik met fin à la session. Injoignable : on garde
+    // l'utilisateur, l'appelant (sync notamment) réessaiera plus tard.
+    if (renewed === "refused") await userManager.removeUser();
   }
 
   if (!res.ok) {

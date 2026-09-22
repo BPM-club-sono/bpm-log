@@ -8,12 +8,6 @@ export interface Membre {
   role: Role;
 }
 
-export interface TokenPair {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-}
-
 export type StatutEquipment =
   | "Fonctionnel"
   | "En_Panne"

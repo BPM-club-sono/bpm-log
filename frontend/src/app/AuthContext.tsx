@@ -7,10 +7,39 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "@/lib/api";
-import { getIdToken, userManager } from "@/lib/oidc";
+import { api, ApiError } from "@/lib/api";
+import { signOut, userManager } from "@/lib/oidc";
 import { syncEngine } from "@/lib/syncEngine";
 import type { Membre } from "@/lib/types";
+
+// Dernier profil connu, pour rester utilisable hors ligne : l'app est
+// offline-first, perdre le réseau ne doit pas déconnecter.
+const MEMBRE_CACHE_KEY = "bpm.membre";
+
+function saveCachedMembre(membre: Membre): void {
+  try {
+    localStorage.setItem(MEMBRE_CACHE_KEY, JSON.stringify(membre));
+  } catch {
+    // Stockage indisponible (navigation privée) : pas de cache, rien de grave.
+  }
+}
+
+function loadCachedMembre(): Membre | null {
+  try {
+    const raw = localStorage.getItem(MEMBRE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Membre) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearCachedMembre(): void {
+  try {
+    localStorage.removeItem(MEMBRE_CACHE_KEY);
+  } catch {
+    // idem
+  }
+}
 
 interface AuthState {
   user: Membre | null;
@@ -29,16 +58,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadMe = useCallback(async () => {
-    if (!(await getIdToken())) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
     try {
-      setUser(await api<Membre>("/auth/me"));
-    } catch {
-      await userManager.removeUser();
-      setUser(null);
+      // Session OIDC présente, même expirée : `api()` la renouvelle au besoin.
+      if (!(await userManager.getUser())) {
+        clearCachedMembre();
+        setUser(null);
+        return;
+      }
+      try {
+        const me = await api<Membre>("/auth/me");
+        saveCachedMembre(me);
+        setUser(me);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) {
+          // Compte désactivé : fin de session légitime.
+          await userManager.removeUser();
+          setUser(null);
+        } else {
+          // Hors ligne, serveur ou authentik injoignable : la session tient
+          // toujours, on garde le profil connu. Un refus d'authentik a déjà
+          // vidé la session dans `api()` (→ événement unloaded).
+          setUser(loadCachedMembre());
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -51,7 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Un renouvellement silencieux ou une déconnexion ailleurs doit se refléter ici.
   useEffect(() => {
     const onLoaded = () => void loadMe();
-    const onUnloaded = () => setUser(null);
+    const onUnloaded = () => {
+      clearCachedMembre();
+      setUser(null);
+    };
     userManager.events.addUserLoaded(onLoaded);
     userManager.events.addUserUnloaded(onUnloaded);
     return () => {
@@ -73,10 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    clearCachedMembre();
     setUser(null);
-    // Ferme aussi la session authentik : sinon le cookie SSO encore valide
-    // reconnecterait immédiatement sans rien demander.
-    await userManager.signoutRedirect();
+    await signOut();
   }, []);
 
   const value = useMemo(
