@@ -86,4 +86,44 @@ export async function getIdToken(): Promise<string | null> {
   return user.id_token ?? null;
 }
 
+/**
+ * Révoque le refresh_token auprès d'authentik. Sans ça, il resterait valable
+ * jusqu'à expiration (30 jours) même après déconnexion : un token volé
+ * auparavant continuerait de fonctionner.
+ *
+ * Best effort : hors ligne ou authentik injoignable, la déconnexion locale doit
+ * quand même avoir lieu. On n'utilise pas `revokeTokensOnSignout` de la lib :
+ * un échec de révocation y fait échouer toute la déconnexion, et elle émet un
+ * `userLoaded` qui relancerait le chargement du profil en pleine déconnexion.
+ */
+export async function revokeRefreshToken(): Promise<void> {
+  const token = (await userManager.getUser())?.refresh_token;
+  if (!token) return;
+  try {
+    const endpoint = await userManager.metadataService.getRevocationEndpoint();
+    if (!endpoint) return;
+    await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        token,
+        token_type_hint: "refresh_token",
+        // Client public : il s'identifie par son seul client_id (RFC 7009 §2.1).
+        client_id: userManager.settings.client_id,
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // Réseau indisponible : le token expirera de lui-même.
+  }
+}
+
+/** Déconnexion complète : révocation, puis fin de session SSO authentik. */
+export async function signOut(): Promise<void> {
+  await revokeRefreshToken();
+  // Ferme aussi la session authentik : sinon le cookie SSO encore valide
+  // reconnecterait immédiatement sans rien demander.
+  await userManager.signoutRedirect();
+}
+
 export type OidcUser = User;

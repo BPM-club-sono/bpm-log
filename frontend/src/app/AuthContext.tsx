@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, ApiError } from "@/lib/api";
-import { userManager } from "@/lib/oidc";
+import { signOut, userManager } from "@/lib/oidc";
 import { syncEngine } from "@/lib/syncEngine";
 import type { Membre } from "@/lib/types";
 
@@ -120,9 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     clearCachedMembre();
     setUser(null);
-    // Ferme aussi la session authentik : sinon le cookie SSO encore valide
-    // reconnecterait immédiatement sans rien demander.
-    await userManager.signoutRedirect();
+    await signOut();
   }, []);
 
   const value = useMemo(

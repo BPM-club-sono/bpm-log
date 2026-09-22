@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ErrorResponse, ErrorTimeout, type User } from "oidc-client-ts";
-import { getIdToken, renewToken, userManager } from "./oidc";
+import { getIdToken, renewToken, revokeRefreshToken, signOut, userManager } from "./oidc";
 
 function fakeUser(over: Partial<User> = {}): User {
   return { id_token: "id-1", refresh_token: "rt-1", expired: false, ...over } as User;
@@ -77,5 +77,66 @@ describe("renewToken", () => {
     const silent = vi.spyOn(userManager, "signinSilent");
     expect(await renewToken()).toBe("network");
     expect(silent).not.toHaveBeenCalled();
+  });
+});
+
+describe("revokeRefreshToken", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("révoque le refresh_token sur l'endpoint d'authentik", async () => {
+    vi.spyOn(userManager, "getUser").mockResolvedValue(fakeUser());
+    vi.spyOn(userManager.metadataService, "getRevocationEndpoint").mockResolvedValue(
+      "https://auth.example/revoke/",
+    );
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await revokeRefreshToken();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://auth.example/revoke/");
+    const body = init.body as URLSearchParams;
+    expect(body.get("token")).toBe("rt-1");
+    expect(body.get("token_type_hint")).toBe("refresh_token");
+  });
+
+  it("n'appelle rien sans refresh_token", async () => {
+    vi.spyOn(userManager, "getUser").mockResolvedValue(fakeUser({ refresh_token: undefined }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await revokeRefreshToken();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("n'échoue pas si authentik est injoignable", async () => {
+    vi.spyOn(userManager, "getUser").mockResolvedValue(fakeUser());
+    vi.spyOn(userManager.metadataService, "getRevocationEndpoint").mockRejectedValue(
+      new TypeError("Failed to fetch"),
+    );
+    await expect(revokeRefreshToken()).resolves.toBeUndefined();
+  });
+});
+
+describe("signOut", () => {
+  it("révoque avant de rediriger vers la fin de session", async () => {
+    const order: string[] = [];
+    vi.spyOn(userManager, "getUser").mockResolvedValue(fakeUser());
+    vi.spyOn(userManager.metadataService, "getRevocationEndpoint").mockResolvedValue("https://a/r/");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        order.push("revoke");
+        return new Response(null, { status: 200 });
+      }),
+    );
+    vi.spyOn(userManager, "signoutRedirect").mockImplementation(async () => {
+      order.push("signout");
+    });
+    await signOut();
+    expect(order).toEqual(["revoke", "signout"]);
+    vi.unstubAllGlobals();
   });
 });
