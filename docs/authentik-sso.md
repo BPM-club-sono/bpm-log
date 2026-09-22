@@ -109,7 +109,8 @@ personnels, écran de consentement en *External*. Google ne filtre donc rien —
 | Grant types | **`Authorization Code` + `Refresh token` uniquement** — les 6 autres décochés |
 | Redirect URIs | `https://log.bpmclubsono.com/auth/callback` et `http://localhost:5173/auth/callback` — **littérales, mode Strict** |
 | Signing key | certificat auto-signé authentik (RS256) |
-| Scopes | `openid`, `email`, `profile` |
+| Scopes | `openid`, `email`, `profile`, **`offline_access`** — sans ce dernier, aucun refresh_token n'est émis |
+| Token validity | access token court (5 min par défaut, durée de vie de l'id_token) ; **refresh token** `days=30` — c'est lui qui fixe la durée de session |
 | Subject mode | `Based on the User's Email` |
 
 Application : slug **`bpm-log`**, groupe d'accès **`bpm-log-users`** lié via
@@ -162,8 +163,19 @@ en place, `seed.py` les utilise encore.
 `oidc-client-ts`, authorization code + PKCE (`src/lib/oidc.ts`). La SPA envoie
 l'**`id_token`** en `Authorization: Bearer` — c'est lui qui porte `email` et vise
 notre `client_id` ; l'`access_token` d'authentik vise l'API d'authentik.
-`/auth/callback` termine l'échange ; `api.ts` tente un renouvellement silencieux
-sur 401.
+`/auth/callback` termine l'échange.
+
+**Renouvellement** (`renewToken` dans `oidc.ts`) : le scope `offline_access` fait
+émettre un refresh_token ; oidc-client-ts l'échange directement sur l'endpoint token
+(plus d'iframe). Déclenché ~60 s avant expiration, à la lecture d'un token expiré
+(onglet en veille) et sur 401. Les appels concurrents partagent **un seul**
+renouvellement : authentik fait tourner le refresh_token, un second grant avec
+l'ancien échouerait en `invalid_grant`.
+
+**Déconnexion seulement sur refus** : `renewToken` distingue `refused` (authentik
+répond une erreur OAuth — refresh token révoqué ou expiré) de `network` (injoignable).
+Seul `refused` vide la session. Hors ligne, l'app garde le dernier profil connu
+(`localStorage` `bpm.membre`) : un technicien sans réseau n'est jamais éjecté.
 
 ### Variables d'environnement
 
