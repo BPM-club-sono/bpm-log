@@ -19,13 +19,16 @@ from app.models import (
     EquipmentLocation,
     EquipmentVrac,
     Fournisseur,
+    LogScan,
     Prestation,
     TicketReparation,
 )
 from app.models.enums import (
+    DecisionCloture,
     StatutAllocation,
     StatutEquipment,
     StatutPrestation,
+    TypeActionScan,
 )
 from app.schemas.prestation import (
     AllocationCreate,
@@ -57,6 +60,7 @@ def _allocation_read(
         quantite_sortie=alloc.quantite_sortie,
         quantite_retournee=alloc.quantite_retournee,
         statut=alloc.statut,
+        decision_cloture=alloc.decision_cloture,
         equipment_nom=eq.nom if eq is not None else None,
         equipment_barcode=eq.barcode_uid if eq is not None else None,
         equipment_externe=loc is not None,
@@ -368,11 +372,36 @@ async def cloturer_prestation(
         ).all()
     )
     by_id = {a.id: a for a in allocs}
+    # Clôture rejouée après réouverture : l'écran ne renvoie que les écarts encore
+    # ouverts, les décisions déjà prises restent. Seul un écart comblé entre-temps
+    # par le pointage (l'item « perdu » ou « en suspens » est revenu) sort du rapport.
+    for alloc in allocs:
+        if (
+            alloc.decision_cloture in (DecisionCloture.PERDU, DecisionCloture.OUVERT)
+            and alloc.quantite_retournee >= alloc.quantite_sortie
+        ):
+            alloc.decision_cloture = None
+
+    def changer_statut(equipment: Equipment, statut: StatutEquipment) -> None:
+        """Change le statut et le trace dans l'historique de l'équipement."""
+        if equipment.statut_actuel == statut:
+            return
+        equipment.statut_actuel = statut
+        db.add(
+            LogScan(
+                uuid_client=uuid4(),
+                equipment_id=equipment.id,
+                membre_id=user.id,
+                type_action=TypeActionScan.CHANGEMENT_STATUT,
+                contexte=f"→ {statut.replace('_', ' ')} · clôture « {presta.nom} »",
+            )
+        )
 
     for item in data.items:
         alloc = by_id.get(item.allocation_id)
         if alloc is None:
             continue
+        alloc.decision_cloture = DecisionCloture(item.decision)
         equipment = alloc.equipment
         if item.decision == "retourne":
             alloc.quantite_retournee = alloc.quantite_sortie
@@ -380,12 +409,12 @@ async def cloturer_prestation(
         elif item.decision == "perdu":
             alloc.statut = StatutAllocation.RETOURNE
             if equipment is not None:
-                equipment.statut_actuel = StatutEquipment.PERDU
+                changer_statut(equipment, StatutEquipment.PERDU)
         elif item.decision == "casse":
             alloc.quantite_retournee = alloc.quantite_sortie
             alloc.statut = StatutAllocation.RETOURNE
             if equipment is not None:
-                equipment.statut_actuel = StatutEquipment.EN_PANNE
+                changer_statut(equipment, StatutEquipment.EN_PANNE)
                 db.add(
                     TicketReparation(
                         uuid_client=uuid4(),

@@ -57,3 +57,12 @@ class StatutAllocation(enum.StrEnum):
     PLANIFIE = "Planifie"
     SORTI = "Sorti"
     RETOURNE = "Retourne"
+
+
+class DecisionCloture(enum.StrEnum):
+    """Sort d'une allocation tranché à la clôture d'une prestation."""
+
+    RETOURNE = "retourne"
+    PERDU = "perdu"
+    CASSE = "casse"
+    OUVERT = "ouvert"  # laissé en suspens : l'écart reste à régler

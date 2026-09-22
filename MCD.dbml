@@ -61,6 +61,14 @@ Enum statut_allocation {
   Retourne
 }
 
+// Choix fait à la clôture d'une prestation pour chaque écart (rapport de clôture).
+Enum decision_cloture {
+  retourne
+  perdu // équipement passé en Perdu, loggé dans son historique
+  casse // équipement passé en En_Panne + ticket, loggé dans son historique
+  ouvert // laissé en suspens : l'écart reste à régler
+}
+
 Table membres {
   id integer [primary key, increment]
   nom varchar
@@ -238,6 +246,7 @@ Table allocations_presta {
   quantite_sortie integer [default: 0, note: 'Pointé en sortie (deltas presta_check)']
   quantite_retournee integer [default: 0, note: 'Pointé au retour (deltas presta_check)']
   statut statut_allocation
+  decision_cloture decision_cloture [null, note: 'Posé par /cloture ; null hors clôture ou sans écart']
 }
 
 // --- RELATIONS (LIENS ENTRE LES TABLES) ---
