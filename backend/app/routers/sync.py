@@ -9,7 +9,7 @@ il est soit appliqué, soit retourné dans `conflicts` pour arbitrage client.
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter
 from sqlalchemy import select
@@ -26,7 +26,13 @@ from app.models import (
     Prestation,
     TicketReparation,
 )
-from app.models.enums import RoleMembre, StatutAllocation, StatutEquipment, TypeActionScan
+from app.models.enums import (
+    DecisionCloture,
+    RoleMembre,
+    StatutAllocation,
+    StatutEquipment,
+    TypeActionScan,
+)
 from app.schemas.sync import SyncBatchIn, SyncBatchOut, SyncConflict, SyncItemIn
 from app.services import barcode
 from app.services.prestation_statut import recalculer_statut
@@ -218,15 +224,33 @@ async def _apply_presta_check(
     # Le statut de la prestation suit le pointage (Ébauche → En préparation → En cours).
     await recalculer_statut(db, presta)
 
-    # Matériel de location entièrement rendu : on l'archive (trace conservée, masqué du Parc).
     if (
         sens == "retour"
         and alloc.quantite_sortie > 0
         and alloc.quantite_retournee >= alloc.quantite_sortie
     ):
+        # Matériel de location entièrement rendu : on l'archive (trace conservée,
+        # masqué du Parc).
         location = await db.get(EquipmentLocation, equipment.id)
         if location is not None:
             equipment.archive = True
+        # Déclaré perdu (ou laissé en suspens) à la clôture, puis rendu : l'écart est
+        # réglé, il sort du rapport de clôture, et l'équipement n'est plus perdu.
+        # Un « cassé » reste en panne : il est revenu, mais toujours à réparer.
+        if alloc.decision_cloture in (DecisionCloture.PERDU, DecisionCloture.OUVERT):
+            alloc.decision_cloture = None
+        if equipment.statut_actuel == StatutEquipment.PERDU:
+            equipment.statut_actuel = StatutEquipment.FONCTIONNEL
+            db.add(
+                LogScan(
+                    uuid_client=uuid4(),
+                    equipment_id=equipment.id,
+                    membre_id=membre_id,
+                    type_action=TypeActionScan.CHANGEMENT_STATUT,
+                    contexte=f"→ Fonctionnel · retrouvé sur « {presta.nom} »",
+                    offline_created_at=item.offline_created_at,
+                )
+            )
 
     db.add(
         LogScan(

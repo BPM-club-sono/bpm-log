@@ -130,7 +130,15 @@ export function PrestationDetailPage() {
           }
           const v = clamp(a.quantite_retournee + delta, 0, a.quantite_sortie);
           if (v === a.quantite_retournee) return a;
-          return { ...a, quantite_retournee: v };
+          // Miroir du serveur : un perdu / en suspens entièrement rendu sort du rapport.
+          const regle =
+            v >= a.quantite_sortie &&
+            (a.decision_cloture === "perdu" || a.decision_cloture === "ouvert");
+          return {
+            ...a,
+            quantite_retournee: v,
+            ...(regle ? { decision_cloture: null } : {}),
+          };
         });
         void persistSnapshot(next);
         return next;

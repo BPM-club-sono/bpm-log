@@ -5,6 +5,7 @@ un équipement déclaré perdu ou cassé voit ce changement tracé dans ses logs
 """
 
 import uuid
+from datetime import UTC, datetime
 
 from conftest import make_equipment
 from sqlalchemy import select
@@ -20,7 +21,9 @@ from app.models.enums import (
     TypePrestation,
 )
 from app.routers.prestations import cloturer_prestation, rouvrir_prestation
+from app.routers.sync import _apply_presta_check
 from app.schemas.prestation import ClotureIn, ClotureItem
+from app.schemas.sync import SyncItemIn
 
 
 async def _membre(session) -> Membre:
@@ -141,3 +144,45 @@ async def test_recloture_garde_les_decisions_sauf_ecart_comble(db_session):
     # Pas de nouveau changement de statut : pas de log en double.
     assert len(await _logs(s, perdu)) == 1
     assert len(await _logs(s, casse)) == 1
+
+
+def _retour(presta: Prestation, eq: Equipment) -> SyncItemIn:
+    return SyncItemIn(
+        uuid_client=uuid.uuid4(),
+        type="presta_check",
+        offline_created_at=datetime.now(UTC),
+        payload={"presta_id": presta.id, "equipment_id": eq.id, "sens": "retour", "delta": 1},
+    )
+
+
+async def test_perdu_rendu_apres_reouverture_redevient_fonctionnel(db_session):
+    s = db_session
+    user = await _membre(s)
+    perdu = await make_equipment(s, "Lyre P")
+    presta, (a_p,) = await _presta_sortie(s, perdu)
+
+    await cloturer_prestation(presta.id, _cloture((a_p, "perdu")), s, user)
+    await rouvrir_prestation(presta.id, s, user)
+    assert await _apply_presta_check(s, _retour(presta, perdu), user.id) is True
+
+    assert perdu.statut_actuel == StatutEquipment.FONCTIONNEL
+    # Retrouvé : il sort du rapport de clôture.
+    assert a_p.decision_cloture is None
+    contextes = [log.contexte for log in await _logs(s, perdu)]
+    assert "→ Fonctionnel · retrouvé sur « Festival Test »" in contextes
+
+
+async def test_casse_rendu_reste_en_panne(db_session):
+    s = db_session
+    user = await _membre(s)
+    casse = await make_equipment(s, "Lyre C")
+    presta, (a_c,) = await _presta_sortie(s, casse)
+    # Cassé mais pas encore physiquement rendu : l'écart est pointé après coup.
+    await cloturer_prestation(presta.id, _cloture((a_c, "casse")), s, user)
+    a_c.quantite_retournee = 0
+
+    await _apply_presta_check(s, _retour(presta, casse), user.id)
+
+    # Revenu, mais toujours à réparer : ni statut ni rapport ne bougent.
+    assert casse.statut_actuel == StatutEquipment.EN_PANNE
+    assert a_c.decision_cloture == DecisionCloture.CASSE
