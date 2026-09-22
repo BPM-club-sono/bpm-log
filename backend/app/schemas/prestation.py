@@ -38,8 +38,9 @@ class PrestationUpdate(BaseModel):
     client_nom: str | None = None
     date_debut: date | None = None
     date_fin: date | None = None
-    statut: StatutPrestation | None = None
     responsable_membre_id: int | None = None
+    # Pas de `statut` : il est dérivé du pointage (app/services/prestation_statut.py),
+    # posé par /cloture, réaligné par /reouverture — jamais saisi à la main.
 
     @model_validator(mode="after")
     def _valide_periode(self) -> "PrestationUpdate":

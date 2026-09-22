@@ -29,6 +29,7 @@ from app.models import (
 from app.models.enums import RoleMembre, StatutAllocation, StatutEquipment, TypeActionScan
 from app.schemas.sync import SyncBatchIn, SyncBatchOut, SyncConflict, SyncItemIn
 from app.services import barcode
+from app.services.prestation_statut import recalculer_statut
 from app.services.push import notify_role
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -214,6 +215,8 @@ async def _apply_presta_check(
             alloc.quantite_retournee + delta, 0, alloc.quantite_sortie
         )
     _recompute_allocation_statut(alloc)
+    # Le statut de la prestation suit le pointage (Ébauche → En préparation → En cours).
+    await recalculer_statut(db, presta)
 
     # Matériel de location entièrement rendu : on l'archive (trace conservée, masqué du Parc).
     if (

@@ -39,6 +39,7 @@ from app.schemas.prestation import (
 )
 from app.security.rbac import RequireStaff
 from app.services import contenants
+from app.services.prestation_statut import recalculer_statut, statut_derive
 
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
@@ -169,14 +170,11 @@ async def create_prestation(
     return presta
 
 
-@router.get("/{presta_id}", response_model=PrestationDetail)
-async def get_prestation(
-    presta_id: int, _user: CurrentUser, db: DbSession
-) -> PrestationDetail:
-    presta = await _get_presta_or_404(db, presta_id)
+async def _detail_response(db: DbSession, presta: Prestation) -> PrestationDetail:
+    """Prestation + ses allocations à jour (relit la base après une mutation)."""
     allocs = await db.scalars(
         select(AllocationPresta)
-        .where(AllocationPresta.presta_id == presta_id)
+        .where(AllocationPresta.presta_id == presta.id)
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
@@ -187,6 +185,14 @@ async def get_prestation(
             _allocation_read(a, loc_map.get(a.equipment_id)) for a in allocs.all()
         ],
     )
+
+
+@router.get("/{presta_id}", response_model=PrestationDetail)
+async def get_prestation(
+    presta_id: int, _user: CurrentUser, db: DbSession
+) -> PrestationDetail:
+    presta = await _get_presta_or_404(db, presta_id)
+    return await _detail_response(db, presta)
 
 
 @router.patch("/{presta_id}", response_model=PrestationRead)
@@ -243,7 +249,7 @@ async def add_allocation(
     db: DbSession,
     _user: RequireStaff,
 ) -> AllocationRead:
-    await _get_presta_or_404(db, presta_id)
+    presta = await _get_presta_or_404(db, presta_id)
     equipment = await db.get(Equipment, data.equipment_id)
     if equipment is None:
         raise HTTPException(
@@ -294,6 +300,7 @@ async def add_allocation(
                         )
                     )
 
+    await recalculer_statut(db, presta)
     await db.commit()
     await db.refresh(alloc, attribute_names=["equipment"])
     loc_row = (
@@ -317,6 +324,7 @@ async def remove_allocation(
     db: DbSession,
     _user: RequireStaff,
 ) -> None:
+    presta = await _get_presta_or_404(db, presta_id)
     alloc = await db.get(AllocationPresta, allocation_id)
     if alloc is None or alloc.presta_id != presta_id:
         raise HTTPException(
@@ -334,6 +342,7 @@ async def remove_allocation(
             )
         )
     await db.delete(alloc)
+    await recalculer_statut(db, presta)
     await db.commit()
 
 
@@ -389,17 +398,23 @@ async def cloturer_prestation(
 
     presta.statut = StatutPrestation.TERMINEE
     await db.commit()
+    return await _detail_response(db, presta)
 
-    refreshed = await db.scalars(
-        select(AllocationPresta)
-        .where(AllocationPresta.presta_id == presta_id)
-        .options(selectinload(AllocationPresta.equipment))
-        .order_by(AllocationPresta.id)
-    )
-    loc_map = await _location_map(db)
-    return PrestationDetail(
-        **PrestationRead.model_validate(presta).model_dump(),
-        allocations=[
-            _allocation_read(a, loc_map.get(a.equipment_id)) for a in refreshed.all()
-        ],
-    )
+
+@router.post("/{presta_id}/reouverture", response_model=PrestationDetail)
+async def rouvrir_prestation(
+    presta_id: int,
+    db: DbSession,
+    _user: RequireStaff,
+) -> PrestationDetail:
+    """Rouvre une prestation clôturée : le statut repart du pointage.
+
+    Sortie de secours quand du matériel a été oublié après la clôture. On ne
+    défait pas les effets de la clôture (matériel marqué perdu/en panne, tickets
+    créés) : rouvrir sert à compléter la prestation, pas à réécrire son histoire.
+    Idempotent : rappeler la route ne fait que réaligner le statut.
+    """
+    presta = await _get_presta_or_404(db, presta_id)
+    presta.statut = await statut_derive(db, presta.id)
+    await db.commit()
+    return await _detail_response(db, presta)
