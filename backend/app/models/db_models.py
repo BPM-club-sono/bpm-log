@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.models.enums import (
     AvancementTicket,
+    DecisionCloture,
     RoleMembre,
     StatutAllocation,
     StatutEquipment,
@@ -321,6 +322,12 @@ class AllocationPresta(Base):
     statut: Mapped[StatutAllocation] = mapped_column(
         _enum(StatutAllocation, "statut_allocation"),
         default=StatutAllocation.PLANIFIE,
+    )
+    # Décision prise à la clôture (None tant que la prestation n'est pas clôturée,
+    # ou si l'allocation n'avait pas d'écart). Sert au rapport de clôture : sans
+    # elle, un « cassé » (retour forcé) ne se distingue plus d'un vrai retour.
+    decision_cloture: Mapped[DecisionCloture | None] = mapped_column(
+        _enum(DecisionCloture, "decision_cloture")
     )
 
     equipment: Mapped[Equipment] = relationship(lazy="raise")

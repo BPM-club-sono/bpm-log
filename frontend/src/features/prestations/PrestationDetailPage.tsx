@@ -8,6 +8,7 @@ import type {
   ClotureDecision,
   EquipmentListItem,
   PrestationDetail,
+  StatutPrestation,
 } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { normaliser } from "@/lib/barcode";
@@ -17,6 +18,9 @@ import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
 import { buildAllocTree, fournisseurChips } from "./prestationTree";
 import { formatPeriode } from "@/lib/prestationDate";
+import { useToast } from "@/shared/Toast";
+import { STATUT_LABEL, STATUT_STYLE, derivePrestaStatut } from "./statut";
+import { rapportCloture, type LigneRapport } from "./rapportCloture";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
 
@@ -33,6 +37,7 @@ export function PrestationDetailPage() {
   const [detail, setDetail] = useState<PrestationDetail | null>(null);
   const [allocs, setAllocs] = useState<Allocation[]>([]);
   const [mode, setMode] = useState<Mode>("info");
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
@@ -99,6 +104,19 @@ export function PrestationDetailPage() {
     [detail, prestaId],
   );
 
+  // Le statut suit le pointage (miroir de services/prestation_statut.py côté
+  // serveur). On le dérive aussi localement pour que le badge bouge hors-ligne,
+  // là où le serveur ne tranchera qu'à la synchro.
+  useEffect(() => {
+    setDetail((prev) => {
+      if (!prev) return prev;
+      const statut = derivePrestaStatut(allocs, prev.statut);
+      return statut === prev.statut ? prev : { ...prev, statut };
+    });
+  }, [allocs]);
+
+  const anomalies = useMemo(() => rapportCloture(allocs).anomalies, [allocs]);
+
   // --- Checklist : application d'un delta unitaire -----------------------
   const applyDelta = useCallback(
     (alloc: Allocation, sens: ChecklistSens, delta: number) => {
@@ -112,7 +130,15 @@ export function PrestationDetailPage() {
           }
           const v = clamp(a.quantite_retournee + delta, 0, a.quantite_sortie);
           if (v === a.quantite_retournee) return a;
-          return { ...a, quantite_retournee: v };
+          // Miroir du serveur : un perdu / en suspens entièrement rendu sort du rapport.
+          const regle =
+            v >= a.quantite_sortie &&
+            (a.decision_cloture === "perdu" || a.decision_cloture === "ouvert");
+          return {
+            ...a,
+            quantite_retournee: v,
+            ...(regle ? { decision_cloture: null } : {}),
+          };
         });
         void persistSnapshot(next);
         return next;
@@ -216,11 +242,29 @@ export function PrestationDetailPage() {
           <Icon name="arrow_back" className="text-sm" /> Prestations
         </Link>
         <h1 className="text-2xl font-bold">{detail.nom}</h1>
-        <p className="text-sm text-fg-muted">
-          {detail.type}
-          {detail.client_nom ? ` · ${detail.client_nom}` : ""}
-          {offline && " · hors-ligne"}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUT_STYLE[detail.statut]}`}
+          >
+            {STATUT_LABEL[detail.statut]}
+          </span>
+          {/* « Terminée » ne veut pas dire « tout est rentré » : on le signale. */}
+          {detail.statut === "Terminee" && anomalies > 0 && (
+            <button
+              type="button"
+              onClick={() => setMode("cloture")}
+              className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning"
+            >
+              <Icon name="warning" className="text-sm" />
+              {anomalies} anomalie{anomalies > 1 ? "s" : ""}
+            </button>
+          )}
+          <p className="text-sm text-fg-muted">
+            {detail.type}
+            {detail.client_nom ? ` · ${detail.client_nom}` : ""}
+            {offline && " · hors-ligne"}
+          </p>
+        </div>
         {(() => {
           const periode = formatPeriode(detail.date_debut, detail.date_fin);
           if (!periode) return null;
@@ -297,9 +341,12 @@ export function PrestationDetailPage() {
       {mode === "cloture" && (
         <ClotureView
           prestaId={prestaId}
+          statut={detail.statut}
           allocs={allocs}
           canManage={canManage && !offline}
           onClosed={load}
+          onError={setError}
+          toast={toast}
         />
       )}
     </div>
@@ -319,11 +366,12 @@ function InfoView({
   canManage: boolean;
   onReload: () => Promise<void>;
 }) {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<EquipmentListItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [advancing, setAdvancing] = useState(false);
+  const [reopening, setReopening] = useState(false);
   // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
   const [filter, setFilter] = useState<string>("tous");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,23 +434,22 @@ function InfoView({
     await onReload();
   }
 
-  async function passerEnPreparation() {
-    setAdvancing(true);
+  async function rouvrir() {
+    setReopening(true);
     try {
-      await api(`/prestations/${detail.id}`, {
-        method: "PATCH",
-        body: { statut: "En_preparation" },
-      });
+      await api(`/prestations/${detail.id}/reouverture`, { method: "POST" });
       await onReload();
+      toast("Prestation rouverte.", "success");
+    } catch {
+      toast("Réouverture impossible.", "error");
     } finally {
-      setAdvancing(false);
+      setReopening(false);
     }
   }
 
-  // Construction (Ébauche) et préparation : on peut encore ajuster le matériel.
-  const editable =
-    canManage &&
-    (detail.statut === "Ebauche" || detail.statut === "En_preparation");
+  // Le matériel reste ajustable jusqu'à la clôture — c'est la réouverture, et
+  // non un statut intermédiaire, qui sert de garde-fou si on a oublié un item.
+  const editable = canManage && detail.statut !== "Terminee";
 
   const hasInterne = allocs.some((a) => !a.equipment_externe);
   const chips = fournisseurChips(allocs);
@@ -443,22 +490,24 @@ function InfoView({
 
   return (
     <div className="space-y-4">
-      {canManage && detail.statut === "Ebauche" && (
+      {detail.statut === "Terminee" && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-line bg-bg-soft p-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium">Ébauche</p>
+            <p className="text-sm font-medium">Prestation clôturée</p>
             <p className="text-xs text-fg-muted">
-              Finalise le matériel, puis valide pour passer en
-              préparation.
+              Le matériel n'est plus modifiable. Rouvre la prestation pour
+              ajouter un oubli.
             </p>
           </div>
-          <Button
-            className="h-9 shrink-0 px-3 text-xs"
-            onClick={passerEnPreparation}
-            loading={advancing}
-          >
-            Valider la préparation
-          </Button>
+          {canManage && (
+            <Button
+              className="h-9 shrink-0 px-3 text-xs"
+              onClick={rouvrir}
+              loading={reopening}
+            >
+              Rouvrir
+            </Button>
+          )}
         </div>
       )}
       {editable && (
@@ -665,14 +714,20 @@ const DECISIONS: { value: ClotureDecision; label: string }[] = [
 
 function ClotureView({
   prestaId,
+  statut,
   allocs,
   canManage,
   onClosed,
+  onError,
+  toast,
 }: {
   prestaId: number;
+  statut: StatutPrestation;
   allocs: Allocation[];
   canManage: boolean;
   onClosed: () => Promise<void>;
+  onError: (message: string | null) => void;
+  toast: (message: string, kind?: "success" | "error" | "info") => void;
 }) {
   const ecarts = useMemo(
     () =>
@@ -702,6 +757,7 @@ function ClotureView({
 
   async function submit() {
     setSaving(true);
+    onError(null);
     try {
       await api(`/prestations/${prestaId}/cloture`, {
         method: "POST",
@@ -712,11 +768,18 @@ function ClotureView({
           })),
         },
       });
+      // On reste sur l'onglet : il affiche maintenant le rapport de clôture.
       await onClosed();
+      toast("Prestation clôturée.", "success");
+    } catch {
+      onError("Clôture impossible. Réessaie une fois en ligne.");
     } finally {
       setSaving(false);
     }
   }
+
+  // Déjà clôturée : pas de bouton re-cliquable, on affiche le bilan.
+  if (statut === "Terminee") return <RapportClotureView allocs={allocs} />;
 
   if (!canManage) {
     return (
@@ -801,5 +864,113 @@ function ClotureView({
         Clôturer la prestation
       </Button>
     </div>
+  );
+}
+
+// --- Rapport de clôture -------------------------------------------------
+
+function RapportClotureView({ allocs }: { allocs: Allocation[] }) {
+  const rapport = useMemo(() => rapportCloture(allocs), [allocs]);
+
+  if (rapport.anomalies === 0) {
+    return (
+      <div className="space-y-3 py-8 text-center">
+        <Icon name="task_alt" className="text-4xl text-success" />
+        <p className="text-sm">Prestation clôturée : tout le matériel est rentré.</p>
+        <p className="text-xs text-fg-muted">
+          Pour ajouter un oubli, rouvre-la depuis l'onglet Détail.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3">
+        <Icon name="warning" className="text-xl text-warning" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            Clôturée avec {rapport.anomalies} anomalie
+            {rapport.anomalies > 1 ? "s" : ""}
+          </p>
+          <p className="text-xs text-fg-muted">
+            Du matériel n'est pas rentré en état. Chaque ligne renvoie à la fiche de
+            l'équipement et à son historique.
+          </p>
+        </div>
+      </div>
+      <RapportSection
+        titre="Perdus"
+        aide="Équipement passé en « Perdu »."
+        icon="search_off"
+        accent="text-danger"
+        lignes={rapport.perdus}
+      />
+      <RapportSection
+        titre="Cassés"
+        aide="Équipement passé en panne, ticket de réparation ouvert."
+        icon="build"
+        accent="text-warning"
+        lignes={rapport.casses}
+      />
+      <RapportSection
+        titre="Laissés en suspens"
+        aide="Pas encore rentrés ni tranchés : l'écart reste à régler."
+        icon="hourglass_empty"
+        accent="text-warning"
+        lignes={rapport.enSuspens}
+      />
+      <p className="text-xs text-fg-muted">
+        Pour ajouter un oubli, rouvre la prestation depuis l'onglet Détail.
+      </p>
+    </div>
+  );
+}
+
+function RapportSection({
+  titre,
+  aide,
+  icon,
+  accent,
+  lignes,
+}: {
+  titre: string;
+  aide: string;
+  icon: string;
+  accent: string;
+  lignes: LigneRapport[];
+}) {
+  if (lignes.length === 0) return null;
+  return (
+    <section className="space-y-1">
+      <h2 className={`flex items-center gap-1.5 text-sm font-semibold ${accent}`}>
+        <Icon name={icon} className="text-base" />
+        {titre} ({lignes.length})
+      </h2>
+      <p className="text-xs text-fg-muted">{aide}</p>
+      <ul className="divide-y divide-line">
+        {lignes.map(({ alloc: a, manquant }) => (
+          <li key={a.id}>
+            <Link
+              to={`/inventaire/${a.equipment_id}`}
+              className="flex items-center justify-between gap-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                </p>
+                <p className="truncate text-xs text-fg-muted">
+                  {[a.equipment_barcode, a.fournisseur_nom].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-fg-muted">
+                {manquant > 1 && `×${manquant}`}
+                <Icon name="chevron_right" className="text-base" />
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

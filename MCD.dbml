@@ -43,6 +43,11 @@ Enum type_prestation {
   Externe
 }
 
+// Les trois premiers états sont DÉRIVÉS du pointage, jamais saisis à la main
+// (backend/app/services/prestation_statut.py) : rien de sorti -> Ebauche, une
+// partie sortie -> En_preparation, tout le prévu sorti -> En_cours.
+// Terminee est terminal : posé par POST /prestations/{id}/cloture, retiré par
+// POST /prestations/{id}/reouverture.
 Enum statut_prestation {
   Ebauche // construction/ajustement juste après création
   En_preparation
@@ -54,6 +59,14 @@ Enum statut_allocation {
   Planifie
   Sorti
   Retourne
+}
+
+// Choix fait à la clôture d'une prestation pour chaque écart (rapport de clôture).
+Enum decision_cloture {
+  retourne
+  perdu // équipement passé en Perdu, loggé dans son historique
+  casse // équipement passé en En_Panne + ticket, loggé dans son historique
+  ouvert // laissé en suspens : l'écart reste à régler
 }
 
 Table membres {
@@ -229,8 +242,11 @@ Table allocations_presta {
   id integer [primary key, increment]
   presta_id integer
   equipment_id integer
-  quantite integer [default: 1, note: 'Utile pour consommables / vrac alloués en lot']
+  quantite integer [default: 1, note: 'Prévu. Utile pour consommables / vrac alloués en lot']
+  quantite_sortie integer [default: 0, note: 'Pointé en sortie (deltas presta_check)']
+  quantite_retournee integer [default: 0, note: 'Pointé au retour (deltas presta_check)']
   statut statut_allocation
+  decision_cloture decision_cloture [null, note: 'Posé par /cloture ; null hors clôture ou sans écart']
 }
 
 // --- RELATIONS (LIENS ENTRE LES TABLES) ---

@@ -6,20 +6,7 @@ import { useAuth } from "@/app/AuthContext";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { formatPeriode } from "@/lib/prestationDate";
-
-const STATUT_LABEL: Record<Prestation["statut"], string> = {
-  Ebauche: "Ébauche",
-  En_preparation: "En préparation",
-  En_cours: "En cours",
-  Terminee: "Terminée",
-};
-
-const STATUT_STYLE: Record<Prestation["statut"], string> = {
-  Ebauche: "bg-fg-muted/15 text-fg-muted",
-  En_preparation: "bg-warning/15 text-warning",
-  En_cours: "bg-fg text-bg",
-  Terminee: "bg-success/15 text-success",
-};
+import { STATUT_LABEL, STATUT_STYLE } from "./statut";
 
 // Tri chronologique : datées d'abord (plus proche en premier), sans date à la fin.
 function compareParDate(a: Prestation, b: Prestation): number {

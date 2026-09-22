@@ -43,16 +43,26 @@ async def db_session():
 
     On crée un moteur dédié par test : le pool global de l'app garderait des
     connexions liées à une autre event loop (-> 'Event loop is closed' en teardown).
-    Aucune écriture n'est commitée : la base de dev n'est pas polluée.
+
+    Aucune écriture n'est commitée, **même quand un routeur appelle `commit()`** :
+    la session vit dans une transaction externe ouverte ici, et ses `commit()` ne
+    font que relâcher un savepoint (`join_transaction_mode="create_savepoint"`).
+    Sans ça, un test qui vide une table avant d'appeler un routeur la vide pour de
+    bon dans la base de dev.
     """
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
+    conn = await engine.connect()
+    outer = await conn.begin()
+    factory = async_sessionmaker(
+        bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint"
+    )
     session = factory()
     try:
         yield session
     finally:
-        await session.rollback()
         await session.close()
+        await outer.rollback()
+        await conn.close()
         await engine.dispose()
 
 

@@ -19,13 +19,16 @@ from app.models import (
     EquipmentLocation,
     EquipmentVrac,
     Fournisseur,
+    LogScan,
     Prestation,
     TicketReparation,
 )
 from app.models.enums import (
+    DecisionCloture,
     StatutAllocation,
     StatutEquipment,
     StatutPrestation,
+    TypeActionScan,
 )
 from app.schemas.prestation import (
     AllocationCreate,
@@ -39,6 +42,7 @@ from app.schemas.prestation import (
 )
 from app.security.rbac import RequireStaff
 from app.services import contenants
+from app.services.prestation_statut import recalculer_statut, statut_derive
 
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
@@ -56,6 +60,7 @@ def _allocation_read(
         quantite_sortie=alloc.quantite_sortie,
         quantite_retournee=alloc.quantite_retournee,
         statut=alloc.statut,
+        decision_cloture=alloc.decision_cloture,
         equipment_nom=eq.nom if eq is not None else None,
         equipment_barcode=eq.barcode_uid if eq is not None else None,
         equipment_externe=loc is not None,
@@ -169,14 +174,11 @@ async def create_prestation(
     return presta
 
 
-@router.get("/{presta_id}", response_model=PrestationDetail)
-async def get_prestation(
-    presta_id: int, _user: CurrentUser, db: DbSession
-) -> PrestationDetail:
-    presta = await _get_presta_or_404(db, presta_id)
+async def _detail_response(db: DbSession, presta: Prestation) -> PrestationDetail:
+    """Prestation + ses allocations à jour (relit la base après une mutation)."""
     allocs = await db.scalars(
         select(AllocationPresta)
-        .where(AllocationPresta.presta_id == presta_id)
+        .where(AllocationPresta.presta_id == presta.id)
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
@@ -187,6 +189,14 @@ async def get_prestation(
             _allocation_read(a, loc_map.get(a.equipment_id)) for a in allocs.all()
         ],
     )
+
+
+@router.get("/{presta_id}", response_model=PrestationDetail)
+async def get_prestation(
+    presta_id: int, _user: CurrentUser, db: DbSession
+) -> PrestationDetail:
+    presta = await _get_presta_or_404(db, presta_id)
+    return await _detail_response(db, presta)
 
 
 @router.patch("/{presta_id}", response_model=PrestationRead)
@@ -243,7 +253,7 @@ async def add_allocation(
     db: DbSession,
     _user: RequireStaff,
 ) -> AllocationRead:
-    await _get_presta_or_404(db, presta_id)
+    presta = await _get_presta_or_404(db, presta_id)
     equipment = await db.get(Equipment, data.equipment_id)
     if equipment is None:
         raise HTTPException(
@@ -294,6 +304,7 @@ async def add_allocation(
                         )
                     )
 
+    await recalculer_statut(db, presta)
     await db.commit()
     await db.refresh(alloc, attribute_names=["equipment"])
     loc_row = (
@@ -317,6 +328,7 @@ async def remove_allocation(
     db: DbSession,
     _user: RequireStaff,
 ) -> None:
+    presta = await _get_presta_or_404(db, presta_id)
     alloc = await db.get(AllocationPresta, allocation_id)
     if alloc is None or alloc.presta_id != presta_id:
         raise HTTPException(
@@ -334,6 +346,7 @@ async def remove_allocation(
             )
         )
     await db.delete(alloc)
+    await recalculer_statut(db, presta)
     await db.commit()
 
 
@@ -359,11 +372,36 @@ async def cloturer_prestation(
         ).all()
     )
     by_id = {a.id: a for a in allocs}
+    # Clôture rejouée après réouverture : l'écran ne renvoie que les écarts encore
+    # ouverts, les décisions déjà prises restent. Seul un écart comblé entre-temps
+    # par le pointage (l'item « perdu » ou « en suspens » est revenu) sort du rapport.
+    for alloc in allocs:
+        if (
+            alloc.decision_cloture in (DecisionCloture.PERDU, DecisionCloture.OUVERT)
+            and alloc.quantite_retournee >= alloc.quantite_sortie
+        ):
+            alloc.decision_cloture = None
+
+    def changer_statut(equipment: Equipment, statut: StatutEquipment) -> None:
+        """Change le statut et le trace dans l'historique de l'équipement."""
+        if equipment.statut_actuel == statut:
+            return
+        equipment.statut_actuel = statut
+        db.add(
+            LogScan(
+                uuid_client=uuid4(),
+                equipment_id=equipment.id,
+                membre_id=user.id,
+                type_action=TypeActionScan.CHANGEMENT_STATUT,
+                contexte=f"→ {statut.replace('_', ' ')} · clôture « {presta.nom} »",
+            )
+        )
 
     for item in data.items:
         alloc = by_id.get(item.allocation_id)
         if alloc is None:
             continue
+        alloc.decision_cloture = DecisionCloture(item.decision)
         equipment = alloc.equipment
         if item.decision == "retourne":
             alloc.quantite_retournee = alloc.quantite_sortie
@@ -371,12 +409,12 @@ async def cloturer_prestation(
         elif item.decision == "perdu":
             alloc.statut = StatutAllocation.RETOURNE
             if equipment is not None:
-                equipment.statut_actuel = StatutEquipment.PERDU
+                changer_statut(equipment, StatutEquipment.PERDU)
         elif item.decision == "casse":
             alloc.quantite_retournee = alloc.quantite_sortie
             alloc.statut = StatutAllocation.RETOURNE
             if equipment is not None:
-                equipment.statut_actuel = StatutEquipment.EN_PANNE
+                changer_statut(equipment, StatutEquipment.EN_PANNE)
                 db.add(
                     TicketReparation(
                         uuid_client=uuid4(),
@@ -389,17 +427,23 @@ async def cloturer_prestation(
 
     presta.statut = StatutPrestation.TERMINEE
     await db.commit()
+    return await _detail_response(db, presta)
 
-    refreshed = await db.scalars(
-        select(AllocationPresta)
-        .where(AllocationPresta.presta_id == presta_id)
-        .options(selectinload(AllocationPresta.equipment))
-        .order_by(AllocationPresta.id)
-    )
-    loc_map = await _location_map(db)
-    return PrestationDetail(
-        **PrestationRead.model_validate(presta).model_dump(),
-        allocations=[
-            _allocation_read(a, loc_map.get(a.equipment_id)) for a in refreshed.all()
-        ],
-    )
+
+@router.post("/{presta_id}/reouverture", response_model=PrestationDetail)
+async def rouvrir_prestation(
+    presta_id: int,
+    db: DbSession,
+    _user: RequireStaff,
+) -> PrestationDetail:
+    """Rouvre une prestation clôturée : le statut repart du pointage.
+
+    Sortie de secours quand du matériel a été oublié après la clôture. On ne
+    défait pas les effets de la clôture (matériel marqué perdu/en panne, tickets
+    créés) : rouvrir sert à compléter la prestation, pas à réécrire son histoire.
+    Idempotent : rappeler la route ne fait que réaligner le statut.
+    """
+    presta = await _get_presta_or_404(db, presta_id)
+    presta.statut = await statut_derive(db, presta.id)
+    await db.commit()
+    return await _detail_response(db, presta)

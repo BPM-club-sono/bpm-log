@@ -66,6 +66,8 @@ export interface Allocation {
   quantite_sortie: number;
   quantite_retournee: number;
   statut: StatutAllocation;
+  /** Choix fait à la clôture (null hors clôture ou sans écart). */
+  decision_cloture?: ClotureDecision | null;
   equipment_nom: string | null;
   equipment_barcode: string | null;
   equipment_externe?: boolean;

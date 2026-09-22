@@ -5,7 +5,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.enums import StatutAllocation, StatutPrestation, TypePrestation
+from app.models.enums import (
+    DecisionCloture,
+    StatutAllocation,
+    StatutPrestation,
+    TypePrestation,
+)
 
 
 def valide_periode(debut: date | None, fin: date | None) -> None:
@@ -38,8 +43,9 @@ class PrestationUpdate(BaseModel):
     client_nom: str | None = None
     date_debut: date | None = None
     date_fin: date | None = None
-    statut: StatutPrestation | None = None
     responsable_membre_id: int | None = None
+    # Pas de `statut` : il est dérivé du pointage (app/services/prestation_statut.py),
+    # posé par /cloture, réaligné par /reouverture — jamais saisi à la main.
 
     @model_validator(mode="after")
     def _valide_periode(self) -> "PrestationUpdate":
@@ -77,6 +83,8 @@ class AllocationRead(BaseModel):
     quantite_sortie: int
     quantite_retournee: int
     statut: StatutAllocation
+    # Choix fait à la clôture (rapport : perdus, cassés, laissés en suspens).
+    decision_cloture: DecisionCloture | None = None
     # Champs dénormalisés pour l'affichage offline de la checklist.
     equipment_nom: str | None = None
     equipment_barcode: str | None = None
