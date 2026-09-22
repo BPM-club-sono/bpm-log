@@ -8,6 +8,7 @@ import type {
   ClotureDecision,
   EquipmentListItem,
   PrestationDetail,
+  StatutPrestation,
 } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { normaliser } from "@/lib/barcode";
@@ -17,6 +18,8 @@ import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
 import { buildAllocTree, fournisseurChips } from "./prestationTree";
 import { formatPeriode } from "@/lib/prestationDate";
+import { useToast } from "@/shared/Toast";
+import { STATUT_LABEL, STATUT_STYLE, derivePrestaStatut } from "./statut";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
 
@@ -33,6 +36,7 @@ export function PrestationDetailPage() {
   const [detail, setDetail] = useState<PrestationDetail | null>(null);
   const [allocs, setAllocs] = useState<Allocation[]>([]);
   const [mode, setMode] = useState<Mode>("info");
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
@@ -98,6 +102,17 @@ export function PrestationDetailPage() {
     },
     [detail, prestaId],
   );
+
+  // Le statut suit le pointage (miroir de services/prestation_statut.py côté
+  // serveur). On le dérive aussi localement pour que le badge bouge hors-ligne,
+  // là où le serveur ne tranchera qu'à la synchro.
+  useEffect(() => {
+    setDetail((prev) => {
+      if (!prev) return prev;
+      const statut = derivePrestaStatut(allocs, prev.statut);
+      return statut === prev.statut ? prev : { ...prev, statut };
+    });
+  }, [allocs]);
 
   // --- Checklist : application d'un delta unitaire -----------------------
   const applyDelta = useCallback(
@@ -216,11 +231,18 @@ export function PrestationDetailPage() {
           <Icon name="arrow_back" className="text-sm" /> Prestations
         </Link>
         <h1 className="text-2xl font-bold">{detail.nom}</h1>
-        <p className="text-sm text-fg-muted">
-          {detail.type}
-          {detail.client_nom ? ` · ${detail.client_nom}` : ""}
-          {offline && " · hors-ligne"}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUT_STYLE[detail.statut]}`}
+          >
+            {STATUT_LABEL[detail.statut]}
+          </span>
+          <p className="text-sm text-fg-muted">
+            {detail.type}
+            {detail.client_nom ? ` · ${detail.client_nom}` : ""}
+            {offline && " · hors-ligne"}
+          </p>
+        </div>
         {(() => {
           const periode = formatPeriode(detail.date_debut, detail.date_fin);
           if (!periode) return null;
@@ -297,9 +319,15 @@ export function PrestationDetailPage() {
       {mode === "cloture" && (
         <ClotureView
           prestaId={prestaId}
+          statut={detail.statut}
           allocs={allocs}
           canManage={canManage && !offline}
-          onClosed={load}
+          onClosed={async () => {
+            await load();
+            setMode("info");
+          }}
+          onError={setError}
+          toast={toast}
         />
       )}
     </div>
@@ -319,11 +347,12 @@ function InfoView({
   canManage: boolean;
   onReload: () => Promise<void>;
 }) {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<EquipmentListItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [advancing, setAdvancing] = useState(false);
+  const [reopening, setReopening] = useState(false);
   // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
   const [filter, setFilter] = useState<string>("tous");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,23 +415,22 @@ function InfoView({
     await onReload();
   }
 
-  async function passerEnPreparation() {
-    setAdvancing(true);
+  async function rouvrir() {
+    setReopening(true);
     try {
-      await api(`/prestations/${detail.id}`, {
-        method: "PATCH",
-        body: { statut: "En_preparation" },
-      });
+      await api(`/prestations/${detail.id}/reouverture`, { method: "POST" });
       await onReload();
+      toast("Prestation rouverte.", "success");
+    } catch {
+      toast("Réouverture impossible.", "error");
     } finally {
-      setAdvancing(false);
+      setReopening(false);
     }
   }
 
-  // Construction (Ébauche) et préparation : on peut encore ajuster le matériel.
-  const editable =
-    canManage &&
-    (detail.statut === "Ebauche" || detail.statut === "En_preparation");
+  // Le matériel reste ajustable jusqu'à la clôture — c'est la réouverture, et
+  // non un statut intermédiaire, qui sert de garde-fou si on a oublié un item.
+  const editable = canManage && detail.statut !== "Terminee";
 
   const hasInterne = allocs.some((a) => !a.equipment_externe);
   const chips = fournisseurChips(allocs);
@@ -443,22 +471,24 @@ function InfoView({
 
   return (
     <div className="space-y-4">
-      {canManage && detail.statut === "Ebauche" && (
+      {detail.statut === "Terminee" && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-line bg-bg-soft p-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium">Ébauche</p>
+            <p className="text-sm font-medium">Prestation clôturée</p>
             <p className="text-xs text-fg-muted">
-              Finalise le matériel, puis valide pour passer en
-              préparation.
+              Le matériel n'est plus modifiable. Rouvre la prestation pour
+              ajouter un oubli.
             </p>
           </div>
-          <Button
-            className="h-9 shrink-0 px-3 text-xs"
-            onClick={passerEnPreparation}
-            loading={advancing}
-          >
-            Valider la préparation
-          </Button>
+          {canManage && (
+            <Button
+              className="h-9 shrink-0 px-3 text-xs"
+              onClick={rouvrir}
+              loading={reopening}
+            >
+              Rouvrir
+            </Button>
+          )}
         </div>
       )}
       {editable && (
@@ -665,14 +695,20 @@ const DECISIONS: { value: ClotureDecision; label: string }[] = [
 
 function ClotureView({
   prestaId,
+  statut,
   allocs,
   canManage,
   onClosed,
+  onError,
+  toast,
 }: {
   prestaId: number;
+  statut: StatutPrestation;
   allocs: Allocation[];
   canManage: boolean;
   onClosed: () => Promise<void>;
+  onError: (message: string | null) => void;
+  toast: (message: string, kind?: "success" | "error" | "info") => void;
 }) {
   const ecarts = useMemo(
     () =>
@@ -702,6 +738,7 @@ function ClotureView({
 
   async function submit() {
     setSaving(true);
+    onError(null);
     try {
       await api(`/prestations/${prestaId}/cloture`, {
         method: "POST",
@@ -712,10 +749,27 @@ function ClotureView({
           })),
         },
       });
+      // Retour sur le Détail : c'est là que le changement de statut est visible.
       await onClosed();
+      toast("Prestation clôturée.", "success");
+    } catch {
+      onError("Clôture impossible. Réessaie une fois en ligne.");
     } finally {
       setSaving(false);
     }
+  }
+
+  // Déjà clôturée : pas de bouton re-cliquable, la suite se passe sur le Détail.
+  if (statut === "Terminee") {
+    return (
+      <div className="space-y-3 py-8 text-center">
+        <Icon name="task_alt" className="text-4xl text-success" />
+        <p className="text-sm">Prestation clôturée.</p>
+        <p className="text-xs text-fg-muted">
+          Pour ajouter un oubli, rouvre-la depuis l'onglet Détail.
+        </p>
+      </div>
+    );
   }
 
   if (!canManage) {
