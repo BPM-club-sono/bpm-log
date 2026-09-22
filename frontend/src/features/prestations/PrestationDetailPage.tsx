@@ -20,6 +20,7 @@ import { buildAllocTree, fournisseurChips } from "./prestationTree";
 import { formatPeriode } from "@/lib/prestationDate";
 import { useToast } from "@/shared/Toast";
 import { STATUT_LABEL, STATUT_STYLE, derivePrestaStatut } from "./statut";
+import { rapportCloture, type LigneRapport } from "./rapportCloture";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
 
@@ -113,6 +114,8 @@ export function PrestationDetailPage() {
       return statut === prev.statut ? prev : { ...prev, statut };
     });
   }, [allocs]);
+
+  const anomalies = useMemo(() => rapportCloture(allocs).anomalies, [allocs]);
 
   // --- Checklist : application d'un delta unitaire -----------------------
   const applyDelta = useCallback(
@@ -237,6 +240,17 @@ export function PrestationDetailPage() {
           >
             {STATUT_LABEL[detail.statut]}
           </span>
+          {/* « Terminée » ne veut pas dire « tout est rentré » : on le signale. */}
+          {detail.statut === "Terminee" && anomalies > 0 && (
+            <button
+              type="button"
+              onClick={() => setMode("cloture")}
+              className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning"
+            >
+              <Icon name="warning" className="text-sm" />
+              {anomalies} anomalie{anomalies > 1 ? "s" : ""}
+            </button>
+          )}
           <p className="text-sm text-fg-muted">
             {detail.type}
             {detail.client_nom ? ` · ${detail.client_nom}` : ""}
@@ -322,10 +336,7 @@ export function PrestationDetailPage() {
           statut={detail.statut}
           allocs={allocs}
           canManage={canManage && !offline}
-          onClosed={async () => {
-            await load();
-            setMode("info");
-          }}
+          onClosed={load}
           onError={setError}
           toast={toast}
         />
@@ -749,7 +760,7 @@ function ClotureView({
           })),
         },
       });
-      // Retour sur le Détail : c'est là que le changement de statut est visible.
+      // On reste sur l'onglet : il affiche maintenant le rapport de clôture.
       await onClosed();
       toast("Prestation clôturée.", "success");
     } catch {
@@ -759,18 +770,8 @@ function ClotureView({
     }
   }
 
-  // Déjà clôturée : pas de bouton re-cliquable, la suite se passe sur le Détail.
-  if (statut === "Terminee") {
-    return (
-      <div className="space-y-3 py-8 text-center">
-        <Icon name="task_alt" className="text-4xl text-success" />
-        <p className="text-sm">Prestation clôturée.</p>
-        <p className="text-xs text-fg-muted">
-          Pour ajouter un oubli, rouvre-la depuis l'onglet Détail.
-        </p>
-      </div>
-    );
-  }
+  // Déjà clôturée : pas de bouton re-cliquable, on affiche le bilan.
+  if (statut === "Terminee") return <RapportClotureView allocs={allocs} />;
 
   if (!canManage) {
     return (
@@ -855,5 +856,113 @@ function ClotureView({
         Clôturer la prestation
       </Button>
     </div>
+  );
+}
+
+// --- Rapport de clôture -------------------------------------------------
+
+function RapportClotureView({ allocs }: { allocs: Allocation[] }) {
+  const rapport = useMemo(() => rapportCloture(allocs), [allocs]);
+
+  if (rapport.anomalies === 0) {
+    return (
+      <div className="space-y-3 py-8 text-center">
+        <Icon name="task_alt" className="text-4xl text-success" />
+        <p className="text-sm">Prestation clôturée : tout le matériel est rentré.</p>
+        <p className="text-xs text-fg-muted">
+          Pour ajouter un oubli, rouvre-la depuis l'onglet Détail.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3">
+        <Icon name="warning" className="text-xl text-warning" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            Clôturée avec {rapport.anomalies} anomalie
+            {rapport.anomalies > 1 ? "s" : ""}
+          </p>
+          <p className="text-xs text-fg-muted">
+            Du matériel n'est pas rentré en état. Chaque ligne renvoie à la fiche de
+            l'équipement et à son historique.
+          </p>
+        </div>
+      </div>
+      <RapportSection
+        titre="Perdus"
+        aide="Équipement passé en « Perdu »."
+        icon="search_off"
+        accent="text-danger"
+        lignes={rapport.perdus}
+      />
+      <RapportSection
+        titre="Cassés"
+        aide="Équipement passé en panne, ticket de réparation ouvert."
+        icon="build"
+        accent="text-warning"
+        lignes={rapport.casses}
+      />
+      <RapportSection
+        titre="Laissés en suspens"
+        aide="Pas encore rentrés ni tranchés : l'écart reste à régler."
+        icon="hourglass_empty"
+        accent="text-warning"
+        lignes={rapport.enSuspens}
+      />
+      <p className="text-xs text-fg-muted">
+        Pour ajouter un oubli, rouvre la prestation depuis l'onglet Détail.
+      </p>
+    </div>
+  );
+}
+
+function RapportSection({
+  titre,
+  aide,
+  icon,
+  accent,
+  lignes,
+}: {
+  titre: string;
+  aide: string;
+  icon: string;
+  accent: string;
+  lignes: LigneRapport[];
+}) {
+  if (lignes.length === 0) return null;
+  return (
+    <section className="space-y-1">
+      <h2 className={`flex items-center gap-1.5 text-sm font-semibold ${accent}`}>
+        <Icon name={icon} className="text-base" />
+        {titre} ({lignes.length})
+      </h2>
+      <p className="text-xs text-fg-muted">{aide}</p>
+      <ul className="divide-y divide-line">
+        {lignes.map(({ alloc: a, manquant }) => (
+          <li key={a.id}>
+            <Link
+              to={`/inventaire/${a.equipment_id}`}
+              className="flex items-center justify-between gap-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                </p>
+                <p className="truncate text-xs text-fg-muted">
+                  {[a.equipment_barcode, a.fournisseur_nom].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-fg-muted">
+                {manquant > 1 && `×${manquant}`}
+                <Icon name="chevron_right" className="text-base" />
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
