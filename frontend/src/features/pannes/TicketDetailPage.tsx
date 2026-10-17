@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { PhotoViewer } from "@/shared/PhotoViewer";
 import { useToast } from "@/shared/Toast";
 import { AvancementBadge } from "./PannesListPage";
 
@@ -69,6 +70,7 @@ export function TicketDetailPage() {
   const [comment, setComment] = useState("");
   const [savingComment, setSavingComment] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -347,12 +349,12 @@ export function TicketDetailPage() {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-fg-muted">Photos</h2>
         <div className="flex flex-wrap gap-2">
-          {ticket.photos.map((p) => (
-            <a
+          {ticket.photos.map((p, i) => (
+            <button
               key={p.id}
-              href={p.url}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
+              onClick={() => setViewerIndex(i)}
+              aria-label={`Agrandir la photo ${i + 1}`}
               className="h-20 w-20"
             >
               <img
@@ -360,7 +362,7 @@ export function TicketDetailPage() {
                 alt=""
                 className="h-full w-full rounded-lg border border-line object-cover"
               />
-            </a>
+            </button>
           ))}
           <button
             type="button"
@@ -378,6 +380,11 @@ export function TicketDetailPage() {
           capture="environment"
           onChange={onPickPhoto}
           className="hidden"
+        />
+        <PhotoViewer
+          photos={ticket.photos.map((p) => p.url)}
+          index={viewerIndex}
+          onClose={() => setViewerIndex(null)}
         />
       </section>
 

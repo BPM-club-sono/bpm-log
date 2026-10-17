@@ -23,6 +23,7 @@ import { useAuth } from "@/app/AuthContext";
 import { BarcodeInput } from "@/shared/BarcodeInput";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { PhotoViewer } from "@/shared/PhotoViewer";
 import { StatusBadge } from "@/shared/StatusBadge";
 import { useToast } from "@/shared/Toast";
 import { RangementField, type RangementMode } from "./RangementField";
@@ -62,6 +63,7 @@ export function EquipmentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [moving, setMoving] = useState(false);
   const [inCart, setInCart] = useState(false);
 
@@ -136,11 +138,25 @@ export function EquipmentDetailPage() {
       </div>
 
       {eq.photo_url && (
-        <img
-          src={eq.photo_url}
-          alt={eq.nom}
-          className="aspect-video w-full rounded-2xl border border-line object-cover"
-        />
+        <>
+          <button
+            type="button"
+            onClick={() => setViewerOpen(true)}
+            aria-label="Agrandir la photo"
+            className="block w-full"
+          >
+            <img
+              src={eq.photo_url}
+              alt={eq.nom}
+              className="aspect-video w-full rounded-2xl border border-line object-cover"
+            />
+          </button>
+          <PhotoViewer
+            photos={[eq.photo_url]}
+            index={viewerOpen ? 0 : null}
+            onClose={() => setViewerOpen(false)}
+          />
+        </>
       )}
 
       <div className="space-y-3 border-b border-line pb-5">
