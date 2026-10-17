@@ -2,7 +2,7 @@
 fiche détaillée, création/édition (Admin+Staff), photo, fournisseurs."""
 
 import uuid as uuid_lib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
@@ -69,7 +69,7 @@ def _membre_nom(membre: Membre | None) -> str | None:
 
 
 def _lock_view(lock: InventoryLock | None, nom: str | None, membre_id: int) -> VracLock | None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if lock is None or lock.expires_at <= now:
         return None
     return VracLock(
@@ -488,7 +488,9 @@ async def list_equipments(
     loc_ids = {
         eid for (eid,) in (await db.execute(select(EquipmentLocation.equipment_id))).all()
     }
-    lock_map = {locks.equipment_id: locks for locks in (await db.scalars(select(InventoryLock))).all()}
+    lock_map = {
+        locks.equipment_id: locks for locks in (await db.scalars(select(InventoryLock))).all()
+    }
     delta_map = {
         eid: int(total or 0)
         for eid, total in (
@@ -500,7 +502,7 @@ async def list_equipments(
         ).all()
     }
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     items: list[EquipmentListItem] = []
     for eq in equipments:
         has_vrac = eq.id in vrac_map

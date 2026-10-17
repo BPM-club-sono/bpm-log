@@ -4,7 +4,7 @@ Session non commitée (rollback en teardown) pour ne pas polluer la base.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from conftest import make_equipment
@@ -22,7 +22,7 @@ def _item(payload: dict) -> SyncItemIn:
     return SyncItemIn(
         uuid_client=uuid.uuid4(),
         type="deplacement",
-        offline_created_at=datetime.now(timezone.utc),
+        offline_created_at=datetime.now(UTC),
         payload=payload,
     )
 
