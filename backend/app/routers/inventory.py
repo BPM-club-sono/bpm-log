@@ -6,7 +6,7 @@ Ces routes-ci servent la lecture (stocks, quantités constatées, historique) et
 la gestion des verrous d'inventaire (online requis).
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
@@ -75,7 +75,7 @@ async def _sum_deltas(db: DbSession, equipment_id: int) -> int:
 
 
 def _lock_view(lock: InventoryLock | None, nom: str | None, membre_id: int) -> VracLock | None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if lock is None or lock.expires_at <= now:
         return None
     return VracLock(
@@ -184,7 +184,7 @@ async def get_vrac(equipment_id: int, user: CurrentUser, db: DbSession) -> VracD
 async def acquire_lock(equipment_id: int, user: CurrentUser, db: DbSession) -> LockResult:
     """Pose (ou prolonge) le verrou d'inventaire d'une caisse. Online requis."""
     await _get_vrac_or_404(db, equipment_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + LOCK_TTL
 
     lock = await db.get(InventoryLock, equipment_id)

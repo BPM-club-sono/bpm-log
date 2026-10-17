@@ -2,7 +2,7 @@
 suivi de l'avancement, fil d'activité (commentaires + événements), photos."""
 
 import uuid as uuid_lib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -335,7 +335,7 @@ async def update_ticket(
             )
         )
         if payload.avancement == AvancementTicket.RESOLU:
-            ticket.date_resolution = datetime.now(timezone.utc)
+            ticket.date_resolution = datetime.now(UTC)
         else:
             ticket.date_resolution = None
 

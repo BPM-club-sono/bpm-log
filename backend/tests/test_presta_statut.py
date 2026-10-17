@@ -68,7 +68,7 @@ def _check(presta: Prestation, eq: Equipment, sens: str, delta: int) -> SyncItem
 # --- Progression automatique du statut -------------------------------------
 
 
-async def test_premier_pointage_passe_en_preparation(db_session):
+async def test_premier_pointage_passe_en_preparation(db_session, membre_id):
     s = db_session
     presta = await _presta(s)
     a = await make_equipment(s, "Lyre A")
@@ -77,11 +77,11 @@ async def test_premier_pointage_passe_en_preparation(db_session):
     await _alloc(s, presta, b)
 
     assert presta.statut == StatutPrestation.EBAUCHE
-    assert await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1) is True
+    assert await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id) is True
     assert presta.statut == StatutPrestation.EN_PREPARATION
 
 
-async def test_tout_sorti_passe_en_cours(db_session):
+async def test_tout_sorti_passe_en_cours(db_session, membre_id):
     s = db_session
     presta = await _presta(s)
     a = await make_equipment(s, "Lyre A")
@@ -89,37 +89,37 @@ async def test_tout_sorti_passe_en_cours(db_session):
     await _alloc(s, presta, a)
     await _alloc(s, presta, b)
 
-    await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1)
-    await _apply_presta_check(s, _check(presta, b, "sortie", 1), 1)
+    await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id)
+    await _apply_presta_check(s, _check(presta, b, "sortie", 1), membre_id)
     assert presta.statut == StatutPrestation.EN_COURS
 
 
-async def test_depointage_redescend_le_statut(db_session):
+async def test_depointage_redescend_le_statut(db_session, membre_id):
     s = db_session
     presta = await _presta(s)
     a = await make_equipment(s, "Lyre A")
     await _alloc(s, presta, a)
 
-    await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1)
+    await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id)
     assert presta.statut == StatutPrestation.EN_COURS
     # Un dé-pointage ramène la prestation à l'état « rien n'est parti ».
-    await _apply_presta_check(s, _check(presta, a, "sortie", -1), 1)
+    await _apply_presta_check(s, _check(presta, a, "sortie", -1), membre_id)
     assert presta.statut == StatutPrestation.EBAUCHE
 
 
-async def test_retour_ne_change_pas_le_statut(db_session):
+async def test_retour_ne_change_pas_le_statut(db_session, membre_id):
     s = db_session
     presta = await _presta(s)
     a = await make_equipment(s, "Lyre A")
     await _alloc(s, presta, a)
 
-    await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1)
-    await _apply_presta_check(s, _check(presta, a, "retour", 1), 1)
+    await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id)
+    await _apply_presta_check(s, _check(presta, a, "retour", 1), membre_id)
     # Le retour ne referme pas la prestation : seule la clôture le fait.
     assert presta.statut == StatutPrestation.EN_COURS
 
 
-async def test_rejeu_meme_uuid_ne_touche_pas_au_statut(db_session):
+async def test_rejeu_meme_uuid_ne_touche_pas_au_statut(db_session, membre_id):
     s = db_session
     presta = await _presta(s)
     a = await make_equipment(s, "Lyre A")
@@ -128,12 +128,12 @@ async def test_rejeu_meme_uuid_ne_touche_pas_au_statut(db_session):
     await _alloc(s, presta, b)
 
     item = _check(presta, a, "sortie", 1)
-    assert await _apply_presta_check(s, item, 1) is True
-    assert await _apply_presta_check(s, item, 1) is False
+    assert await _apply_presta_check(s, item, membre_id) is True
+    assert await _apply_presta_check(s, item, membre_id) is False
     assert presta.statut == StatutPrestation.EN_PREPARATION
 
 
-async def test_prestation_terminee_reste_terminee(db_session):
+async def test_prestation_terminee_reste_terminee(db_session, membre_id):
     s = db_session
     presta = await _presta(s)
     a = await make_equipment(s, "Lyre A")
@@ -141,7 +141,7 @@ async def test_prestation_terminee_reste_terminee(db_session):
     presta.statut = StatutPrestation.TERMINEE
     await s.flush()
 
-    assert await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1) is True
+    assert await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id) is True
     # Le pointage s'applique quand même, mais l'état terminal ne bouge pas.
     assert alloc.quantite_sortie == 1
     assert presta.statut == StatutPrestation.TERMINEE
@@ -156,7 +156,7 @@ async def test_prestation_sans_allocation_reste_ebauche(db_session):
 # --- Allocations et réouverture (passent par les routeurs, donc commitent) ---
 
 
-async def test_ajout_allocation_fait_retomber_en_preparation(db_session):
+async def test_ajout_allocation_fait_retomber_en_preparation(db_session, membre_id):
     s = db_session
     await _clear_prestations(s)
     presta = await _presta(s)
@@ -164,7 +164,7 @@ async def test_ajout_allocation_fait_retomber_en_preparation(db_session):
     b = await make_equipment(s, "Lyre B")
     await _alloc(s, presta, a)
 
-    await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1)
+    await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id)
     assert presta.statut == StatutPrestation.EN_COURS
 
     # Une ligne ajoutée après coup n'est pas encore sortie : on repasse en prépa.
@@ -184,7 +184,7 @@ async def test_ajout_allocation_fait_retomber_en_preparation(db_session):
     assert presta.statut == StatutPrestation.EN_COURS
 
 
-async def test_reouverture_recalcule_le_statut_et_est_idempotente(db_session):
+async def test_reouverture_recalcule_le_statut_et_est_idempotente(db_session, membre_id):
     s = db_session
     await _clear_prestations(s)
     presta = await _presta(s)
@@ -192,7 +192,7 @@ async def test_reouverture_recalcule_le_statut_et_est_idempotente(db_session):
     b = await make_equipment(s, "Lyre B")
     await _alloc(s, presta, a)
     await _alloc(s, presta, b)
-    await _apply_presta_check(s, _check(presta, a, "sortie", 1), 1)
+    await _apply_presta_check(s, _check(presta, a, "sortie", 1), membre_id)
     presta.statut = StatutPrestation.TERMINEE
     await s.flush()
 
