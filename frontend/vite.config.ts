@@ -44,6 +44,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         importScripts: ["push-sw.js"],
+        // Le fallback SPA (index.html) ne doit pas capter les navigations vers l'API :
+        // ouvrir /api/photos/... dans un onglet afficherait la 404 du routeur React.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
