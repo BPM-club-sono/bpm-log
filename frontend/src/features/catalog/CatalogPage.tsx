@@ -5,6 +5,7 @@ import { mergeEquipments, replaceEquipments } from "@/lib/equipmentMirror";
 import type { EquipmentListItem, EquipmentType } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { Icon } from "@/shared/Icon";
+import { SearchInput } from "@/shared/SearchInput";
 import { StatusBadge } from "@/shared/StatusBadge";
 
 type Filtre = "tous" | EquipmentType | "externe";
@@ -107,19 +108,11 @@ export function CatalogPage() {
         </div>
       </header>
 
-      <div className="relative">
-        <Icon
-          name="search"
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Rechercher un nom ou un code-barres…"
-          className="h-11 w-full rounded-xl border border-line bg-bg-soft pl-10 pr-3 text-sm outline-none focus:border-fg"
-        />
-      </div>
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        placeholder="Rechercher un nom ou un code-barres…"
+      />
 
       <div className="flex flex-wrap gap-2">
         {FILTRES.map((f) => (

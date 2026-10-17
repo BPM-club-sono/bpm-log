@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -13,6 +13,7 @@ import type {
 import { useAuth } from "@/app/AuthContext";
 import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
+import { EquipmentSearch } from "@/shared/EquipmentSearch";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
@@ -368,37 +369,15 @@ function InfoView({
 }) {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState<EquipmentListItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [reopening, setReopening] = useState(false);
   // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
   const [filter, setFilter] = useState<string>("tous");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allocatedIds = useMemo(
     () => new Set(allocs.map((a) => a.equipment_id)),
     [allocs],
   );
-
-  useEffect(() => {
-    if (!canManage) return;
-    const q = search.trim();
-    if (!q) {
-      setResults([]);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const r = await api<EquipmentListItem[]>(
-          `/equipments?q=${encodeURIComponent(q)}`,
-        );
-        setResults(r.filter((e) => !allocatedIds.has(e.id)).slice(0, 8));
-      } catch {
-        setResults([]);
-      }
-    }, 300);
-  }, [search, canManage, allocatedIds]);
 
   async function addEquipment(eq: EquipmentListItem) {
     setAdding(true);
@@ -409,7 +388,6 @@ function InfoView({
         body: { equipment_id: eq.id, quantite: 1, inclure_contenu: !!eq.est_contenant },
       });
       setSearch("");
-      setResults([]);
       await onReload();
     } finally {
       setAdding(false);
@@ -430,7 +408,6 @@ function InfoView({
     });
     setShowModal(false);
     setSearch("");
-    setResults([]);
     await onReload();
   }
 
@@ -512,45 +489,18 @@ function InfoView({
       )}
       {editable && (
         <div className="space-y-2">
-          <div className="relative">
-            <Icon
-              name="search"
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ajouter du matériel…"
-              className="h-11 w-full rounded-xl border border-line bg-bg-soft pl-10 pr-3 text-sm outline-none focus:border-fg"
-            />
-          </div>
-          {results.length > 0 && (
-            <ul className="divide-y divide-line border-y border-line">
-              {results.map((e) => (
-                <li key={e.id}>
-                  <button
-                    disabled={adding}
-                    onClick={() => addEquipment(e)}
-                    className="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left transition-opacity hover:opacity-70"
-                  >
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {e.est_contenant && (
-                          <Icon name="inventory_2" className="text-sm text-fg-muted" />
-                        )}
-                        {e.nom}
-                      </span>
-                      <span className="block font-mono text-xs text-fg-muted">
-                        {e.barcode_uid}
-                        {e.est_contenant ? " · contenu inclus" : ""}
-                      </span>
-                    </span>
-                    <Icon name="add_circle" className="text-xl text-fg-muted" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <EquipmentSearch
+            value={search}
+            onChange={setSearch}
+            onSelect={addEquipment}
+            excludeIds={allocatedIds}
+            disabled={adding}
+            placeholder="Ajouter du matériel…"
+            renderMeta={(e) => (e.est_contenant ? "contenu inclus" : null)}
+            renderTrailing={() => (
+              <Icon name="add_circle" className="text-xl text-fg-muted" />
+            )}
+          />
 
           <button
             type="button"
