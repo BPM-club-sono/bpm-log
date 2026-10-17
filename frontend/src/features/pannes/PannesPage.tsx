@@ -8,6 +8,7 @@ import type { EquipmentListItem, TicketDetail } from "@/lib/types";
 import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { PhotoViewer } from "@/shared/PhotoViewer";
 import { StatusBadge } from "@/shared/StatusBadge";
 
 interface LocalPhoto {
@@ -29,6 +30,7 @@ export function PannesPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [createdId, setCreatedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -275,13 +277,20 @@ export function PannesPage() {
       <div className="space-y-2">
         <label className="block text-xs font-medium text-fg-muted">Photos</label>
         <div className="flex flex-wrap gap-2">
-          {photos.map((p) => (
+          {photos.map((p, i) => (
             <div key={p.id} className="relative h-20 w-20">
-              <img
-                src={p.url}
-                alt=""
-                className="h-full w-full rounded-lg border border-line object-cover"
-              />
+              <button
+                type="button"
+                onClick={() => setViewerIndex(i)}
+                aria-label={`Agrandir la photo ${i + 1}`}
+                className="h-full w-full"
+              >
+                <img
+                  src={p.url}
+                  alt=""
+                  className="h-full w-full rounded-lg border border-line object-cover"
+                />
+              </button>
               <button
                 type="button"
                 onClick={() => removePhoto(p.id)}
@@ -307,6 +316,11 @@ export function PannesPage() {
           multiple
           onChange={onPickPhotos}
           className="hidden"
+        />
+        <PhotoViewer
+          photos={photos.map((p) => p.url)}
+          index={viewerIndex}
+          onClose={() => setViewerIndex(null)}
         />
       </div>
 
