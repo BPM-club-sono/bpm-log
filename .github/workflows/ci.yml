@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (pytest)
+    name: Backend (ruff + pytest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,13 +41,15 @@ jobs:
           cache-dependency-path: backend/pyproject.toml
       - name: Install dependencies
         run: pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
       - name: Apply migrations
         run: python -m alembic upgrade head
       - name: Run tests
         run: pytest
 
   frontend:
-    name: Frontend (vitest)
+    name: Frontend (eslint + vitest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -61,5 +63,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Lint (eslint)
+        run: npm run lint
       - name: Run tests
         run: npm run test
