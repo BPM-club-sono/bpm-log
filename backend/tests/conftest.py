@@ -6,6 +6,7 @@ bord (création du dossier photos dans /var, démarrage du scheduler, etc.).
 
 import os
 import tempfile
+import uuid
 
 import pytest
 
@@ -26,7 +27,8 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Equipment  # noqa: E402
+from app.models import Equipment, Membre  # noqa: E402
+from app.models.enums import RoleMembre  # noqa: E402
 from app.services import barcode, references  # noqa: E402
 
 
@@ -64,6 +66,19 @@ async def db_session():
         await outer.rollback()
         await conn.close()
         await engine.dispose()
+
+
+@pytest.fixture
+async def membre_id(db_session) -> int:
+    """Auteur des événements rejoués : un membre jetable, rollback avec la session.
+
+    Ne jamais supposer qu'un membre d'id 1 existe : c'est vrai sur la base de dev,
+    pas sur la base vierge de la CI.
+    """
+    membre = Membre(email=f"test-{uuid.uuid4().hex[:8]}@test.local", role=RoleMembre.STAFF)
+    db_session.add(membre)
+    await db_session.flush()
+    return membre.id
 
 
 async def make_equipment(session, nom: str, **kw) -> Equipment:

@@ -27,7 +27,7 @@ def _item(payload: dict) -> SyncItemIn:
     )
 
 
-async def test_deplacement_dans_contenant_et_idempotence(db_session):
+async def test_deplacement_dans_contenant_et_idempotence(db_session, membre_id):
     session = db_session
     etagere = Emplacement(nom="Étagère Test")
     session.add(etagere)
@@ -40,21 +40,21 @@ async def test_deplacement_dans_contenant_et_idempotence(db_session):
     item = _item({"equipment_id": lyre.id, "contenant_destination_id": flight.id})
 
     # 1er passage : range la lyre dans le flight, efface l'emplacement fixe.
-    assert await _apply_deplacement(session, item, membre_id=1) is True
+    assert await _apply_deplacement(session, item, membre_id=membre_id) is True
     assert lyre.contenant_id == flight.id
     assert lyre.emplacement_id is None
 
     # Rejouer le même uuid_client est un no-op (idempotence).
-    assert await _apply_deplacement(session, item, membre_id=1) is False
+    assert await _apply_deplacement(session, item, membre_id=membre_id) is False
 
     # Déplacement inverse vers un emplacement : efface le contenant.
     back = _item({"equipment_id": lyre.id, "emplacement_destination_id": etagere.id})
-    assert await _apply_deplacement(session, back, membre_id=1) is True
+    assert await _apply_deplacement(session, back, membre_id=membre_id) is True
     assert lyre.emplacement_id == etagere.id
     assert lyre.contenant_id is None
 
 
-async def test_deplacement_boucle_refusee(db_session):
+async def test_deplacement_boucle_refusee(db_session, membre_id):
     session = db_session
     flight = await _mk_eq(session, "Flight Test", est_contenant=True)
     sous_flight = await _mk_eq(
@@ -64,10 +64,10 @@ async def test_deplacement_boucle_refusee(db_session):
     # Ranger le flight DANS son propre enfant doit lever un conflit.
     item = _item({"equipment_id": flight.id, "contenant_destination_id": sous_flight.id})
     with pytest.raises(_Conflict):
-        await _apply_deplacement(session, item, membre_id=1)
+        await _apply_deplacement(session, item, membre_id=membre_id)
 
 
-async def test_deplacement_vers_non_flight_refuse(db_session):
+async def test_deplacement_vers_non_flight_refuse(db_session, membre_id):
     session = db_session
     lyre = await _mk_eq(session, "Lyre Test")
     ampli = await _mk_eq(session, "Ampli Test")
@@ -75,5 +75,5 @@ async def test_deplacement_vers_non_flight_refuse(db_session):
     # La destination n'est pas un flight (est_contenant=False) : conflit arbitrable.
     item = _item({"equipment_id": ampli.id, "contenant_destination_id": lyre.id})
     with pytest.raises(_Conflict):
-        await _apply_deplacement(session, item, membre_id=1)
+        await _apply_deplacement(session, item, membre_id=membre_id)
     assert ampli.contenant_id is None
