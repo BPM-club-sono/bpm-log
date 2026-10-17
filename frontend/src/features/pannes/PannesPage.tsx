@@ -7,9 +7,9 @@ import { compressImage } from "@/lib/image";
 import type { EquipmentListItem, TicketDetail } from "@/lib/types";
 import { normaliser } from "@/lib/barcode";
 import { Button } from "@/shared/Button";
+import { EquipmentSearch } from "@/shared/EquipmentSearch";
 import { Icon } from "@/shared/Icon";
 import { PhotoViewer } from "@/shared/PhotoViewer";
-import { StatusBadge } from "@/shared/StatusBadge";
 
 interface LocalPhoto {
   id: string;
@@ -26,8 +26,6 @@ export function PannesPage() {
   const navigate = useNavigate();
   const [barcode, setBarcode] = useState(params.get("barcode") ?? "");
   const [equipment, setEquipment] = useState<EquipmentListItem | null>(null);
-  const [results, setResults] = useState<EquipmentListItem[]>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -36,35 +34,9 @@ export function PannesPage() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Recherche serveur (nom ou code-barres), debounce 300ms. En ligne seulement :
-  // hors-ligne le champ reste une saisie libre de code-barres (file de synchro).
-  useEffect(() => {
-    const q = barcode.trim();
-    // Équipement déjà sélectionné pour ce texte : pas de re-recherche.
-    if (!q || !navigator.onLine || equipment?.barcode_uid === normaliser(q)) {
-      setResults([]);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const r = await api<EquipmentListItem[]>(
-          `/equipments?q=${encodeURIComponent(q)}`,
-        );
-        setResults(r.slice(0, 8));
-      } catch {
-        setResults([]);
-      }
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [barcode, equipment]);
-
   function selectEquipment(eq: EquipmentListItem) {
     setEquipment(eq);
     setBarcode(eq.barcode_uid);
-    setResults([]);
   }
 
   // Libère les object URLs.
@@ -166,7 +138,6 @@ export function PannesPage() {
     photos.forEach((p) => URL.revokeObjectURL(p.url));
     setBarcode("");
     setEquipment(null);
-    setResults([]);
     setDescription("");
     setPhotos([]);
     setSubmitted(false);
@@ -212,51 +183,20 @@ export function PannesPage() {
         <label className="block text-xs font-medium text-fg-muted">
           Matériel
         </label>
-        <div className="relative">
-          <Icon
-            name="search"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
-          />
-          <input
-            value={barcode}
-            onChange={(e) => {
-              // Texte modifié : la sélection précédente ne vaut plus.
-              if (equipment) setEquipment(null);
-              setBarcode(e.target.value);
-            }}
-            placeholder="Nom ou code-barres…"
-            className="h-11 w-full rounded-xl border border-line bg-bg-soft pl-10 pr-3 text-sm outline-none focus:border-fg"
-          />
-        </div>
-        {results.length > 0 && !equipment && (
-          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-bg-soft">
-            {results.map((e) => (
-              <li key={e.id}>
-                <button
-                  type="button"
-                  onClick={() => selectEquipment(e)}
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-opacity hover:opacity-70"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{e.nom}</p>
-                    <p className="font-mono text-xs text-fg-muted">
-                      {e.barcode_uid}
-                    </p>
-                  </div>
-                  <StatusBadge statut={e.statut_actuel} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <EquipmentSearch
+          value={barcode}
+          onChange={(v) => {
+            // Texte modifié : la sélection précédente ne vaut plus.
+            if (equipment) setEquipment(null);
+            setBarcode(v);
+          }}
+          onSelect={selectEquipment}
+          enabled={!equipment}
+          emptyHint="Inconnu en ligne — sera vérifié à la synchro."
+        />
         {equipment && (
           <p className="text-xs text-success">
             <Icon name="check" className="align-middle text-sm" /> {equipment.nom}
-          </p>
-        )}
-        {!equipment && results.length === 0 && barcode.trim() && (
-          <p className="text-xs text-fg-muted">
-            Inconnu en ligne — sera vérifié à la synchro.
           </p>
         )}
       </div>

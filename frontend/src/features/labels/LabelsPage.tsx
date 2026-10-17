@@ -5,6 +5,7 @@ import type { Equipment } from "@/lib/types";
 import { labelCart } from "@/lib/labelCart";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { SearchInput } from "@/shared/SearchInput";
 
 interface Label {
   equipment: Equipment;
@@ -131,19 +132,12 @@ export function LabelsPage() {
         </Button>
       </header>
 
-      <div className="no-print relative">
-        <Icon
-          name="search"
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Rechercher un nom ou un code-barres…"
-          className="h-11 w-full rounded-xl border border-line bg-bg-soft pl-10 pr-3 text-sm outline-none focus:border-fg"
-        />
-      </div>
+      <SearchInput
+        className="no-print"
+        value={query}
+        onChange={setQuery}
+        placeholder="Rechercher un nom ou un code-barres…"
+      />
 
       <div className="no-print flex items-center justify-between text-sm">
         <button
