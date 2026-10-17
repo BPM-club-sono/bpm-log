@@ -67,6 +67,9 @@ body {
     display: grid !important;
     grid-template-columns: repeat(4, 1fr);
     gap: 2mm;
+    /* Rangées à leur hauteur naturelle : sinon `inset: 0` + stretch étire
+       une rangée unique sur toute la page quand peu d'étiquettes (#29). */
+    align-content: start;
   }
 
   .label-cell {
