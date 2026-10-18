@@ -538,6 +538,7 @@ function VracBlock({
           <button
             type="button"
             onClick={() => void applyDelta(-1)}
+            aria-label="Retirer une unité"
             disabled={!canCount}
             className="flex h-14 w-14 items-center justify-center rounded-full border border-line text-fg disabled:opacity-30"
           >
@@ -546,6 +547,7 @@ function VracBlock({
           <button
             type="button"
             onClick={() => void applyDelta(+1)}
+            aria-label="Ajouter une unité"
             disabled={!canCount}
             className="flex h-14 w-14 items-center justify-center rounded-full bg-fg text-bg disabled:opacity-30"
           >
@@ -662,6 +664,7 @@ function ConsoBlock({
           <button
             type="button"
             onClick={() => void applyDelta(-1)}
+            aria-label="Retirer une unité"
             disabled={local.stock_actuel <= 0}
             className="flex h-14 w-14 items-center justify-center rounded-full border border-line text-fg disabled:opacity-30"
           >
@@ -670,6 +673,7 @@ function ConsoBlock({
           <button
             type="button"
             onClick={() => void applyDelta(+1)}
+            aria-label="Ajouter une unité"
             className="flex h-14 w-14 items-center justify-center rounded-full bg-fg text-bg"
           >
             <Icon name="add" className="text-2xl" />
