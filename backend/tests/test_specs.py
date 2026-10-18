@@ -288,6 +288,30 @@ async def test_changement_categorie_masque_valeurs(db_session, staff):
     )
 
 
+async def test_changement_categorie_item_sans_modele(db_session, staff):
+    cat, autre_cat = await _categorie(db_session), await _categorie(db_session)
+    sc = await _ajouter(db_session, SousCategorie(nom=_nom("Bar"), categorie_id=cat.id))
+    champ = await _champ(db_session, cat.id)
+    flight = await make_equipment(db_session, "Flight cat", est_contenant=True, categorie_id=cat.id)
+    await ecrire_specs_equipment(
+        flight.id, SpecsWrite(sous_categorie_id=sc.id, valeurs={champ.id: "2"}), staff, db_session
+    )
+
+    await update_equipment(flight.id, EquipmentUpdate(categorie_id=autre_cat.id), staff, db_session)
+
+    assert flight.sous_categorie_id is None
+    specs = await lire_specs_equipment(flight.id, staff, db_session)
+    assert champ.id not in [v.champ_id for v in specs.valeurs]
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(ValeurSpecification)
+            .where(ValeurSpecification.equipment_id == flight.id)
+        )
+        == 1
+    )
+
+
 async def test_rattacher_modele_efface_specs_propres(db_session, staff):
     modele, *_ = await _modele_avec_specs(db_session, staff)
     cat = await _categorie(db_session)

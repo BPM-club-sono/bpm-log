@@ -1011,6 +1011,9 @@ async def update_equipment(
                 detail="La catégorie suit le modèle : change-la sur le modèle.",
             )
         eq.categorie_id = payload.categorie_id
+        # Comme sur le modèle : la sous-catégorie appartient à l'ancienne catégorie ;
+        # les valeurs saisies restent en base, masquées.
+        eq.sous_categorie_id = None
     # Localisation : emplacement fixe et contenant sont exclusifs (règle de frontière).
     # Poser l'un efface l'autre ; si les deux sont fournis, le contenant l'emporte.
     if payload.emplacement_id is not None:
