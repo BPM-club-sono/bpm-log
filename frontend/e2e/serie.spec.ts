@@ -48,3 +48,23 @@ test("Prestation : créer et allouer 2 locations", async ({ page, api }) => {
   expect(detail.allocations).toHaveLength(2);
   for (const a of detail.allocations) expect(a.quantite).toBe(1);
 });
+
+test("Parc : série externe de 2 sans modèle", async ({ page, api }) => {
+  const fournisseur = await (
+    await api.post("fournisseurs", { data: { nom: `Loueur ${randomUUID().slice(0, 8)}` } })
+  ).json();
+  const base = `Pupitre loc ${randomUUID().slice(0, 6)}`;
+  await page.goto("/inventaire/nouveau");
+  await page.getByPlaceholder("Lyre Beam 7R…").fill(base);
+  await page.getByLabel("Nombre d'exemplaires").fill("2");
+  await page.getByLabel("Matériel en location externe").check();
+  await page.locator("select").filter({ hasText: "— choisir —" }).selectOption({
+    label: fournisseur.nom,
+  });
+  await page.getByRole("button", { name: "Créer l'équipement" }).click();
+  await expect(page).toHaveURL(/\/inventaire$/);
+  await expect(page.getByText("2 équipements créés")).toBeVisible();
+  for (const k of [1, 2]) {
+    await expect(page.getByText(`${base} ${k}`, { exact: true })).toBeVisible();
+  }
+});

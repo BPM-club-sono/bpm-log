@@ -26,7 +26,11 @@ export function EquipmentCreatePage() {
         onCreated={(res: SerieCreee) => {
           if (res.ids.length > 1) {
             toast(`${res.ids.length} équipements créés`, "success");
-            navigate(`/inventaire?modele=${res.modele_id}`);
+            navigate(
+              res.modele_id == null
+                ? "/inventaire"
+                : `/inventaire?modele=${res.modele_id}`,
+            );
           } else {
             toast("Équipement créé", "success");
             navigate(`/inventaire/${res.ids[0]}`);
