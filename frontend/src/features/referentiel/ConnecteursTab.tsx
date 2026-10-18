@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { Connecteur } from "@/lib/types";
-import { useAuth } from "@/app/AuthContext";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { useToast } from "@/shared/Toast";
-
-const inputCls =
-  "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
+import { inputCls, useCanManage, useFail } from "./shared";
 
 export function ConnecteursTab() {
-  const { user } = useAuth();
   const { toast } = useToast();
-  const canManage = user?.role === "Admin" || user?.role === "Staff";
+  const canManage = useCanManage();
+  const fail = useFail();
 
   const [items, setItems] = useState<Connecteur[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,10 +32,6 @@ export function ConnecteursTab() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  function fail(err: unknown, fallback: string) {
-    toast(err instanceof ApiError ? err.message : fallback, "error");
-  }
 
   async function add() {
     if (!nouveau.trim()) return;
