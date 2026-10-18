@@ -19,6 +19,30 @@ test("Parc : création de 3 exemplaires d'un modèle", async ({ page, api }) => 
   }
 });
 
+test("Parc : un nom tapé pendant la création du modèle est gardé", async ({ page, context }) => {
+  const modele = `MH-${randomUUID().slice(0, 8)}`;
+  const nom = `Lyre ${randomUUID().slice(0, 6)}`;
+  // Retient la création du modèle : le nom est saisi pendant que la requête est en vol.
+  let relacher: () => void = () => {};
+  const retenue = new Promise<void>((r) => (relacher = r));
+  await context.route("**/api/modeles", async (route) => {
+    if (route.request().method() === "POST") await retenue;
+    await route.continue();
+  });
+  await page.goto("/inventaire/nouveau");
+  await page.getByRole("searchbox", { name: "Modèle" }).fill(modele);
+  await page.getByRole("button", { name: `Créer le modèle « ${modele} »` }).click();
+  const requete = page.waitForRequest(
+    (r) => r.url().endsWith("/api/modeles") && r.method() === "POST",
+  );
+  await page.getByRole("button", { name: "Créer le modèle", exact: true }).click();
+  await requete;
+  await page.getByPlaceholder("Lyre Beam 7R…").fill(nom);
+  relacher();
+  await expect(page.getByText("Changer", { exact: true })).toBeVisible(); // modèle choisi
+  await expect(page.getByPlaceholder("Lyre Beam 7R…")).toHaveValue(nom);
+});
+
 test("Prestation : créer et allouer 2 locations", async ({ page, api }) => {
   const presta = await (
     await api.post("prestations", { data: { nom: `Presta ${randomUUID().slice(0, 8)}` } })

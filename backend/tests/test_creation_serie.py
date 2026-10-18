@@ -14,6 +14,7 @@ from starlette.datastructures import Headers
 from app.config import settings
 from app.models import AllocationPresta, Equipment, Membre, Modele, Prestation
 from app.models.enums import TypePrestation
+from app.routers import prestations
 from app.routers.equipment import (
     apercu_noms_serie,
     create_equipment,
@@ -24,6 +25,7 @@ from app.routers.equipment import (
 from app.routers.prestations import creer_et_allouer
 from app.schemas.equipment import EquipmentCreate
 from app.schemas.prestation import EquipmentCreatePresta
+from app.services import references
 from app.services.serie import noms_serie, prochain_numero
 
 
@@ -172,6 +174,34 @@ async def test_route_json_refuse_plusieurs_exemplaires(db_session, staff):
     assert crees.all() == []
 
 
+async def test_serie_echec_en_cours_ne_laisse_rien(db_session, staff, monkeypatch):
+    """Série de 3 qui échoue à la 2e fiche : aucune fiche, aucune photo ne reste."""
+    m = await _modele(db_session)
+    base = f"MH {uuid.uuid4().hex[:6]}"
+    avant = _fichiers_photos()
+    reserver = references.reserver
+    appels = 0
+
+    async def reserver_puis_echouer(db, prefixe):
+        nonlocal appels
+        appels += 1
+        if appels == 2:
+            raise references.ReferenceIndisponible
+        return await reserver(db, prefixe)
+
+    monkeypatch.setattr(references, "reserver", reserver_puis_echouer)
+    donnees = EquipmentCreate(nom=base, modele_id=m.id, nombre=3).model_dump_json()
+    # Le savepoint joue la transaction de la requête : l'échec la défait sans commit.
+    with pytest.raises(HTTPException) as exc:
+        async with db_session.begin_nested():
+            await creer_serie(staff, db_session, donnees, _upload(b"\xff\xd8", "image/jpeg"))
+    assert exc.value.status_code == 409
+    assert appels == 2  # la 1re fiche était construite (et sa photo écrite)
+    crees = await db_session.scalars(select(Equipment).where(Equipment.nom.startswith(base)))
+    assert crees.all() == []
+    assert _fichiers_photos() == avant
+
+
 async def test_lire_photo_valide_le_format():
     assert await lire_photo(None) is None
     assert await lire_photo(_upload(b"\x89PNG", "image/png")) == (b"\x89PNG", ".png")
@@ -193,8 +223,11 @@ async def test_route_serie_cree_les_fiches(db_session, staff):
 
 
 async def test_route_serie_donnees_invalides(db_session, staff):
+    # Données sinon valides : seul `nombre ≥ 1` peut refuser la requête.
+    m = await _modele(db_session)
+    donnees = f'{{"nom": "MH {uuid.uuid4().hex[:6]}", "modele_id": {m.id}, "nombre": 0}}'
     with pytest.raises(RequestValidationError):
-        await creer_serie(staff, db_session, '{"nombre": 0}', None)
+        await creer_serie(staff, db_session, donnees, None)
 
 
 async def test_serie_photo_invalide_ne_cree_rien(db_session, staff):
@@ -263,3 +296,22 @@ async def test_presta_unitaire_quantite_allouee_refusee(db_session, staff):
     crees = await db_session.scalars(select(Equipment).where(Equipment.nom.startswith(base)))
     assert crees.all() == []
     assert await _allocations(db_session, presta) == []
+
+
+async def test_presta_echec_apres_creation_supprime_les_photos(db_session, staff, monkeypatch):
+    m = await _modele(db_session)
+    presta = await _presta(db_session)
+    avant = _fichiers_photos()
+
+    async def echouer(db, ids):
+        raise RuntimeError("panne simulée")
+
+    monkeypatch.setattr(prestations, "_ids_quantitatifs", echouer)
+    donnees = EquipmentCreatePresta(
+        nom=f"MH {uuid.uuid4().hex[:6]}", modele_id=m.id, nombre=2
+    ).model_dump_json()
+    with pytest.raises(RuntimeError):
+        await creer_et_allouer(
+            presta.id, staff, db_session, donnees, _upload(b"\xff\xd8", "image/jpeg")
+        )
+    assert _fichiers_photos() == avant

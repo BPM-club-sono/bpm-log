@@ -431,17 +431,18 @@ async def creer_et_allouer(
         )
     image = await lire_photo(photo)
     eqs = await creer_equipements(db, payload, user, image)
-    quantitatifs = await _ids_quantitatifs(db, [e.id for e in eqs])
-    for eq in eqs:
-        db.add(
-            AllocationPresta(
-                presta_id=presta.id,
-                equipment_id=eq.id,
-                quantite=payload.quantite_allouee if eq.id in quantitatifs else 1,
-                statut=StatutAllocation.PLANIFIE,
-            )
-        )
+    # Les photos sont écrites : tout échec à partir d'ici doit les effacer.
     try:
+        quantitatifs = await _ids_quantitatifs(db, [e.id for e in eqs])
+        for eq in eqs:
+            db.add(
+                AllocationPresta(
+                    presta_id=presta.id,
+                    equipment_id=eq.id,
+                    quantite=payload.quantite_allouee if eq.id in quantitatifs else 1,
+                    statut=StatutAllocation.PLANIFIE,
+                )
+            )
         await db.flush()
         await recalculer_statut(db, presta)
         await db.commit()

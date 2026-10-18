@@ -144,7 +144,8 @@ export function EquipmentForm({
 
   function choisirModele(m: Modele | null) {
     setModele(m);
-    if (m && !nom.trim()) setNom(m.nom);
+    // Forme fonctionnelle : un nom tapé pendant la création du modèle n'est pas écrasé.
+    if (m) setNom((prev) => (prev.trim() ? prev : m.nom));
   }
 
   async function submit() {
