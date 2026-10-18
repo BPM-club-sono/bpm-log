@@ -7,7 +7,7 @@ moteur de synchronisation (`POST /sync/batch`, type `presta_check`).
 
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 
@@ -31,10 +31,13 @@ from app.models.enums import (
     StatutPrestation,
     TypeActionScan,
 )
+from app.routers.equipment import creer_equipements, effacer_photos, lire_donnees, lire_photo
+from app.schemas.equipment import SerieCreee
 from app.schemas.prestation import (
     AllocationCreate,
     AllocationRead,
     ClotureIn,
+    EquipmentCreatePresta,
     ModeleDispo,
     ModeleStepIn,
     PrestationCreate,
@@ -401,6 +404,50 @@ async def add_allocation(
     ).first()
     loc = (loc_row[1], loc_row[2]) if loc_row is not None else None
     return _allocation_read(alloc, loc).model_copy(update={"contenu_ignore": contenu_ignore})
+
+
+@router.post(
+    "/{presta_id}/equipements",
+    response_model=SerieCreee,
+    status_code=status.HTTP_201_CREATED,
+)
+async def creer_et_allouer(
+    presta_id: int,
+    user: RequireStaff,
+    db: DbSession,
+    donnees: str = Form(..., description="JSON d'EquipmentCreatePresta."),
+    photo: UploadFile | None = File(None),
+) -> SerieCreee:
+    """Crée N fiches et les alloue à la prestation, en une seule transaction."""
+    presta = await _get_presta_or_404(db, presta_id)
+    payload = lire_donnees(donnees, EquipmentCreatePresta)
+    if payload.quantite_allouee > 1 and payload.type == "standard":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Un équipement unitaire s'alloue à l'unité : crée plusieurs exemplaires.",
+        )
+    image = await lire_photo(photo)
+    eqs = await creer_equipements(db, payload, user, image)
+    quantitatifs = await _ids_quantitatifs(db, [e.id for e in eqs])
+    for eq in eqs:
+        db.add(
+            AllocationPresta(
+                presta_id=presta.id,
+                equipment_id=eq.id,
+                quantite=payload.quantite_allouee if eq.id in quantitatifs else 1,
+                statut=StatutAllocation.PLANIFIE,
+            )
+        )
+    try:
+        await db.flush()
+        await recalculer_statut(db, presta)
+        await db.commit()
+    except BaseException:
+        effacer_photos([e.photo_chemin for e in eqs if e.photo_chemin])
+        raise
+    return SerieCreee(
+        ids=[e.id for e in eqs], noms=[e.nom for e in eqs], modele_id=payload.modele_id
+    )
 
 
 @router.delete(

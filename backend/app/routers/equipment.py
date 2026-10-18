@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -776,7 +776,7 @@ def ecrire_photo(data: bytes, ext: str) -> str:
     return filename
 
 
-def _effacer_photos(noms: list[str]) -> None:
+def effacer_photos(noms: list[str]) -> None:
     """Supprime des fichiers photo du disque (nettoyage après un échec)."""
     for nom in noms:
         (Path(settings.photos_dir) / nom).unlink(missing_ok=True)
@@ -918,7 +918,7 @@ async def creer_equipements(
             eqs.append(eq)
         await db.flush()
     except BaseException:
-        _effacer_photos(photos_ecrites)
+        effacer_photos(photos_ecrites)
         raise
     return eqs
 
@@ -940,6 +940,14 @@ async def create_equipment(
     return await _build_detail(db, eqs[0], user.id)
 
 
+def lire_donnees[T: BaseModel](raw: str, schema: type[T]) -> T:
+    """Parse le champ JSON `donnees` d'un multipart ; 422 si invalide."""
+    try:
+        return schema.model_validate_json(raw)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+
+
 @router.post(
     "/equipments/serie",
     response_model=SerieCreee,
@@ -952,17 +960,14 @@ async def creer_serie(
     photo: UploadFile | None = File(None),
 ) -> SerieCreee:
     """Crée N fiches d'un coup (multipart : données JSON + photo optionnelle, copiée)."""
-    try:
-        payload = EquipmentCreate.model_validate_json(donnees)
-    except ValidationError as exc:
-        raise RequestValidationError(exc.errors(include_url=False)) from exc
+    payload = lire_donnees(donnees, EquipmentCreate)
     # Lue et validée avant toute écriture en base : une photo refusée ne crée rien.
     image = await lire_photo(photo)
     eqs = await creer_equipements(db, payload, user, image)
     try:
         await db.commit()
     except BaseException:
-        _effacer_photos([e.photo_chemin for e in eqs if e.photo_chemin])
+        effacer_photos([e.photo_chemin for e in eqs if e.photo_chemin])
         raise
     return SerieCreee(
         ids=[e.id for e in eqs], noms=[e.nom for e in eqs], modele_id=payload.modele_id

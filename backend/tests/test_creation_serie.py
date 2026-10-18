@@ -12,14 +12,17 @@ from sqlalchemy import select
 from starlette.datastructures import Headers
 
 from app.config import settings
-from app.models import Equipment, Membre, Modele
+from app.models import AllocationPresta, Equipment, Membre, Modele, Prestation
+from app.models.enums import TypePrestation
 from app.routers.equipment import (
     apercu_noms_serie,
     creer_equipements,
     creer_serie,
     lire_photo,
 )
+from app.routers.prestations import creer_et_allouer
 from app.schemas.equipment import EquipmentCreate
+from app.schemas.prestation import EquipmentCreatePresta
 from app.services.serie import noms_serie, prochain_numero
 
 
@@ -192,3 +195,58 @@ async def test_serie_photo_invalide_ne_cree_rien(db_session, staff):
     crees = await db_session.scalars(select(Equipment).where(Equipment.nom.startswith(base)))
     assert crees.all() == []
     assert _fichiers_photos() == avant
+
+
+async def _presta(session) -> Prestation:
+    p = Prestation(nom="Presta série", type=TypePrestation.INTERNE)
+    session.add(p)
+    await session.flush()
+    return p
+
+
+async def _allocations(session, presta) -> list[AllocationPresta]:
+    res = await session.scalars(
+        select(AllocationPresta)
+        .where(AllocationPresta.presta_id == presta.id)
+        .order_by(AllocationPresta.equipment_id)
+    )
+    return list(res.all())
+
+
+async def test_presta_cree_et_alloue_chaque_exemplaire(db_session, staff):
+    m = await _modele(db_session)
+    presta = await _presta(db_session)
+    base = f"MH {uuid.uuid4().hex[:6]}"
+    donnees = EquipmentCreatePresta(nom=base, modele_id=m.id, nombre=3).model_dump_json()
+    res = await creer_et_allouer(presta.id, staff, db_session, donnees, None)
+    allocs = await _allocations(db_session, presta)
+    assert [a.equipment_id for a in allocs] == sorted(res.ids)
+    assert len(res.ids) == 3
+    assert {a.quantite for a in allocs} == {1}
+
+
+async def test_presta_vrac_quantite_allouee(db_session, staff):
+    presta = await _presta(db_session)
+    nom = f"Vrac {uuid.uuid4().hex[:6]}"
+    donnees = EquipmentCreatePresta(
+        nom=nom, type="vrac", quantite_theorique=50, quantite_allouee=12
+    ).model_dump_json()
+    res = await creer_et_allouer(presta.id, staff, db_session, donnees, None)
+    allocs = await _allocations(db_session, presta)
+    assert len(res.ids) == 1
+    assert [(a.equipment_id, a.quantite) for a in allocs] == [(res.ids[0], 12)]
+
+
+async def test_presta_unitaire_quantite_allouee_refusee(db_session, staff):
+    m = await _modele(db_session)
+    presta = await _presta(db_session)
+    base = f"MH {uuid.uuid4().hex[:6]}"
+    donnees = EquipmentCreatePresta(
+        nom=base, modele_id=m.id, quantite_allouee=2
+    ).model_dump_json()
+    with pytest.raises(HTTPException) as exc:
+        await creer_et_allouer(presta.id, staff, db_session, donnees, None)
+    assert exc.value.status_code == 422
+    crees = await db_session.scalars(select(Equipment).where(Equipment.nom.startswith(base)))
+    assert crees.all() == []
+    assert await _allocations(db_session, presta) == []

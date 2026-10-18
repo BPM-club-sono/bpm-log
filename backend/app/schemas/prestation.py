@@ -12,6 +12,7 @@ from app.models.enums import (
     StatutPrestation,
     TypePrestation,
 )
+from app.schemas.equipment import EquipmentCreate
 
 
 def valide_periode(debut: date | None, fin: date | None) -> None:
@@ -22,6 +23,16 @@ def valide_periode(debut: date | None, fin: date | None) -> None:
     """
     if debut is not None and fin is not None and fin < debut:
         raise ValueError("date_fin doit être postérieure ou égale à date_debut")
+
+
+class EquipmentCreatePresta(EquipmentCreate):
+    """Création de fiches depuis une prestation : chaque fiche est allouée aussitôt.
+
+    `quantite_allouee` ne vaut que pour un vrac/consommable (quantité par fiche) ;
+    un unitaire s'alloue toujours à l'unité.
+    """
+
+    quantite_allouee: int = Field(default=1, ge=1)
 
 
 class PrestationCreate(BaseModel):
