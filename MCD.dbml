@@ -69,6 +69,19 @@ Enum decision_cloture {
   ouvert // laissé en suspens : l'écart reste à régler
 }
 
+// Type de valeur d'un champ de spécification défini par l'admin.
+Enum type_champ_spec {
+  nombre
+  texte
+  choix // valeur parmi champs_specification.options
+  oui_non
+}
+
+Enum sens_connectique {
+  entree
+  sortie
+}
+
 Table membres {
   id integer [primary key, increment]
   nom varchar
@@ -104,11 +117,78 @@ Table categories {
 
 // Modèle commercial (ex: 'MH-100', 'H30V-L250') : regroupe les unités identiques
 // pour les ajouter en nombre à une prestation (stepper −/+ en mode « par modèle »)
+Table sous_categories {
+  id integer [primary key, increment]
+  nom varchar [not null]
+  categorie_id integer [not null]
+
+  indexes {
+    (categorie_id, nom) [unique]
+  }
+}
+
+// Champ de spécification défini par l'admin pour une catégorie (ou une seule de ses sous-catégories)
+Table champs_specification {
+  id integer [primary key, increment]
+  nom varchar [not null]
+  type type_champ_spec [not null]
+  unite varchar(20) [null, note: 'ex: W, dB']
+  options jsonb [not null, default: '[]', note: 'list[str] — choix proposés quand type = choix']
+  categorie_id integer [not null]
+  sous_categorie_id integer [null, note: 'NULL = vaut pour toute la catégorie']
+  ordre integer [default: 0]
+}
+
+// Valeur d'un champ pour un modèle OU pour un équipement sans modèle (XOR)
+Table valeurs_specification {
+  id integer [primary key, increment]
+  champ_id integer [not null, note: 'ON DELETE CASCADE']
+  modele_id integer [null, note: 'ON DELETE CASCADE']
+  equipment_id integer [null, note: 'ON DELETE CASCADE']
+  valeur text [not null]
+
+  indexes {
+    (champ_id, modele_id) [unique]
+    (champ_id, equipment_id) [unique]
+  }
+
+  Note: 'CHECK ck_valeurs_specification_cible : (modele_id IS NULL) <> (equipment_id IS NULL)'
+}
+
+Table connecteurs {
+  id integer [primary key, increment]
+  nom varchar(80) [unique, not null]
+}
+
+// Connecteurs d'un modèle OU d'un équipement sans modèle (XOR), par sens
+Table connectiques {
+  id integer [primary key, increment]
+  connecteur_id integer [not null, note: 'ON DELETE CASCADE']
+  sens sens_connectique [not null]
+  quantite integer [not null, note: 'CHECK quantite >= 1']
+  modele_id integer [null, note: 'ON DELETE CASCADE']
+  equipment_id integer [null, note: 'ON DELETE CASCADE']
+
+  indexes {
+    (connecteur_id, sens, modele_id) [unique]
+    (connecteur_id, sens, equipment_id) [unique]
+  }
+
+  Note: 'CHECK ck_connectiques_cible : (modele_id IS NULL) <> (equipment_id IS NULL)'
+}
+
 Table modeles {
   id integer [primary key, increment]
   nom varchar [unique, not null, note: 'Unicité exacte, sans normalisation : on veut des noms propres']
   marque varchar // ex: 'Robe', 'Yamaha'
   categorie_id integer [note: 'Fait foi pour la catégorie des unités : la changer la répercute sur toutes']
+  sous_categorie_id integer [null, note: 'Sous-catégorie de la catégorie du modèle']
+  poids numeric(8,2) [null, note: 'kg']
+  longueur numeric(8,1) [null, note: 'cm']
+  largeur numeric(8,1) [null, note: 'cm']
+  hauteur numeric(8,1) [null, note: 'cm']
+  prix_interne numeric(10,2) [null]
+  prix_externe numeric(10,2) [null]
 }
 
 Table emplacements {
@@ -132,6 +212,14 @@ Table equipments {
   created_by_membre_id integer
   photo_chemin varchar [note: 'Chemin relatif de la photo de l\'équipement sur le VPS (optionnel), servi par /api/photos']
   archive boolean [note: 'Retiré du parc actif (location rendue, matériel réformé) : conservé pour l\'historique, masqué du Parc par défaut. Archiver un flight cascade sur tout son contenu ; le rangement est conservé pour rester réversible']
+  sous_categorie_id integer [null, note: 'Specs techniques utilisées seulement sans modèle : le modèle fait foi sinon']
+  poids numeric(8,2) [null, note: 'kg']
+  longueur numeric(8,1) [null, note: 'cm']
+  largeur numeric(8,1) [null, note: 'cm']
+  hauteur numeric(8,1) [null, note: 'cm']
+  prix_interne numeric(10,2) [null]
+  prix_externe numeric(10,2) [null]
+  remarque text [null]
 }
 
 // Entité dépendante (spécialisation) — n'existe que si l'équipement est une caisse de vrac
@@ -257,6 +345,8 @@ Table allocations_presta {
   quantite_retournee integer [default: 0, note: 'Pointé au retour (deltas presta_check)']
   statut statut_allocation
   decision_cloture decision_cloture [null, note: 'Posé par /cloture ; null hors clôture ou sans écart']
+  prix_unitaire_fige numeric(10,2) [null, note: 'Figé à la clôture, NULL tant que la presta est ouverte']
+  poids_unitaire_fige numeric(8,2) [null, note: 'Figé à la clôture, NULL tant que la presta est ouverte']
 }
 
 // --- RELATIONS (LIENS ENTRE LES TABLES) ---
@@ -264,6 +354,17 @@ Table allocations_presta {
 Ref: equipments.categorie_id > categories.id
 Ref: equipments.modele_id > modeles.id
 Ref: modeles.categorie_id > categories.id
+Ref: modeles.sous_categorie_id > sous_categories.id
+Ref: equipments.sous_categorie_id > sous_categories.id
+Ref: sous_categories.categorie_id > categories.id
+Ref: champs_specification.categorie_id > categories.id
+Ref: champs_specification.sous_categorie_id > sous_categories.id
+Ref: valeurs_specification.champ_id > champs_specification.id [delete: cascade]
+Ref: valeurs_specification.modele_id > modeles.id [delete: cascade]
+Ref: valeurs_specification.equipment_id > equipments.id [delete: cascade]
+Ref: connectiques.connecteur_id > connecteurs.id [delete: cascade]
+Ref: connectiques.modele_id > modeles.id [delete: cascade]
+Ref: connectiques.equipment_id > equipments.id [delete: cascade]
 Ref: equipments.emplacement_id > emplacements.id
 Ref: equipments.contenant_id > equipments.id
 Ref: equipments.created_by_membre_id > membres.id

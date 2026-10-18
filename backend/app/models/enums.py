@@ -66,3 +66,17 @@ class DecisionCloture(enum.StrEnum):
     PERDU = "perdu"
     CASSE = "casse"
     OUVERT = "ouvert"  # laissé en suspens : l'écart reste à régler
+
+
+class TypeChampSpec(enum.StrEnum):
+    """Type de valeur d'un champ de spécification défini par l'admin."""
+
+    NOMBRE = "nombre"
+    TEXTE = "texte"
+    CHOIX = "choix"
+    OUI_NON = "oui_non"
+
+
+class SensConnectique(enum.StrEnum):
+    ENTREE = "entree"
+    SORTIE = "sortie"

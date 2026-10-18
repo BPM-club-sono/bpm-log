@@ -13,13 +13,16 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy import (
     Enum as SAEnum,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,10 +31,12 @@ from app.models.enums import (
     AvancementTicket,
     DecisionCloture,
     RoleMembre,
+    SensConnectique,
     StatutAllocation,
     StatutEquipment,
     StatutPrestation,
     TypeActionScan,
+    TypeChampSpec,
     TypeEvenementTicket,
     TypePrestation,
 )
@@ -92,6 +97,89 @@ class Categorie(Base):
     description: Mapped[str | None] = mapped_column(Text)
 
 
+class SousCategorie(Base):
+    __tablename__ = "sous_categories"
+    __table_args__ = (UniqueConstraint("categorie_id", "nom"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120))
+    categorie_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
+
+
+class ChampSpecification(Base):
+    """Champ de spécification défini par l'admin pour une catégorie (ou une seule
+    de ses sous-catégories). Les valeurs vivent dans `ValeurSpecification`."""
+
+    __tablename__ = "champs_specification"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120))
+    type: Mapped[TypeChampSpec] = mapped_column(_enum(TypeChampSpec, "type_champ_spec"))
+    unite: Mapped[str | None] = mapped_column(String(20))
+    # Choix proposés quand type = choix ; vide sinon.
+    options: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    categorie_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
+    # NULL = le champ vaut pour toute la catégorie.
+    sous_categorie_id: Mapped[int | None] = mapped_column(ForeignKey("sous_categories.id"))
+    ordre: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class ValeurSpecification(Base):
+    """Valeur d'un champ pour un modèle OU pour un équipement sans modèle (XOR)."""
+
+    __tablename__ = "valeurs_specification"
+    __table_args__ = (
+        CheckConstraint(
+            "(modele_id IS NULL) <> (equipment_id IS NULL)",
+            name="ck_valeurs_specification_cible",
+        ),
+        UniqueConstraint("champ_id", "modele_id"),
+        UniqueConstraint("champ_id", "equipment_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    champ_id: Mapped[int] = mapped_column(ForeignKey("champs_specification.id", ondelete="CASCADE"))
+    modele_id: Mapped[int | None] = mapped_column(
+        ForeignKey("modeles.id", ondelete="CASCADE"), index=True
+    )
+    equipment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("equipments.id", ondelete="CASCADE"), index=True
+    )
+    valeur: Mapped[str] = mapped_column(Text)
+
+
+class Connecteur(Base):
+    __tablename__ = "connecteurs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nom: Mapped[str] = mapped_column(String(80), unique=True)
+
+
+class Connectique(Base):
+    """Connecteurs d'un modèle OU d'un équipement sans modèle (XOR), par sens."""
+
+    __tablename__ = "connectiques"
+    __table_args__ = (
+        CheckConstraint("quantite >= 1", name="ck_connectiques_quantite"),
+        CheckConstraint(
+            "(modele_id IS NULL) <> (equipment_id IS NULL)", name="ck_connectiques_cible"
+        ),
+        UniqueConstraint("connecteur_id", "sens", "modele_id"),
+        UniqueConstraint("connecteur_id", "sens", "equipment_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    connecteur_id: Mapped[int] = mapped_column(ForeignKey("connecteurs.id", ondelete="CASCADE"))
+    sens: Mapped[SensConnectique] = mapped_column(_enum(SensConnectique, "sens_connectique"))
+    quantite: Mapped[int] = mapped_column(Integer)
+    modele_id: Mapped[int | None] = mapped_column(
+        ForeignKey("modeles.id", ondelete="CASCADE"), index=True
+    )
+    equipment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("equipments.id", ondelete="CASCADE"), index=True
+    )
+
+
 class Modele(Base):
     """Modèle commercial d'un équipement (ex. « MH-100 ») : regroupe les unités
     identiques pour les ajouter en nombre à une prestation. Fait foi pour la
@@ -104,6 +192,13 @@ class Modele(Base):
     nom: Mapped[str] = mapped_column(String(120), unique=True)
     marque: Mapped[str | None] = mapped_column(String(120))
     categorie_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    sous_categorie_id: Mapped[int | None] = mapped_column(ForeignKey("sous_categories.id"))
+    poids: Mapped[float | None] = mapped_column(Numeric(8, 2, asdecimal=False))
+    longueur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))
+    largeur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))
+    hauteur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))
+    prix_interne: Mapped[float | None] = mapped_column(Numeric(10, 2, asdecimal=False))
+    prix_externe: Mapped[float | None] = mapped_column(Numeric(10, 2, asdecimal=False))
 
 
 class Emplacement(Base):
@@ -154,6 +249,15 @@ class Equipment(Base):
     # Matériel de location archivé (rendu au fournisseur) : conservé en base mais
     # masqué du Parc par défaut pour ne pas le saturer.
     archive: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Specs techniques utilisées seulement sans modèle : sinon le modèle fait foi.
+    sous_categorie_id: Mapped[int | None] = mapped_column(ForeignKey("sous_categories.id"))
+    poids: Mapped[float | None] = mapped_column(Numeric(8, 2, asdecimal=False))  # kg
+    longueur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))  # cm
+    largeur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))  # cm
+    hauteur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))  # cm
+    prix_interne: Mapped[float | None] = mapped_column(Numeric(10, 2, asdecimal=False))
+    prix_externe: Mapped[float | None] = mapped_column(Numeric(10, 2, asdecimal=False))
+    remarque: Mapped[str | None] = mapped_column(Text)
 
     vrac: Mapped[EquipmentVrac | None] = relationship(back_populates="equipment", uselist=False)
     consommable: Mapped[EquipmentConsommable | None] = relationship(
@@ -345,6 +449,14 @@ class AllocationPresta(Base):
     # elle, un « cassé » (retour forcé) ne se distingue plus d'un vrai retour.
     decision_cloture: Mapped[DecisionCloture | None] = mapped_column(
         _enum(DecisionCloture, "decision_cloture")
+    )
+    # Figés à la clôture, NULL tant que la presta est ouverte : le rapport garde
+    # ainsi les valeurs d'alors même si le catalogue change ensuite.
+    prix_unitaire_fige: Mapped[float | None] = mapped_column(
+        Numeric(10, 2, asdecimal=False)
+    )
+    poids_unitaire_fige: Mapped[float | None] = mapped_column(
+        Numeric(8, 2, asdecimal=False)
     )
 
     equipment: Mapped[Equipment] = relationship(lazy="raise")
