@@ -312,6 +312,11 @@ async def add_allocation(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
+    if data.quantite > 1 and not await _ids_quantitatifs(db, [equipment.id]):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Un équipement unitaire s'alloue à l'unité : crée plusieurs exemplaires.",
+        )
 
     existing = await db.scalar(
         select(AllocationPresta).where(
