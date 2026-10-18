@@ -12,7 +12,9 @@ test("Parc : création de 3 exemplaires d'un modèle", async ({ page, api }) => 
   await page.getByLabel("Nombre d'exemplaires").fill("3");
   await expect(page.getByText(`créera ${base} 1, ${base} 2, ${base} 3`)).toBeVisible();
   await page.getByRole("button", { name: "Créer l'équipement" }).click();
-  await expect(page).toHaveURL(new RegExp(`/inventaire\\?modele=${modele.id}$`));
+  // Le lien `?modele=` pré-remplit la recherche avec le nom du modèle.
+  await expect(page).toHaveURL(/\/inventaire$/);
+  await expect(page.getByPlaceholder("Nom, code-barres ou modèle…")).toHaveValue(modele.nom);
   await expect(page.getByText("3 équipements créés")).toBeVisible();
   for (const k of [1, 2, 3]) {
     await expect(page.getByText(`${base} ${k}`, { exact: true })).toBeVisible();

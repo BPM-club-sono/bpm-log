@@ -32,7 +32,6 @@ export function CatalogPage() {
     FILTRES.some((f) => f.value === initial) ? initial : "tous",
   );
   const [archived, setArchived] = useState(false);
-  const modeleFiltre = params.get("modele");
 
   useEffect(() => {
     let active = true;
@@ -65,33 +64,30 @@ export function CatalogPage() {
     };
   }, [archived]);
 
-  function updateParams(type: Filtre, modele: string | null) {
-    const next: Record<string, string> = {};
-    if (type !== "tous") next.type = type;
-    if (modele) next.modele = modele;
-    setParams(next);
-  }
+  // Lien « voir les unités d'un modèle » (`?modele=<id>`, page Modèles ou
+  // création en série) : pas de filtre caché, on pré-remplit la recherche avec
+  // le nom du modèle, que l'utilisateur voit et efface comme n'importe quelle saisie.
+  const modeleParam = params.get("modele");
+  useEffect(() => {
+    if (!modeleParam || loading) return;
+    const nom = equipments.find((e) => String(e.modele_id) === modeleParam)?.modele_nom;
+    if (nom) setQuery(nom);
+    const next = new URLSearchParams(params);
+    next.delete("modele");
+    setParams(next, { replace: true });
+  }, [modeleParam, loading, equipments, params, setParams]);
 
   function selectFiltre(f: Filtre) {
     setFiltre(f);
-    updateParams(f, modeleFiltre);
+    if (f === "tous") setParams({});
+    else setParams({ type: f });
   }
-
-  // Modèles présents dans la liste chargée (le filtre ne propose que l'utile).
-  const modeles = useMemo(() => {
-    const byId = new Map<number, string>();
-    for (const e of equipments) {
-      if (e.modele_id && e.modele_nom) byId.set(e.modele_id, e.modele_nom);
-    }
-    return [...byId].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [equipments]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return equipments.filter((e) => {
       if (filtre === "externe" && !e.externe) return false;
       if (filtre !== "tous" && filtre !== "externe" && e.type !== filtre) return false;
-      if (modeleFiltre && String(e.modele_id ?? "") !== modeleFiltre) return false;
       if (
         q &&
         !e.nom.toLowerCase().includes(q) &&
@@ -101,7 +97,7 @@ export function CatalogPage() {
         return false;
       return true;
     });
-  }, [equipments, query, filtre, modeleFiltre]);
+  }, [equipments, query, filtre]);
 
   return (
     <div className="space-y-4">
@@ -159,31 +155,7 @@ export function CatalogPage() {
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        {modeles.length > 0 ? (
-          <div className="relative min-w-0">
-            {/* Flèche dessinée à la main : la native colle au bord de la pastille. */}
-            <select
-              value={modeleFiltre ?? ""}
-              onChange={(e) => updateParams(filtre, e.target.value || null)}
-              aria-label="Filtrer par modèle"
-              className="h-8 w-full min-w-0 appearance-none truncate rounded-full border border-line bg-bg-soft pl-3 pr-8 text-xs font-medium text-fg-muted"
-            >
-              <option value="">Tous les modèles</option>
-              {modeles.map(([id, nom]) => (
-                <option key={id} value={id}>
-                  {nom}
-                </option>
-              ))}
-            </select>
-            <Icon
-              name="expand_more"
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-base text-fg-muted"
-            />
-          </div>
-        ) : (
-          <span />
-        )}
+      <div className="flex items-center justify-end">
         <button
           type="button"
           onClick={() => setArchived((v) => !v)}
