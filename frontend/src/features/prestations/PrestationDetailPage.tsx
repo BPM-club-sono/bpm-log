@@ -8,6 +8,7 @@ import type {
   ClotureDecision,
   EquipmentListItem,
   PrestationDetail,
+  StatutAllocation,
   StatutEquipment,
   StatutPrestation,
 } from "@/lib/types";
@@ -31,6 +32,12 @@ import { STATUT_LABEL, STATUT_STYLE, derivePrestaStatut } from "./statut";
 import { rapportCloture, type LigneRapport } from "./rapportCloture";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
+
+const STATUT_ALLOC_LABEL: Record<StatutAllocation, string> = {
+  Planifie: "Planifié",
+  Sorti: "Sorti",
+  Retourne: "Retourné",
+};
 
 /** Statuts qui interdisent l'allocation (miroir de services/disponibilite.py). */
 const STATUT_BLOQUANT: Partial<Record<StatutEquipment, string>> = {
@@ -433,16 +440,6 @@ function InfoView({
     await onReload();
   }
 
-  async function allocateCreated(created: { id: number }, quantite: number) {
-    await api(`/prestations/${detail.id}/allocations`, {
-      method: "POST",
-      body: { equipment_id: created.id, quantite: Math.max(1, quantite) },
-    });
-    setShowModal(false);
-    setSearch("");
-    await onReload();
-  }
-
   async function rouvrir() {
     setReopening(true);
     try {
@@ -475,9 +472,12 @@ function InfoView({
   // leur caisse (style timeline), pas en vrac dans la liste plate.
   const { topLevel, descendantsOf } = buildAllocTree(visibleAllocs);
 
+  // Une unité (quantité 1) affiche son état ; un lot, ses compteurs.
   const metaLine = (a: Allocation) => (
     <p className="mt-1 text-xs text-fg-muted">
-      Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné {a.quantite_retournee}
+      {a.quantite === 1
+        ? STATUT_ALLOC_LABEL[a.statut]
+        : `Prévu ${a.quantite} · sorti ${a.quantite_sortie} · retourné ${a.quantite_retournee}`}
     </p>
   );
   // Unité tombée en panne (ou perdue) depuis son allocation : à remplacer à la main.
@@ -715,9 +715,13 @@ function InfoView({
             </p>
             <EquipmentForm
               externeDefault
-              showQuantite
+              prestaId={detail.id}
               submitLabel="Créer et allouer"
-              onCreated={(created, quantite) => allocateCreated(created, quantite)}
+              onCreated={async () => {
+                setShowModal(false);
+                setSearch("");
+                await onReload();
+              }}
             />
           </div>
         </div>

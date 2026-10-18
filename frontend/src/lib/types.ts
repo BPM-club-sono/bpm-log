@@ -41,6 +41,13 @@ export interface Modele {
   nb_unites?: number;
 }
 
+/** Réponse de la création en série (Parc ou prestation). */
+export interface SerieCreee {
+  ids: number[];
+  noms: string[];
+  modele_id: number | null;
+}
+
 /** Ligne du mode « par modèle » d'une prestation (une par modèle × loueur). */
 export interface ModeleDispo {
   modele_id: number;

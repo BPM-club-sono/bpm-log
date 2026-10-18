@@ -4,11 +4,11 @@ import { compressImage } from "@/lib/image";
 import type {
   Categorie,
   Emplacement,
-  EquipmentDetail,
   EquipmentListItem,
   EquipmentType,
   Fournisseur,
   Modele,
+  SerieCreee,
 } from "@/lib/types";
 import { PREFIXE_EXTERNE, PREFIXE_INTERNE } from "@/lib/barcode";
 import { BarcodeInput } from "@/shared/BarcodeInput";
@@ -34,11 +34,11 @@ const TYPES: { value: FormType; label: string }[] = [
 interface EquipmentFormProps {
   /** Coche « location externe » par défaut (contexte presta externe). */
   externeDefault?: boolean;
-  /** Affiche un champ « Quantité » (quantité à allouer à la presta). */
-  showQuantite?: boolean;
+  /** Contexte prestation : crée et alloue directement à cette prestation. */
+  prestaId?: number;
   submitLabel?: string;
-  /** Appelé après création réussie de l'équipement (et de sa photo). */
-  onCreated: (created: EquipmentDetail, quantite: number) => void | Promise<void>;
+  /** Appelé après création réussie de la série (photo comprise). */
+  onCreated: (res: SerieCreee) => void | Promise<void>;
 }
 
 /**
@@ -48,7 +48,7 @@ interface EquipmentFormProps {
  */
 export function EquipmentForm({
   externeDefault = false,
-  showQuantite = false,
+  prestaId,
   submitLabel = "Créer l'équipement",
   onCreated,
 }: EquipmentFormProps) {
@@ -56,12 +56,15 @@ export function EquipmentForm({
   const [type, setType] = useState<FormType>("standard");
   const [categorieId, setCategorieId] = useState<number | "">("");
   const [modele, setModele] = useState<Modele | null>(null);
-  const [rangementMode, setRangementMode] = useState<RangementMode>("emplacement");
+  const [rangementMode, setRangementMode] =
+    useState<RangementMode>("emplacement");
   const [emplacementId, setEmplacementId] = useState<number | "">("");
   const [contenantId, setContenantId] = useState<number | "">("");
   const [overrideBarcode, setOverrideBarcode] = useState(false);
   const [barcode, setBarcode] = useState("");
   const [quantite, setQuantite] = useState(1);
+  const [nombre, setNombre] = useState(1);
+  const [apercu, setApercu] = useState<string[]>([]);
   const [quantiteTheo, setQuantiteTheo] = useState(0);
   const [stock, setStock] = useState(0);
   const [seuil, setSeuil] = useState(0);
@@ -108,6 +111,41 @@ export function EquipmentForm({
   // Un vrac/conso n'en a pas ; un flight ou une location peuvent s'en passer.
   const avecModele = type === "standard" || type === "flight";
   const modeleRequis = type === "standard" && !externe;
+  // Création en série : seulement pour un item unitaire standard.
+  const nbExemplaires =
+    type === "standard" ? Math.max(1, Math.floor(nombre) || 1) : 1;
+  const serie = nbExemplaires > 1;
+  const avecQuantite =
+    !!prestaId && (type === "vrac" || type === "consommable");
+
+  // Aperçu des noms qui seront créés (le serveur décide de la numérotation).
+  useEffect(() => {
+    const base = nom.trim();
+    if (!serie || !base) {
+      setApercu([]);
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await api<string[]>(
+          `/equipments/noms-serie?base=${encodeURIComponent(base)}&nombre=${nbExemplaires}`,
+        );
+        if (!stale) setApercu(r);
+      } catch {
+        if (!stale) setApercu([]);
+      }
+    }, 300);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [nom, serie, nbExemplaires]);
+
+  function choisirModele(m: Modele | null) {
+    setModele(m);
+    if (m && !nom.trim()) setNom(m.nom);
+  }
 
   async function submit() {
     if (!nom.trim()) {
@@ -136,7 +174,7 @@ export function EquipmentForm({
       } else {
         body.emplacement_id = emplacementId === "" ? null : emplacementId;
       }
-      if (overrideBarcode && barcode) body.barcode_uid = barcode;
+      if (overrideBarcode && barcode && !serie) body.barcode_uid = barcode;
       if (type === "vrac") body.quantite_theorique = quantiteTheo;
       if (type === "consommable") {
         body.stock_actuel = stock;
@@ -144,21 +182,22 @@ export function EquipmentForm({
         body.unite = unite || null;
       }
       if (externe) {
-        if (nouveauFournisseur.trim()) body.fournisseur_nom = nouveauFournisseur.trim();
+        if (nouveauFournisseur.trim())
+          body.fournisseur_nom = nouveauFournisseur.trim();
         else if (fournisseurId !== "") body.fournisseur_id = fournisseurId;
         body.reference_devis = refDevis || null;
       }
-      const created = await api<EquipmentDetail>("/equipments", {
-        method: "POST",
-        body,
-      });
-      if (photoFile) {
-        const compressed = await compressImage(photoFile);
-        const form = new FormData();
-        form.append("file", compressed, "photo.jpg");
-        await api(`/equipments/${created.id}/photo`, { method: "POST", body: form });
-      }
-      await onCreated(created, showQuantite ? Math.max(1, quantite) : 1);
+      body.nombre = nbExemplaires;
+      if (avecQuantite) body.quantite_allouee = Math.max(1, quantite);
+      const form = new FormData();
+      form.append("donnees", JSON.stringify(body));
+      if (photoFile)
+        form.append("photo", await compressImage(photoFile), "photo.jpg");
+      const res = await api<SerieCreee>(
+        prestaId ? `/prestations/${prestaId}/equipements` : "/equipments/serie",
+        { method: "POST", body: form },
+      );
+      await onCreated(res);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Erreur réseau. Réessaie.");
     } finally {
@@ -168,7 +207,9 @@ export function EquipmentForm({
 
   // Le préfixe d'une référence identifie le propriétaire : celui du fournisseur
   // pour du matériel loué, BPM sinon. Un fournisseur sans trigramme donne EXT.
-  const fournisseurSelectionne = fournisseurs.find((f) => f.id === fournisseurId);
+  const fournisseurSelectionne = fournisseurs.find(
+    (f) => f.id === fournisseurId,
+  );
   const prefixeRef = externe
     ? fournisseurSelectionne?.code || PREFIXE_EXTERNE
     : PREFIXE_INTERNE;
@@ -196,16 +237,37 @@ export function EquipmentForm({
         />
       </label>
 
-      <Field label="Nom">
-        <input
-          value={nom}
-          onChange={(e) => setNom(e.target.value)}
-          placeholder="Lyre Beam 7R…"
-          className={inputCls}
-        />
-      </Field>
+      <div className="space-y-1">
+        <Field label={serie ? "Nom de base" : "Nom"}>
+          <input
+            value={nom}
+            onChange={(e) => setNom(e.target.value)}
+            placeholder="Lyre Beam 7R…"
+            className={inputCls}
+          />
+        </Field>
+        {serie && apercu.length > 0 && (
+          <p className="text-xs text-fg-muted">
+            {apercu.length <= 3
+              ? `créera ${apercu.join(", ")}`
+              : `créera ${apercu[0]} … ${apercu[apercu.length - 1]}`}
+          </p>
+        )}
+      </div>
 
-      {showQuantite && (
+      {type === "standard" && (
+        <Field label="Nombre d'exemplaires">
+          <input
+            type="number"
+            min={1}
+            value={nombre}
+            onChange={(e) => setNombre(Number(e.target.value))}
+            className={inputCls}
+          />
+        </Field>
+      )}
+
+      {avecQuantite && (
         <Field label="Quantité à allouer">
           <input
             type="number"
@@ -237,7 +299,7 @@ export function EquipmentForm({
         <Field label={modeleRequis ? "Modèle" : "Modèle (optionnel)"}>
           <ModeleField
             value={modele}
-            onChange={setModele}
+            onChange={choisirModele}
             categories={categories}
             required={modeleRequis}
           />
@@ -247,7 +309,9 @@ export function EquipmentForm({
       <Field label="Catégorie">
         <select
           // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
-          value={avecModele && modele ? (modele.categorie_id ?? "") : categorieId}
+          value={
+            avecModele && modele ? (modele.categorie_id ?? "") : categorieId
+          }
           disabled={avecModele && !!modele}
           onChange={(e) =>
             setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
@@ -324,24 +388,30 @@ export function EquipmentForm({
         setRefDevis={setRefDevis}
       />
 
-      <div className="space-y-2 rounded-xl border border-line bg-bg-soft p-3">
-        <label className="flex items-center gap-2 text-sm font-medium">
-          <input
-            type="checkbox"
-            checked={overrideBarcode}
-            onChange={(e) => setOverrideBarcode(e.target.checked)}
-            className="h-4 w-4 accent-fg"
-          />
-          Code-barres personnalisé
-        </label>
-        {overrideBarcode ? (
-          <BarcodeInput value={barcode} onChange={setBarcode} prefixe={prefixeRef} />
-        ) : (
-          <p className="text-xs text-fg-muted">
-            Généré automatiquement ({prefixeRef}-000123).
-          </p>
-        )}
-      </div>
+      {!serie && (
+        <div className="space-y-2 rounded-xl border border-line bg-bg-soft p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={overrideBarcode}
+              onChange={(e) => setOverrideBarcode(e.target.checked)}
+              className="h-4 w-4 accent-fg"
+            />
+            Code-barres personnalisé
+          </label>
+          {overrideBarcode ? (
+            <BarcodeInput
+              value={barcode}
+              onChange={setBarcode}
+              prefixe={prefixeRef}
+            />
+          ) : (
+            <p className="text-xs text-fg-muted">
+              Généré automatiquement ({prefixeRef}-000123).
+            </p>
+          )}
+        </div>
+      )}
 
       <Button onClick={() => void submit()} loading={saving} className="w-full">
         {submitLabel}
