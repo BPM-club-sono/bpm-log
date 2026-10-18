@@ -248,7 +248,7 @@ export function EquipmentDetailPage() {
       )}
 
       <EquipmentSpecs
-        key={eq.modele_id ?? "sans-modele"}
+        key={`${eq.modele_id ?? "sans-modele"}-${eq.categorie_id ?? ""}`}
         equipmentId={equipmentId} modeleNom={eq.modele_nom ?? null} />
 
       {eq.contenu && eq.contenu.length > 0 && <ContenuBlock contenu={eq.contenu} />}

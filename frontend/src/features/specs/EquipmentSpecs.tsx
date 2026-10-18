@@ -19,13 +19,16 @@ export function EquipmentSpecs({
   const { user } = useAuth();
   const canEdit = user?.role === "Admin" || user?.role === "Staff";
   const [specs, setSpecs] = useState<Specs | null>(null);
+  const [error, setError] = useState(false);
   const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setSpecs(await api<Specs>(`/equipments/${equipmentId}/specs`));
+      setError(false);
     } catch {
       setSpecs(null);
+      setError(true);
     }
   }, [equipmentId]);
 
@@ -33,6 +36,7 @@ export function EquipmentSpecs({
     void load();
   }, [load]);
 
+  if (error) return <p className="text-sm text-danger">Spécifications indisponibles.</p>;
   if (!specs) return null;
 
   if (editing) {

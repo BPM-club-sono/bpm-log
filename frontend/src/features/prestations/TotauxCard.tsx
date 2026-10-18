@@ -15,7 +15,10 @@ function Partiel({ nb, quoi }: { nb: number; quoi: "poids" | "prix" }) {
   );
 }
 
-export function TotauxCard({ totaux }: { totaux: TotauxPresta }) {
+/** `totaux` manque sur les détails mis en cache avant son ajout (snapshot hors ligne,
+ *  cache SW) : on n'affiche alors rien plutôt que de planter. */
+export function TotauxCard({ totaux }: { totaux?: TotauxPresta }) {
+  if (!totaux) return null;
   const entrees = totaux.connectiques.filter((c) => c.sens === "entree");
   const sorties = totaux.connectiques.filter((c) => c.sens === "sortie");
   return (

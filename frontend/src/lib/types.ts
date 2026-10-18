@@ -214,7 +214,8 @@ export interface TotauxPresta {
 
 export interface PrestationDetail extends Prestation {
   allocations: Allocation[];
-  totaux: TotauxPresta;
+  /** Absent des détails mis en cache avant l'ajout des totaux. */
+  totaux?: TotauxPresta;
 }
 
 export type ClotureDecision = "retourne" | "perdu" | "casse" | "ouvert";

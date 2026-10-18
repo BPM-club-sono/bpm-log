@@ -491,7 +491,7 @@ function InfoView({
       {a.quantite === 1
         ? STATUT_ALLOC_LABEL[a.statut]
         : `Prévu ${a.quantite} · sorti ${a.quantite_sortie} · retourné ${a.quantite_retournee}`}
-      {a.prix_unitaire != null && ` · ${formatPrix(a.prix_unitaire)}`}
+      {a.prix_unitaire != null && ` · ${formatPrix(a.prix_unitaire)}/u`}
     </p>
   );
   // Unité tombée en panne (ou perdue) depuis son allocation : à remplacer à la main.

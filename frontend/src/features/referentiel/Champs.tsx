@@ -139,7 +139,7 @@ function ChampForm({
   const [nom, setNom] = useState(initial?.nom ?? "");
   const [type, setType] = useState<TypeChampSpec>(initial?.type ?? "texte");
   const [unite, setUnite] = useState(initial?.unite ?? "");
-  const [options, setOptions] = useState((initial?.options ?? []).join(", "));
+  const [options, setOptions] = useState((initial?.options ?? []).join("\n"));
   const [sousId, setSousId] = useState<number | "">(initial?.sous_categorie_id ?? "");
   const [ordre, setOrdre] = useState(String(initial?.ordre ?? 0));
   const [saving, setSaving] = useState(false);
@@ -151,7 +151,7 @@ function ChampForm({
       return;
     }
     const opts = options
-      .split(",")
+      .split("\n")
       .map((o) => o.trim())
       .filter(Boolean);
     if (type === "choix" && opts.length === 0) {
@@ -221,11 +221,12 @@ function ChampForm({
       )}
       {type === "choix" && (
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-fg-muted">Options (séparées par des virgules)</span>
-          <input
+          <span className="text-xs font-medium text-fg-muted">Options (une par ligne)</span>
+          <textarea
             value={options}
             onChange={(e) => setOptions(e.target.value)}
-            placeholder="LED, Halogène, Laser"
+            placeholder={"LED\nHalogène\nLaser"}
+            rows={4}
             className={inputCls}
           />
         </label>
