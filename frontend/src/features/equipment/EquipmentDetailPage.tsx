@@ -247,7 +247,9 @@ export function EquipmentDetailPage() {
         />
       )}
 
-      <EquipmentSpecs equipmentId={equipmentId} modeleNom={eq.modele_nom ?? null} />
+      <EquipmentSpecs
+        key={eq.modele_id ?? "sans-modele"}
+        equipmentId={equipmentId} modeleNom={eq.modele_nom ?? null} />
 
       {eq.contenu && eq.contenu.length > 0 && <ContenuBlock contenu={eq.contenu} />}
 
@@ -1017,7 +1019,7 @@ function EditForm({
         barcode_uid: barcode,
         statut_actuel: statut,
         externe,
-        remarque,
+        remarque: remarque.trim(),
       };
       // Avec un modèle, la catégorie suit la sienne : on n'envoie que le modèle.
       if (modele) body.modele_id = modele.id;
