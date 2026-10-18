@@ -32,6 +32,7 @@ export function CatalogPage() {
     FILTRES.some((f) => f.value === initial) ? initial : "tous",
   );
   const [archived, setArchived] = useState(false);
+  const modeleFiltre = params.get("modele");
 
   useEffect(() => {
     let active = true;
@@ -64,22 +65,43 @@ export function CatalogPage() {
     };
   }, [archived]);
 
+  function updateParams(type: Filtre, modele: string | null) {
+    const next: Record<string, string> = {};
+    if (type !== "tous") next.type = type;
+    if (modele) next.modele = modele;
+    setParams(next);
+  }
+
   function selectFiltre(f: Filtre) {
     setFiltre(f);
-    if (f === "tous") setParams({});
-    else setParams({ type: f });
+    updateParams(f, modeleFiltre);
   }
+
+  // Modèles présents dans la liste chargée (le filtre ne propose que l'utile).
+  const modeles = useMemo(() => {
+    const byId = new Map<number, string>();
+    for (const e of equipments) {
+      if (e.modele_id && e.modele_nom) byId.set(e.modele_id, e.modele_nom);
+    }
+    return [...byId].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [equipments]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return equipments.filter((e) => {
       if (filtre === "externe" && !e.externe) return false;
       if (filtre !== "tous" && filtre !== "externe" && e.type !== filtre) return false;
-      if (q && !e.nom.toLowerCase().includes(q) && !e.barcode_uid.toLowerCase().includes(q))
+      if (modeleFiltre && String(e.modele_id ?? "") !== modeleFiltre) return false;
+      if (
+        q &&
+        !e.nom.toLowerCase().includes(q) &&
+        !e.barcode_uid.toLowerCase().includes(q) &&
+        !(e.modele_nom ?? "").toLowerCase().includes(q)
+      )
         return false;
       return true;
     });
-  }, [equipments, query, filtre]);
+  }, [equipments, query, filtre, modeleFiltre]);
 
   return (
     <div className="space-y-4">
@@ -99,6 +121,13 @@ export function CatalogPage() {
             Rangement
           </Link>
           <Link
+            to="/modeles"
+            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+          >
+            <Icon name="category" className="text-base" />
+            Modèles
+          </Link>
+          <Link
             to="/etiquettes"
             className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
           >
@@ -111,7 +140,7 @@ export function CatalogPage() {
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Rechercher un nom ou un code-barres…"
+        placeholder="Rechercher un nom, un code-barres ou un modèle…"
       />
 
       <div className="flex flex-wrap gap-2">
@@ -128,7 +157,24 @@ export function CatalogPage() {
         ))}
       </div>
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-2">
+        {modeles.length > 0 ? (
+          <select
+            value={modeleFiltre ?? ""}
+            onChange={(e) => updateParams(filtre, e.target.value || null)}
+            aria-label="Filtrer par modèle"
+            className="h-8 min-w-0 rounded-full border border-line bg-bg-soft px-3 text-xs font-medium text-fg-muted"
+          >
+            <option value="">Tous les modèles</option>
+            {modeles.map(([id, nom]) => (
+              <option key={id} value={id}>
+                {nom}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span />
+        )}
         <button
           type="button"
           onClick={() => setArchived((v) => !v)}
@@ -236,6 +282,11 @@ function Preview({ item }: { item: EquipmentListItem }) {
   }
   return (
     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-fg-muted">
+      {item.modele_nom && (
+        <span className="inline-flex items-center gap-1 font-medium text-fg">
+          {item.modele_nom}
+        </span>
+      )}
       {item.categorie_nom && (
         <span className="inline-flex items-center gap-1">
           <Icon name="category" className="text-sm" />

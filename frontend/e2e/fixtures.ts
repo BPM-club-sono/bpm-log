@@ -63,18 +63,36 @@ export interface Equipement {
   barcode_uid: string;
 }
 
+export interface Modele {
+  id: number;
+  nom: string;
+}
+
+/** Crée un modèle propre au test (nom suffixé, unique). */
+export async function creerModele(api: APIRequestContext, nom: string): Promise<Modele> {
+  const res = await api.post("modeles", {
+    data: { nom: `${nom} ${randomUUID().slice(0, 8)}` },
+  });
+  expect(res.status()).toBe(201);
+  return (await res.json()) as Modele;
+}
+
 /**
  * Crée un équipement propre au test (nom suffixé, unique) : les tests ne
  * partagent aucune donnée et peuvent tourner en parallèle ou être répétés.
+ *
+ * Un item unitaire exige un modèle : sans `modele_id`, on lui en crée un jetable.
  */
 export async function creerEquipement(
   api: APIRequestContext,
   nom: string,
   extra: Record<string, unknown> = {},
 ): Promise<Equipement> {
-  const res = await api.post("equipments", {
-    data: { nom: `${nom} ${randomUUID().slice(0, 8)}`, ...extra },
-  });
+  const unitaire =
+    (extra.type ?? "standard") === "standard" && !extra.est_contenant && !extra.externe;
+  const data: Record<string, unknown> = { nom: `${nom} ${randomUUID().slice(0, 8)}`, ...extra };
+  if (unitaire && data.modele_id === undefined) data.modele_id = (await creerModele(api, nom)).id;
+  const res = await api.post("equipments", { data });
   expect(res.status()).toBe(201);
   return (await res.json()) as Equipement;
 }

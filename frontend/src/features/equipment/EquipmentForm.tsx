@@ -8,12 +8,14 @@ import type {
   EquipmentListItem,
   EquipmentType,
   Fournisseur,
+  Modele,
 } from "@/lib/types";
 import { PREFIXE_EXTERNE, PREFIXE_INTERNE } from "@/lib/barcode";
 import { BarcodeInput } from "@/shared/BarcodeInput";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { ExterneFields, Field } from "./EquipmentDetailPage";
+import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
 
 const inputCls =
@@ -53,6 +55,7 @@ export function EquipmentForm({
   const [nom, setNom] = useState("");
   const [type, setType] = useState<FormType>("standard");
   const [categorieId, setCategorieId] = useState<number | "">("");
+  const [modele, setModele] = useState<Modele | null>(null);
   const [rangementMode, setRangementMode] = useState<RangementMode>("emplacement");
   const [emplacementId, setEmplacementId] = useState<number | "">("");
   const [contenantId, setContenantId] = useState<number | "">("");
@@ -101,9 +104,18 @@ export function EquipmentForm({
     setPhotoPreview(file ? URL.createObjectURL(file) : null);
   }
 
+  // Item unitaire à nous : il porte son modèle (ajout en nombre aux prestas).
+  // Un vrac/conso n'en a pas ; un flight ou une location peuvent s'en passer.
+  const avecModele = type === "standard" || type === "flight";
+  const modeleRequis = type === "standard" && !externe;
+
   async function submit() {
     if (!nom.trim()) {
       setErr("Le nom est obligatoire.");
+      return;
+    }
+    if (modeleRequis && !modele) {
+      setErr("Le modèle est obligatoire.");
       return;
     }
     setSaving(true);
@@ -115,6 +127,7 @@ export function EquipmentForm({
         type: type === "flight" ? "standard" : type,
         est_contenant: type === "flight",
         categorie_id: categorieId === "" ? null : categorieId,
+        modele_id: avecModele && modele ? modele.id : null,
         externe,
       };
       // Rangement : emplacement fixe OU contenant (exclusifs côté serveur).
@@ -220,9 +233,22 @@ export function EquipmentForm({
         </div>
       </Field>
 
+      {avecModele && (
+        <Field label={modeleRequis ? "Modèle" : "Modèle (optionnel)"}>
+          <ModeleField
+            value={modele}
+            onChange={setModele}
+            categories={categories}
+            required={modeleRequis}
+          />
+        </Field>
+      )}
+
       <Field label="Catégorie">
         <select
-          value={categorieId}
+          // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
+          value={avecModele && modele ? (modele.categorie_id ?? "") : categorieId}
+          disabled={avecModele && !!modele}
           onChange={(e) =>
             setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
           }

@@ -31,6 +31,16 @@ export interface Categorie {
   description: string | null;
 }
 
+/** Modèle commercial (MH-100…) : regroupe les unités identiques. */
+export interface Modele {
+  id: number;
+  nom: string;
+  marque: string | null;
+  categorie_id: number | null;
+  categorie_nom?: string | null;
+  nb_unites?: number;
+}
+
 export interface Emplacement {
   id: number;
   nom: string;
@@ -148,6 +158,8 @@ export interface EquipmentListItem {
   nom: string;
   categorie_id: number | null;
   categorie_nom: string | null;
+  modele_id?: number | null;
+  modele_nom?: string | null;
   emplacement_id: number | null;
   emplacement_nom: string | null;
   contenant_id?: number | null;
@@ -285,6 +297,8 @@ export interface EquipmentDetail {
   nom: string;
   categorie_id: number | null;
   categorie_nom: string | null;
+  modele_id?: number | null;
+  modele_nom?: string | null;
   emplacement_id: number | null;
   emplacement_nom: string | null;
   contenant_id?: number | null;

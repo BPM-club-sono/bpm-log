@@ -13,6 +13,7 @@ import type {
   EquipmentDetail,
   EquipmentListItem,
   Fournisseur,
+  Modele,
   InventaireEntry,
   PathSegment,
   StatutEquipment,
@@ -26,6 +27,7 @@ import { Icon } from "@/shared/Icon";
 import { PhotoViewer } from "@/shared/PhotoViewer";
 import { StatusBadge } from "@/shared/StatusBadge";
 import { useToast } from "@/shared/Toast";
+import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
 
 const STATUTS: { value: StatutEquipment; label: string }[] = [
@@ -189,6 +191,7 @@ export function EquipmentDetailPage() {
           )}
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          {eq.modele_nom && <Info label="Modèle" value={eq.modele_nom} />}
           <Info label="Catégorie" value={eq.categorie_nom} />
           <Info
             label="Rangement"
@@ -866,6 +869,11 @@ function EditForm({
   const [nom, setNom] = useState(eq.nom);
   const [barcode, setBarcode] = useState(eq.barcode_uid);
   const [categorieId, setCategorieId] = useState<number | "">(eq.categorie_id ?? "");
+  const [modele, setModele] = useState<Modele | null>(
+    eq.modele_id && eq.modele_nom
+      ? { id: eq.modele_id, nom: eq.modele_nom, marque: null, categorie_id: eq.categorie_id }
+      : null,
+  );
   const [emplacementId, setEmplacementId] = useState<number | "">(
     eq.emplacement_id ?? "",
   );
@@ -1002,10 +1010,12 @@ function EditForm({
       const body: Record<string, unknown> = {
         nom,
         barcode_uid: barcode,
-        categorie_id: categorieId === "" ? null : categorieId,
         statut_actuel: statut,
         externe,
       };
+      // Avec un modèle, la catégorie suit la sienne : on n'envoie que le modèle.
+      if (modele) body.modele_id = modele.id;
+      else body.categorie_id = categorieId === "" ? null : categorieId;
       // Rangement : emplacement fixe OU contenant (exclusifs côté serveur).
       if (rangementMode === "contenant" && contenantId !== "") {
         body.contenant_id = contenantId;
@@ -1091,9 +1101,16 @@ function EditForm({
           prefixe={decomposer(eq.barcode_uid)?.prefixe ?? PREFIXE_INTERNE}
         />
       </Field>
+      {eq.type === "standard" && (
+        <Field label="Modèle">
+          <ModeleField value={modele} onChange={setModele} categories={categories} />
+        </Field>
+      )}
       <Field label="Catégorie">
         <select
-          value={categorieId}
+          // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
+          value={modele ? (modele.categorie_id ?? "") : categorieId}
+          disabled={!!modele}
           onChange={(e) =>
             setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
           }
