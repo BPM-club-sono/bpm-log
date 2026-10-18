@@ -20,6 +20,7 @@ from app.routers import (
     modeles,
     notifications,
     prestations,
+    referentiel,
     sync,
     tickets,
 )
@@ -61,6 +62,7 @@ app.include_router(membres.router, prefix="/api")
 app.include_router(modeles.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(prestations.router, prefix="/api")
+app.include_router(referentiel.router, prefix="/api")
 app.include_router(sync.router, prefix="/api")
 app.include_router(tickets.router, prefix="/api")
 
