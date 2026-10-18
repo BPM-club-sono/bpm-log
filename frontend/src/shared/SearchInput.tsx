@@ -5,21 +5,41 @@ interface SearchInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> {
   value: string;
   onChange: (value: string) => void;
+  /** Icône de gauche (loupe par défaut). */
+  icon?: string;
+  /** Rend l'icône cliquable (ex. bascule de mode de recherche). */
+  onIconClick?: () => void;
+  iconLabel?: string;
 }
 
 /** Champ de recherche de l'app : loupe à gauche, même gabarit partout. */
 export function SearchInput({
   value,
   onChange,
+  icon = "search",
+  onIconClick,
+  iconLabel,
   className = "",
   ...rest
 }: SearchInputProps) {
   return (
     <div className={`relative ${className}`}>
-      <Icon
-        name="search"
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
-      />
+      {onIconClick ? (
+        <button
+          type="button"
+          onClick={onIconClick}
+          aria-label={iconLabel}
+          title={iconLabel}
+          className="absolute left-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-fg hover:bg-bg-elev"
+        >
+          <Icon name={icon} className="text-xl" />
+        </button>
+      ) : (
+        <Icon
+          name={icon}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-fg-muted"
+        />
+      )}
       <input
         type="search"
         value={value}

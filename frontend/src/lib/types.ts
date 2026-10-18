@@ -41,6 +41,20 @@ export interface Modele {
   nb_unites?: number;
 }
 
+/** Ligne du mode « par modèle » d'une prestation (une par modèle × loueur). */
+export interface ModeleDispo {
+  modele_id: number;
+  nom: string;
+  marque: string | null;
+  /** Null = matériel BPM. */
+  fournisseur_id: number | null;
+  fournisseur_nom: string | null;
+  dispo: number;
+  total: number;
+  alloues: number;
+  retirable: boolean;
+}
+
 export interface Emplacement {
   id: number;
   nom: string;
@@ -84,6 +98,10 @@ export interface Allocation {
   fournisseur_id?: number | null;
   fournisseur_nom?: string | null;
   equipment_contenant_id?: number | null;
+  /** Statut actuel de l'unité (signale une unité tombée en panne depuis). */
+  equipment_statut?: StatutEquipment | null;
+  /** Réponse d'ajout d'un flight : items du contenu non alloués (HS, pris). */
+  contenu_ignore?: number;
 }
 
 export interface PrestationDetail extends Prestation {
@@ -172,6 +190,8 @@ export interface EquipmentListItem {
   archive?: boolean;
   vrac: VracPreview | null;
   conso: ConsoPreview | null;
+  /** Avec `?pour_presta=` : prestation aux dates chevauchantes qui tient l'unité. */
+  occupe_par?: { presta_id: number; presta_nom: string } | null;
 }
 
 export interface VracDetailInfo {

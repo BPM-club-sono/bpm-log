@@ -8,6 +8,7 @@ import type {
   ClotureDecision,
   EquipmentListItem,
   PrestationDetail,
+  StatutEquipment,
   StatutPrestation,
 } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
@@ -17,6 +18,12 @@ import { EquipmentSearch } from "@/shared/EquipmentSearch";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
+import { ModeleSearch } from "./ModeleSearch";
+import {
+  ecrireModeRecherche,
+  lireModeRecherche,
+  type ModeRecherche,
+} from "./modeRecherche";
 import { buildAllocTree, fournisseurChips } from "./prestationTree";
 import { formatPeriode } from "@/lib/prestationDate";
 import { useToast } from "@/shared/Toast";
@@ -24,6 +31,14 @@ import { STATUT_LABEL, STATUT_STYLE, derivePrestaStatut } from "./statut";
 import { rapportCloture, type LigneRapport } from "./rapportCloture";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
+
+/** Statuts qui interdisent l'allocation (miroir de services/disponibilite.py). */
+const STATUT_BLOQUANT: Partial<Record<StatutEquipment, string>> = {
+  En_Panne: "HS",
+  En_Reparation: "HS",
+  Perdu: "Perdu",
+  Reforme: "Réformé",
+};
 
 function clamp(v: number, low: number, high: number): number {
   return Math.max(low, Math.min(v, high));
@@ -374,21 +389,38 @@ function InfoView({
   const [reopening, setReopening] = useState(false);
   // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
   const [filter, setFilter] = useState<string>("tous");
+  const [modeRecherche, setModeRecherche] = useState<ModeRecherche>(lireModeRecherche);
   const allocatedIds = useMemo(
     () => new Set(allocs.map((a) => a.equipment_id)),
     [allocs],
   );
 
+  function basculerRecherche() {
+    const next = modeRecherche === "modele" ? "nom" : "modele";
+    ecrireModeRecherche(next);
+    setModeRecherche(next);
+    setSearch("");
+  }
+
   async function addEquipment(eq: EquipmentListItem) {
     setAdding(true);
     try {
-      await api(`/prestations/${detail.id}/allocations`, {
+      const res = await api<Allocation>(`/prestations/${detail.id}/allocations`, {
         method: "POST",
         // Un contenant entraîne son contenu (les items suivent la caisse).
         body: { equipment_id: eq.id, quantite: 1, inclure_contenu: !!eq.est_contenant },
       });
       setSearch("");
       await onReload();
+      const ignores = res.contenu_ignore ?? 0;
+      if (ignores > 0) {
+        toast(
+          `${ignores} objet${ignores > 1 ? "s" : ""} du flight non ajouté${ignores > 1 ? "s" : ""} (HS ou déjà pris).`,
+          "info",
+        );
+      }
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Ajout impossible.", "error");
     } finally {
       setAdding(false);
     }
@@ -448,12 +480,24 @@ function InfoView({
       Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné {a.quantite_retournee}
     </p>
   );
-  const locationBadge = (a: Allocation) =>
-    a.equipment_externe ? (
-      <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-        Location
-      </span>
-    ) : null;
+  // Unité tombée en panne (ou perdue) depuis son allocation : à remplacer à la main.
+  const estHs = (a: Allocation) =>
+    a.statut !== "Retourne" && !!a.equipment_statut && !!STATUT_BLOQUANT[a.equipment_statut];
+  const nbHs = allocs.filter(estHs).length;
+  const badges = (a: Allocation) => (
+    <>
+      {estHs(a) && (
+        <span className="flex-none rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-semibold text-danger">
+          {STATUT_BLOQUANT[a.equipment_statut!]}
+        </span>
+      )}
+      {a.equipment_externe && (
+        <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+          Location
+        </span>
+      )}
+    </>
+  );
   const deleteBtn = (a: Allocation) =>
     editable && a.id > 0 ? (
       <button
@@ -487,20 +531,49 @@ function InfoView({
           )}
         </div>
       )}
+      {nbHs > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          <Icon name="warning" className="text-lg" />
+          {nbHs} unité{nbHs > 1 ? "s" : ""} HS dans la prestation : à remplacer.
+        </div>
+      )}
       {editable && (
         <div className="space-y-2">
-          <EquipmentSearch
-            value={search}
-            onChange={setSearch}
-            onSelect={addEquipment}
-            excludeIds={allocatedIds}
-            disabled={adding}
-            placeholder="Ajouter du matériel…"
-            renderMeta={(e) => (e.est_contenant ? "contenu inclus" : null)}
-            renderTrailing={() => (
-              <Icon name="add_circle" className="text-xl text-fg-muted" />
-            )}
-          />
+          {modeRecherche === "modele" ? (
+            <ModeleSearch
+              prestaId={detail.id}
+              value={search}
+              onChange={setSearch}
+              version={allocs.map((a) => a.id).join(",")}
+              onChanged={onReload}
+              onToggleMode={basculerRecherche}
+            />
+          ) : (
+            <EquipmentSearch
+              value={search}
+              onChange={setSearch}
+              onSelect={addEquipment}
+              excludeIds={allocatedIds}
+              disabled={adding}
+              placeholder="Nom ou code-barres…"
+              extraQuery={`pour_presta=${detail.id}`}
+              indisponible={(e) =>
+                STATUT_BLOQUANT[e.statut_actuel] ??
+                (e.occupe_par ? `Pris · ${e.occupe_par.presta_nom}` : null)
+              }
+              renderMeta={(e) =>
+                [e.modele_nom, e.est_contenant ? "contenu inclus" : null]
+                  .filter(Boolean)
+                  .join(" · ") || null
+              }
+              renderTrailing={() => (
+                <Icon name="add_circle" className="text-xl text-fg-muted" />
+              )}
+              icon="search"
+              onIconClick={basculerRecherche}
+              iconLabel="Passer à la recherche par modèle"
+            />
+          )}
 
           <button
             type="button"
@@ -557,7 +630,7 @@ function InfoView({
                     </p>
                     {metaLine(a)}
                   </div>
-                  {locationBadge(a)}
+                  {badges(a)}
                   {deleteBtn(a)}
                 </li>
               );
@@ -572,7 +645,7 @@ function InfoView({
                     <span className="truncate">
                       {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
                     </span>
-                    {locationBadge(a)}
+                    {badges(a)}
                   </p>
                   {deleteBtn(a)}
                 </div>
@@ -602,7 +675,7 @@ function InfoView({
                             <span className="truncate">
                               {c.equipment_nom ?? c.equipment_barcode ?? `#${c.equipment_id}`}
                             </span>
-                            {locationBadge(c)}
+                            {badges(c)}
                           </p>
                           {metaLine(c)}
                         </div>
