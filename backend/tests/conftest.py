@@ -7,6 +7,7 @@ bord (création du dossier photos dans /var, démarrage du scheduler, etc.).
 import os
 import tempfile
 import uuid
+from contextlib import contextmanager
 
 import pytest
 
@@ -26,6 +27,8 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.config import settings  # noqa: E402
+from app.database import get_db  # noqa: E402
+from app.deps import get_current_user  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Equipment, Membre  # noqa: E402
 from app.models.enums import RoleMembre  # noqa: E402
@@ -108,3 +111,40 @@ def routes_montees():
         prefixe = incl.include_context.prefix
         for route in routeur.routes:
             yield prefixe + route.path, route.methods or set(), route.endpoint
+
+
+@contextmanager
+def surcharger_app(session, membre):
+    """Branche l'app sur `session` et authentifie `membre`, sans jeton ni commit réel.
+
+    Ne retire à la sortie que les deux surcharges posées ici.
+    """
+
+    async def _get_db():
+        yield session
+
+    async def _get_current_user():
+        return membre
+
+    app.dependency_overrides[get_db] = _get_db
+    app.dependency_overrides[get_current_user] = _get_current_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+async def staff_import(db_session, membre_id) -> Membre:
+    """Le membre Staff jetable de `membre_id`, utilisé par les tests d'import."""
+    return await db_session.get(Membre, membre_id)
+
+
+@pytest.fixture
+async def api_import(db_session, staff_import):
+    """Client HTTP (base `/api`) branché sur `db_session`, connecté en Staff."""
+    with surcharger_app(db_session, staff_import):
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test/api") as c:
+            yield c
