@@ -23,6 +23,7 @@ from app.models import (
     InventoryLock,
     LogScan,
     Membre,
+    Modele,
     TicketReparation,
 )
 from app.models.enums import StatutEquipment, TypeActionScan
@@ -114,6 +115,27 @@ async def _resolve_fournisseur(
         await db.flush()
         return f.id
     return None
+
+
+async def _appliquer_modele(db: DbSession, eq: Equipment, modele_id: int) -> None:
+    """Rattache `eq` à un modèle : la catégorie de l'item suit celle du modèle.
+
+    404 si le modèle n'existe pas, 400 sur un vrac/consommable (des quantités,
+    pas des unités : le regroupement par modèle n'a pas de sens).
+    """
+    modele = await db.get(Modele, modele_id)
+    if modele is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modèle introuvable.")
+    if (
+        await db.get(EquipmentVrac, eq.id) is not None
+        or await db.get(EquipmentConsommable, eq.id) is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Un vrac ou un consommable n'a pas de modèle.",
+        )
+    eq.modele_id = modele.id
+    eq.categorie_id = modele.categorie_id
 
 
 # --------------------------------------------------------------------------- #
@@ -299,6 +321,7 @@ async def _build_contenu(db: DbSession, container_id: int) -> list[ContenuChild]
 
 async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> EquipmentDetail:
     categorie = await db.get(Categorie, eq.categorie_id) if eq.categorie_id else None
+    modele = await db.get(Modele, eq.modele_id) if eq.modele_id else None
     emplacement = await db.get(Emplacement, eq.emplacement_id) if eq.emplacement_id else None
     contenant = await db.get(Equipment, eq.contenant_id) if eq.contenant_id else None
     chemin = await _compute_chemin(db, eq)
@@ -411,6 +434,8 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         nom=eq.nom,
         categorie_id=eq.categorie_id,
         categorie_nom=categorie.nom if categorie else None,
+        modele_id=eq.modele_id,
+        modele_nom=modele.nom if modele else None,
         emplacement_id=eq.emplacement_id,
         emplacement_nom=emplacement.nom if emplacement else None,
         contenant_id=eq.contenant_id,
@@ -439,8 +464,11 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
 async def list_equipments(
     user: CurrentUser,
     db: DbSession,
-    q: str | None = Query(default=None, description="Recherche sur le nom ou le code-barres"),
+    q: str | None = Query(
+        default=None, description="Recherche sur le nom, le code-barres ou le modèle"
+    ),
     categorie_id: int | None = Query(default=None),
+    modele_id: int | None = Query(default=None),
     emplacement_id: int | None = Query(default=None),
     statut: StatutEquipment | None = Query(default=None),
     type: EquipmentType | None = Query(default=None, description="standard|vrac|consommable"),
@@ -456,12 +484,16 @@ async def list_equipments(
         description="false (défaut) = matériel actif ; true = matériel archivé",
     ),
 ) -> list[EquipmentListItem]:
-    stmt = select(Equipment)
+    stmt = select(Equipment).outerjoin(Modele, Modele.id == Equipment.modele_id)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(Equipment.nom.ilike(like) | Equipment.barcode_uid.ilike(like))
+        stmt = stmt.where(
+            Equipment.nom.ilike(like) | Equipment.barcode_uid.ilike(like) | Modele.nom.ilike(like)
+        )
     if categorie_id is not None:
         stmt = stmt.where(Equipment.categorie_id == categorie_id)
+    if modele_id is not None:
+        stmt = stmt.where(Equipment.modele_id == modele_id)
     if emplacement_id is not None:
         stmt = stmt.where(Equipment.emplacement_id == emplacement_id)
     if statut is not None:
@@ -477,6 +509,7 @@ async def list_equipments(
 
     # Maps en masse (parc de petite taille).
     cat_map = {c.id: c.nom for c in (await db.scalars(select(Categorie))).all()}
+    modele_map = {m.id: m.nom for m in (await db.scalars(select(Modele))).all()}
     emp_map = {e.id: e.nom for e in (await db.scalars(select(Emplacement))).all()}
     # Nom de chaque équipement (pour contenant_nom).
     eq_rows = (await db.execute(select(Equipment.id, Equipment.nom))).all()
@@ -546,6 +579,8 @@ async def list_equipments(
                 nom=eq.nom,
                 categorie_id=eq.categorie_id,
                 categorie_nom=cat_map.get(eq.categorie_id) if eq.categorie_id else None,
+                modele_id=eq.modele_id,
+                modele_nom=modele_map.get(eq.modele_id) if eq.modele_id else None,
                 emplacement_id=eq.emplacement_id,
                 emplacement_nom=emp_map.get(eq.emplacement_id) if eq.emplacement_id else None,
                 contenant_id=eq.contenant_id,
@@ -686,6 +721,18 @@ async def create_equipment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Seul un équipement standard peut être un flight.",
         )
+    # Un item unitaire porte son modèle dès la création (ajout en nombre aux
+    # prestations). Un flight est souvent unique, une location n'est pas à nous.
+    if (
+        payload.modele_id is None
+        and payload.type == "standard"
+        and not payload.est_contenant
+        and not payload.externe
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le modèle est obligatoire pour un équipement unitaire.",
+        )
     # Règle de frontière : ranger dans un contenant exclut l'emplacement fixe.
     if payload.contenant_id is not None:
         await _ensure_flight(db, payload.contenant_id)
@@ -721,6 +768,14 @@ async def create_equipment(
     await db.flush()
     if payload.barcode_uid:
         await _assign_barcode(db, eq, payload.barcode_uid)
+
+    if payload.modele_id is not None:
+        if payload.type != "standard":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Un vrac ou un consommable n'a pas de modèle.",
+            )
+        await _appliquer_modele(db, eq, payload.modele_id)
 
     if payload.type == "vrac":
         db.add(
@@ -769,7 +824,15 @@ async def update_equipment(
 
     if payload.nom is not None:
         eq.nom = payload.nom
-    if payload.categorie_id is not None:
+    if payload.modele_id is not None:
+        await _appliquer_modele(db, eq, payload.modele_id)
+    elif payload.categorie_id is not None and payload.categorie_id != eq.categorie_id:
+        # Avec un modèle, la catégorie est celle du modèle (on la change là-bas).
+        if eq.modele_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La catégorie suit le modèle : change-la sur le modèle.",
+            )
         eq.categorie_id = payload.categorie_id
     # Localisation : emplacement fixe et contenant sont exclusifs (règle de frontière).
     # Poser l'un efface l'autre ; si les deux sont fournis, le contenant l'emporte.

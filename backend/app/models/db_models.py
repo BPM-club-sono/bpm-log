@@ -92,6 +92,20 @@ class Categorie(Base):
     description: Mapped[str | None] = mapped_column(Text)
 
 
+class Modele(Base):
+    """Modèle commercial d'un équipement (ex. « MH-100 ») : regroupe les unités
+    identiques pour les ajouter en nombre à une prestation. Fait foi pour la
+    catégorie de ses unités."""
+
+    __tablename__ = "modeles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Unicité exacte, sans normalisation : on veut des noms de modèle propres.
+    nom: Mapped[str] = mapped_column(String(120), unique=True)
+    marque: Mapped[str | None] = mapped_column(String(120))
+    categorie_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+
+
 class Emplacement(Base):
     __tablename__ = "emplacements"
 
@@ -121,6 +135,9 @@ class Equipment(Base):
     barcode_uid: Mapped[str] = mapped_column(String(10), unique=True, index=True)
     nom: Mapped[str] = mapped_column(String(200))
     categorie_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    # Modèle (MH-100…) : obligatoire à la création d'un item unitaire, hors flight
+    # et location. Quand il est renseigné, la catégorie de l'item suit la sienne.
+    modele_id: Mapped[int | None] = mapped_column(ForeignKey("modeles.id"), index=True)
     emplacement_id: Mapped[int | None] = mapped_column(ForeignKey("emplacements.id"))
     # Contenant direct (flight case…) : un équipement rangé DANS un autre équipement.
     # Exclusif avec emplacement_id (cf. règle de frontière, PLAN). NULL = pas dans une caisse.

@@ -102,6 +102,15 @@ Table categories {
   description text
 }
 
+// Modèle commercial (ex: 'MH-100', 'H30V-L250') : regroupe les unités identiques
+// pour les ajouter en nombre à une prestation (stepper −/+ en mode « par modèle »)
+Table modeles {
+  id integer [primary key, increment]
+  nom varchar [unique, not null, note: 'Unicité exacte, sans normalisation : on veut des noms propres']
+  marque varchar // ex: 'Robe', 'Yamaha'
+  categorie_id integer [note: 'Fait foi pour la catégorie des unités : la changer la répercute sur toutes']
+}
+
 Table emplacements {
   id integer [primary key, increment]
   nom varchar // ex: 'Étagère A', 'Bac Câbles XLR', 'Dépôt Principal'
@@ -113,7 +122,8 @@ Table equipments {
   id integer [primary key, increment]
   barcode_uid varchar(10) [unique, not null, note: 'Contenu du QR Code, format PPP-NNNNNN (CHECK ^[A-Z]{3}-[0-9]{6}$) : trigramme du propriétaire puis id sur 6 chiffres. 10 caractères majuscules — la limite exacte d\'un QR version 1 en correction H, qui est ce qui rend l\'étiquette résistante à l\'usure sans grossir. Stable et réimprimable à l\'identique.']
   nom varchar // ex: 'Lyre Beam 7R', 'Ampli Crown XTi'
-  categorie_id integer
+  categorie_id integer [note: 'Recopiée du modèle quand modele_id est renseigné']
+  modele_id integer [note: 'Obligatoire à la création d\'un item unitaire (hors vrac, consommable, flight et location). Nullable pour l\'existant']
   emplacement_id integer
   contenant_id integer [note: 'Self-FK — rangé DANS un autre équipement (flight). Exclusif avec emplacement_id']
   est_contenant boolean [default: false, note: 'Flight/contenant : seul un équipement marqué peut recevoir du contenu']
@@ -252,6 +262,8 @@ Table allocations_presta {
 // --- RELATIONS (LIENS ENTRE LES TABLES) ---
 
 Ref: equipments.categorie_id > categories.id
+Ref: equipments.modele_id > modeles.id
+Ref: modeles.categorie_id > categories.id
 Ref: equipments.emplacement_id > emplacements.id
 Ref: equipments.contenant_id > equipments.id
 Ref: equipments.created_by_membre_id > membres.id
