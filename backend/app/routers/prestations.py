@@ -57,9 +57,12 @@ router = APIRouter(prefix="/prestations", tags=["prestations"])
 
 
 def _allocation_read(
-    alloc: AllocationPresta, loc: tuple[int, str] | None = None
+    alloc: AllocationPresta,
+    loc: tuple[int, str] | None = None,
+    modele: Modele | None = None,
 ) -> AllocationRead:
-    """`loc` = (fournisseur_id, fournisseur_nom) si l'équipement est loué, sinon None."""
+    """`loc` = (fournisseur_id, fournisseur_nom) si l'équipement est loué, sinon None ;
+    `modele` = le modèle de l'équipement, pour regrouper les unités à l'affichage."""
     eq = alloc.equipment if "equipment" in alloc.__dict__ else None
     return AllocationRead(
         id=alloc.id,
@@ -77,6 +80,9 @@ def _allocation_read(
         fournisseur_nom=loc[1] if loc is not None else None,
         equipment_contenant_id=eq.contenant_id if eq is not None else None,
         equipment_statut=eq.statut_actuel if eq is not None else None,
+        equipment_modele_id=modele.id if modele is not None else None,
+        equipment_modele_nom=modele.nom if modele is not None else None,
+        equipment_modele_marque=modele.marque if modele is not None else None,
     )
 
 
@@ -214,11 +220,21 @@ async def _detail_response(db: DbSession, presta: Prestation) -> PrestationDetai
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
+    rows = list(allocs.all())
     loc_map = await _location_map(db)
+    modele_ids = {a.equipment.modele_id for a in rows if a.equipment.modele_id}
+    modele_map = (
+        {m.id: m for m in await db.scalars(select(Modele).where(Modele.id.in_(modele_ids)))}
+        if modele_ids
+        else {}
+    )
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
         allocations=[
-            _allocation_read(a, loc_map.get(a.equipment_id)) for a in allocs.all()
+            _allocation_read(
+                a, loc_map.get(a.equipment_id), modele_map.get(a.equipment.modele_id)
+            )
+            for a in rows
         ],
     )
 

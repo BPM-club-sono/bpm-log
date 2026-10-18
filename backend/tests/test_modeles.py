@@ -26,6 +26,7 @@ from app.routers.modeles import delete_modele, update_modele
 from app.routers.prestations import (
     add_allocation,
     ajouter_unite_modele,
+    get_prestation,
     list_modeles_presta,
     retirer_unite_modele,
     update_prestation,
@@ -258,3 +259,22 @@ async def test_categorie_suit_le_modele(db_session, staff):
     with pytest.raises(HTTPException) as exc_del:
         await delete_modele(m.id, staff, s)
     assert exc_del.value.status_code == 409
+
+
+async def test_detail_presta_expose_le_modele_des_unites(db_session, staff):
+    s = db_session
+    m = await _modele(s, marque="Robe")
+    avec = await make_equipment(s, "MH 1", modele_id=m.id)
+    sans = await make_equipment(s, "Console")
+    p = await _presta(s)
+    for eq in (avec, sans):
+        await add_allocation(p.id, AllocationCreate(equipment_id=eq.id), s, staff)
+
+    detail = await get_prestation(p.id, staff, s)
+    par_eq = {a.equipment_id: a for a in detail.allocations}
+    assert (
+        par_eq[avec.id].equipment_modele_id,
+        par_eq[avec.id].equipment_modele_nom,
+        par_eq[avec.id].equipment_modele_marque,
+    ) == (m.id, m.nom, "Robe")
+    assert par_eq[sans.id].equipment_modele_id is None

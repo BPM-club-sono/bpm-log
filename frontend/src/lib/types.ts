@@ -107,6 +107,10 @@ export interface Allocation {
   equipment_contenant_id?: number | null;
   /** Statut actuel de l'unité (signale une unité tombée en panne depuis). */
   equipment_statut?: StatutEquipment | null;
+  /** Modèle de l'unité (regroupement par modèle dans la vue détail). */
+  equipment_modele_id?: number | null;
+  equipment_modele_nom?: string | null;
+  equipment_modele_marque?: string | null;
   /** Réponse d'ajout d'un flight : items du contenu non alloués (HS, pris). */
   contenu_ignore?: number;
 }

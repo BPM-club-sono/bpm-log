@@ -109,6 +109,10 @@ class AllocationRead(BaseModel):
     # Statut actuel de l'unité : une unité tombée en panne après son allocation
     # est signalée sur sa ligne (à remplacer à la main).
     equipment_statut: StatutEquipment | None = None
+    # Modèle de l'unité : la vue détail regroupe les unités d'un même modèle.
+    equipment_modele_id: int | None = None
+    equipment_modele_nom: str | None = None
+    equipment_modele_marque: str | None = None
     # Réponse d'ajout d'un flight seulement : nombre d'items du contenu non alloués
     # car hors service ou déjà pris par une autre prestation.
     contenu_ignore: int = 0

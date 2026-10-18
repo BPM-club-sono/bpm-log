@@ -107,3 +107,33 @@ test("ajout par modèle désactivé hors ligne", async ({ page, context, api }) 
   await context.setOffline(false);
   await expect(champ).toBeEnabled();
 });
+
+test("détail : unités regroupées par modèle, celles d'un flight étiquetées", async ({
+  page,
+  api,
+}) => {
+  const modele = await creerModele(api, "MH-100");
+  const a = await creerEquipement(api, "MH", { modele_id: modele.id });
+  const b = await creerEquipement(api, "MH", { modele_id: modele.id });
+  const flight = await creerEquipement(api, "Flight MH", { est_contenant: true });
+  const c = await creerEquipement(api, "MH", { modele_id: modele.id, contenant_id: flight.id });
+  const cable = await creerEquipement(api, "Câble DMX", { contenant_id: flight.id });
+  const presta = await creerPresta(api);
+  for (const eq of [a, b]) {
+    await api.post(`prestations/${presta.id}/allocations`, { data: { equipment_id: eq.id } });
+  }
+  await api.post(`prestations/${presta.id}/allocations`, {
+    data: { equipment_id: flight.id, inclure_contenu: true },
+  });
+
+  await page.goto(`/prestations/${presta.id}`);
+  const groupe = page.getByTestId(`groupe-${modele.nom}`);
+  await expect(groupe).toContainText("3 unités");
+  for (const eq of [a, b, c]) await expect(groupe).toContainText(eq.nom);
+  // L'unité rangée dans le flight porte son flight, et n'est listée qu'une fois.
+  await expect(groupe.getByText(flight.nom)).toBeVisible();
+  await expect(page.getByText(c.nom, { exact: true })).toHaveCount(1);
+  // Le flight garde le reste de son contenu et renvoie au groupe.
+  await expect(page.getByText(cable.nom, { exact: true })).toBeVisible();
+  await expect(page.getByText(`+ 1 ${modele.nom}, voir plus haut`)).toBeVisible();
+});

@@ -71,6 +71,49 @@ export function buildAllocTree(allocations: Allocation[]): AllocTree {
   return { topLevel, descendantsOf };
 }
 
+export interface GroupeModele {
+  modeleId: number;
+  nom: string;
+  marque: string | null;
+  /** Toutes les unités du modèle, rangées dans un flight comprises. */
+  unites: Allocation[];
+}
+
+/**
+ * Regroupe par modèle les unités allouées dès qu'un modèle en compte au moins 2.
+ * Chaque unité n'apparaît qu'une fois : sous son modèle, y compris si elle est
+ * dans un flight (l'écran l'étiquette alors avec son flight). Les locations sont
+ * mêlées aux unités BPM du même modèle. Groupes triés par nom de modèle, unités
+ * par nom (« MH 2 » avant « MH 10 »).
+ */
+export function grouperParModele(allocations: Allocation[]): GroupeModele[] {
+  const byModele = new Map<number, GroupeModele>();
+  for (const a of allocations) {
+    if (a.equipment_modele_id == null) continue;
+    let g = byModele.get(a.equipment_modele_id);
+    if (!g) {
+      g = {
+        modeleId: a.equipment_modele_id,
+        nom: a.equipment_modele_nom ?? "Modèle",
+        marque: a.equipment_modele_marque ?? null,
+        unites: [],
+      };
+      byModele.set(a.equipment_modele_id, g);
+    }
+    g.unites.push(a);
+  }
+  const nomDe = (a: Allocation) => a.equipment_nom ?? a.equipment_barcode ?? "";
+  return [...byModele.values()]
+    .filter((g) => g.unites.length >= 2)
+    .map((g) => ({
+      ...g,
+      unites: [...g.unites].sort((x, y) =>
+        nomDe(x).localeCompare(nomDe(y), "fr", { numeric: true }),
+      ),
+    }))
+    .sort((x, y) => x.nom.localeCompare(y.nom, "fr", { numeric: true }));
+}
+
 export interface FournisseurChip {
   id: number;
   nom: string;

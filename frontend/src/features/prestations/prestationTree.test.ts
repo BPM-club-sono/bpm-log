@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Allocation } from "@/lib/types";
-import { buildAllocTree, current, fournisseurChips, target } from "./prestationTree";
+import {
+  buildAllocTree,
+  current,
+  fournisseurChips,
+  grouperParModele,
+  target,
+} from "./prestationTree";
 
 function alloc(
   id: number,
@@ -116,5 +122,42 @@ describe("current / target", () => {
   it("retour : courant = quantite_retournee, objectif = quantite_sortie", () => {
     expect(current(a, "retour")).toBe(1);
     expect(target(a, "retour")).toBe(2);
+  });
+});
+
+describe("grouperParModele", () => {
+  const mh = { equipment_modele_id: 7, equipment_modele_nom: "MH-100", equipment_modele_marque: "Robe" };
+
+  it("regroupe à partir de 2 unités d'un même modèle, unités triées par nom", () => {
+    const allocs = [
+      alloc(1, 10, { ...mh, equipment_nom: "MH 10" }),
+      alloc(2, 20, { ...mh, equipment_nom: "MH 2" }),
+      alloc(3, 30, { equipment_modele_id: 8, equipment_modele_nom: "H30V" }),
+      alloc(4, 40),
+    ];
+    const groupes = grouperParModele(allocs);
+    expect(groupes).toHaveLength(1);
+    expect(groupes[0]).toMatchObject({ modeleId: 7, nom: "MH-100", marque: "Robe" });
+    expect(groupes[0].unites.map((a) => a.equipment_nom)).toEqual(["MH 2", "MH 10"]);
+  });
+
+  it("compte aussi les unités rangées dans un flight et les locations", () => {
+    const allocs = [
+      alloc(1, 10, { ...mh }),
+      alloc(2, 99, { equipment_nom: "Flight MH" }),
+      alloc(3, 30, { ...mh, equipment_contenant_id: 99 }),
+      alloc(4, 40, { ...mh, equipment_externe: true, fournisseur_id: 5 }),
+    ];
+    expect(ids(grouperParModele(allocs)[0].unites)).toEqual([1, 3, 4]);
+  });
+
+  it("trie les groupes par nom de modèle", () => {
+    const allocs = [
+      alloc(1, 10, { equipment_modele_id: 2, equipment_modele_nom: "Spot" }),
+      alloc(2, 20, { equipment_modele_id: 2, equipment_modele_nom: "Spot" }),
+      alloc(3, 30, { ...mh }),
+      alloc(4, 40, { ...mh }),
+    ];
+    expect(grouperParModele(allocs).map((g) => g.nom)).toEqual(["MH-100", "Spot"]);
   });
 });
