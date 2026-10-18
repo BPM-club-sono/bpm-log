@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.enums import (
     DecisionCloture,
     StatutAllocation,
+    StatutEquipment,
     StatutPrestation,
     TypePrestation,
 )
@@ -94,6 +95,35 @@ class AllocationRead(BaseModel):
     fournisseur_nom: str | None = None
     # Contenant de l'équipement (pour grouper la checklist sous son flight).
     equipment_contenant_id: int | None = None
+    # Statut actuel de l'unité : une unité tombée en panne après son allocation
+    # est signalée sur sa ligne (à remplacer à la main).
+    equipment_statut: StatutEquipment | None = None
+    # Réponse d'ajout d'un flight seulement : nombre d'items du contenu non alloués
+    # car hors service ou déjà pris par une autre prestation.
+    contenu_ignore: int = 0
+
+
+class ModeleDispo(BaseModel):
+    """Ligne du mode « par modèle » : un modèle, chez BPM ou chez un loueur."""
+
+    modele_id: int
+    nom: str
+    marque: str | None
+    # Null = matériel BPM ; sinon une ligne par prestataire de location.
+    fournisseur_id: int | None = None
+    fournisseur_nom: str | None = None
+    # Unités ajoutables maintenant (en état, libres sur la période, pas déjà là).
+    dispo: int
+    # Unités du parc (hors archivées, perdues, réformées).
+    total: int
+    # Unités de ce modèle déjà allouées ici (y compris dans un flight alloué).
+    alloues: int
+    # Une allocation peut être retirée par « − » (planifiée, hors contenu de flight).
+    retirable: bool
+
+
+class ModeleStepIn(BaseModel):
+    fournisseur_id: int | None = None
 
 
 class PrestationDetail(PrestationRead):

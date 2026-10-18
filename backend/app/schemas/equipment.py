@@ -151,6 +151,11 @@ class ConsoPreview(BaseModel):
     en_alerte: bool
 
 
+class OccupationPresta(BaseModel):
+    presta_id: int
+    presta_nom: str
+
+
 class EquipmentListItem(BaseModel):
     """Élément de la liste Parc : infos + nom catégorie/emplacement + preview par type."""
 
@@ -173,6 +178,9 @@ class EquipmentListItem(BaseModel):
     archive: bool = False
     vrac: VracPreview | None = None
     conso: ConsoPreview | None = None
+    # Renseigné seulement avec `?pour_presta=` : prestation aux dates qui se
+    # chevauchent qui tient déjà cette unité (elle n'est alors pas allouable).
+    occupe_par: OccupationPresta | None = None
 
 
 # --------------------------------------------------------------------------- #

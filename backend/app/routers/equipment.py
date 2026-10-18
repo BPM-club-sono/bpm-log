@@ -24,6 +24,7 @@ from app.models import (
     LogScan,
     Membre,
     Modele,
+    Prestation,
     TicketReparation,
 )
 from app.models.enums import StatutEquipment, TypeActionScan
@@ -41,6 +42,7 @@ from app.schemas.equipment import (
     EquipmentType,
     EquipmentUpdate,
     LocationInfo,
+    OccupationPresta,
     PathSegment,
     PhotoUploadResult,
     ScanHistoryItem,
@@ -51,7 +53,7 @@ from app.schemas.equipment import (
 )
 from app.schemas.inventory import InventaireEntry, VracLock
 from app.security.rbac import RequireAdmin, RequireStaff
-from app.services import barcode, contenants, references
+from app.services import barcode, contenants, disponibilite, references
 
 router = APIRouter(tags=["catalogue"])
 
@@ -483,6 +485,11 @@ async def list_equipments(
         default=False,
         description="false (défaut) = matériel actif ; true = matériel archivé",
     ),
+    pour_presta: int | None = Query(
+        default=None,
+        description="Renseigne `occupe_par` : prestation qui tient déjà l'unité sur "
+        "une période qui chevauche celle-ci",
+    ),
 ) -> list[EquipmentListItem]:
     stmt = select(Equipment).outerjoin(Modele, Modele.id == Equipment.modele_id)
     if q:
@@ -534,6 +541,15 @@ async def list_equipments(
             )
         ).all()
     }
+
+    occupation_map: dict[int, tuple[int, str]] = {}
+    if pour_presta is not None:
+        presta = await db.get(Prestation, pour_presta)
+        if presta is not None:
+            unitaires = [
+                e.id for e in equipments if e.id not in vrac_map and e.id not in conso_map
+            ]
+            occupation_map = await disponibilite.occupations(db, presta, unitaires)
 
     now = datetime.now(UTC)
     items: list[EquipmentListItem] = []
@@ -593,6 +609,11 @@ async def list_equipments(
                 archive=eq.archive,
                 vrac=vrac_preview,
                 conso=conso_preview,
+                occupe_par=(
+                    OccupationPresta(presta_id=occ[0], presta_nom=occ[1])
+                    if (occ := occupation_map.get(eq.id))
+                    else None
+                ),
             )
         )
     return items
