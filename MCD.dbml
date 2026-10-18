@@ -115,8 +115,6 @@ Table categories {
   description text
 }
 
-// Modèle commercial (ex: 'MH-100', 'H30V-L250') : regroupe les unités identiques
-// pour les ajouter en nombre à une prestation (stepper −/+ en mode « par modèle »)
 Table sous_categories {
   id integer [primary key, increment]
   nom varchar [not null]
@@ -136,7 +134,7 @@ Table champs_specification {
   options jsonb [not null, default: '[]', note: 'list[str] — choix proposés quand type = choix']
   categorie_id integer [not null]
   sous_categorie_id integer [null, note: 'NULL = vaut pour toute la catégorie']
-  ordre integer [default: 0]
+  ordre integer [not null, default: 0]
 }
 
 // Valeur d'un champ pour un modèle OU pour un équipement sans modèle (XOR)
@@ -177,6 +175,8 @@ Table connectiques {
   Note: 'CHECK ck_connectiques_cible : (modele_id IS NULL) <> (equipment_id IS NULL)'
 }
 
+// Modèle commercial (ex: 'MH-100', 'H30V-L250') : regroupe les unités identiques
+// pour les ajouter en nombre à une prestation (stepper −/+ en mode « par modèle »)
 Table modeles {
   id integer [primary key, increment]
   nom varchar [unique, not null, note: 'Unicité exacte, sans normalisation : on veut des noms propres']
