@@ -31,6 +31,37 @@ export interface Categorie {
   description: string | null;
 }
 
+/** Modèle commercial (MH-100…) : regroupe les unités identiques. */
+export interface Modele {
+  id: number;
+  nom: string;
+  marque: string | null;
+  categorie_id: number | null;
+  categorie_nom?: string | null;
+  nb_unites?: number;
+}
+
+/** Réponse de la création en série (Parc ou prestation). */
+export interface SerieCreee {
+  ids: number[];
+  noms: string[];
+  modele_id: number | null;
+}
+
+/** Ligne du mode « par modèle » d'une prestation (une par modèle × loueur). */
+export interface ModeleDispo {
+  modele_id: number;
+  nom: string;
+  marque: string | null;
+  /** Null = matériel BPM. */
+  fournisseur_id: number | null;
+  fournisseur_nom: string | null;
+  dispo: number;
+  total: number;
+  alloues: number;
+  retirable: boolean;
+}
+
 export interface Emplacement {
   id: number;
   nom: string;
@@ -74,6 +105,14 @@ export interface Allocation {
   fournisseur_id?: number | null;
   fournisseur_nom?: string | null;
   equipment_contenant_id?: number | null;
+  /** Statut actuel de l'unité (signale une unité tombée en panne depuis). */
+  equipment_statut?: StatutEquipment | null;
+  /** Modèle de l'unité (regroupement par modèle dans la vue détail). */
+  equipment_modele_id?: number | null;
+  equipment_modele_nom?: string | null;
+  equipment_modele_marque?: string | null;
+  /** Réponse d'ajout d'un flight : items du contenu non alloués (HS, pris). */
+  contenu_ignore?: number;
 }
 
 export interface PrestationDetail extends Prestation {
@@ -148,6 +187,8 @@ export interface EquipmentListItem {
   nom: string;
   categorie_id: number | null;
   categorie_nom: string | null;
+  modele_id?: number | null;
+  modele_nom?: string | null;
   emplacement_id: number | null;
   emplacement_nom: string | null;
   contenant_id?: number | null;
@@ -160,6 +201,8 @@ export interface EquipmentListItem {
   archive?: boolean;
   vrac: VracPreview | null;
   conso: ConsoPreview | null;
+  /** Avec `?pour_presta=` : prestation aux dates chevauchantes qui tient l'unité. */
+  occupe_par?: { presta_id: number; presta_nom: string } | null;
 }
 
 export interface VracDetailInfo {
@@ -285,6 +328,8 @@ export interface EquipmentDetail {
   nom: string;
   categorie_id: number | null;
   categorie_nom: string | null;
+  modele_id?: number | null;
+  modele_nom?: string | null;
   emplacement_id: number | null;
   emplacement_nom: string | null;
   contenant_id?: number | null;
@@ -381,3 +426,15 @@ export interface DashboardData {
   activite: ActiviteItem[];
 }
 
+
+export interface LocationRendue {
+  equipment_id: number;
+  nom: string;
+  fournisseur_nom: string | null;
+  raison: string | null;
+}
+
+export interface LocationsRendues {
+  archivables: LocationRendue[];
+  gardes: LocationRendue[];
+}

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { EquipmentDetail } from "@/lib/types";
+import type { SerieCreee } from "@/lib/types";
 import { Icon } from "@/shared/Icon";
 import { useToast } from "@/shared/Toast";
 import { EquipmentForm } from "./EquipmentForm";
@@ -23,9 +23,18 @@ export function EquipmentCreatePage() {
 
       <EquipmentForm
         externeDefault={params.get("externe") === "1"}
-        onCreated={(created: EquipmentDetail) => {
-          toast("Équipement créé", "success");
-          navigate(`/inventaire/${created.id}`);
+        onCreated={(res: SerieCreee) => {
+          if (res.ids.length > 1) {
+            toast(`${res.ids.length} équipements créés`, "success");
+            navigate(
+              res.modele_id == null
+                ? "/inventaire"
+                : `/inventaire?modele=${res.modele_id}`,
+            );
+          } else {
+            toast("Équipement créé", "success");
+            navigate(`/inventaire/${res.ids[0]}`);
+          }
         }}
       />
     </div>

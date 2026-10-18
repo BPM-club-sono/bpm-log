@@ -22,10 +22,10 @@ from app.models import (
 )
 from app.models.enums import RoleMembre, TypeActionScan
 from app.routers.equipment import (
-    _archiver_cascade,
     delete_equipment,
     desarchiver_equipment,
 )
+from app.services.contenants import archiver_cascade
 
 
 async def _mk_eq(session, nom: str, **kw) -> Equipment:
@@ -57,7 +57,7 @@ async def test_archive_cascade_flight(db_session):
     session = db_session
     flight, lyre, sous_flight, cable = await _flight_avec_contenu(session)
 
-    touches = await _archiver_cascade(session, flight, True)
+    touches = await archiver_cascade(session, flight, True)
 
     assert touches == 4
     assert all(e.archive for e in (flight, lyre, sous_flight, cable))
@@ -69,9 +69,9 @@ async def test_archive_cascade_flight(db_session):
 async def test_desarchive_cascade_flight(db_session):
     session = db_session
     flight, lyre, sous_flight, cable = await _flight_avec_contenu(session)
-    await _archiver_cascade(session, flight, True)
+    await archiver_cascade(session, flight, True)
 
-    touches = await _archiver_cascade(session, flight, False)
+    touches = await archiver_cascade(session, flight, False)
 
     assert touches == 4
     assert not any(e.archive for e in (flight, lyre, sous_flight, cable))
@@ -83,7 +83,7 @@ async def test_archive_n_affecte_pas_les_voisins(db_session):
     dehors = await _mk_eq(session, "Ampli Hors Flight Test")
     await session.flush()
 
-    await _archiver_cascade(session, flight, True)
+    await archiver_cascade(session, flight, True)
 
     assert lyre.archive is True
     assert dehors.archive is False
@@ -92,7 +92,7 @@ async def test_archive_n_affecte_pas_les_voisins(db_session):
 async def test_desarchive_enfant_dans_flight_archive_409(db_session):
     session = db_session
     flight, lyre, _sous_flight, _cable = await _flight_avec_contenu(session)
-    await _archiver_cascade(session, flight, True)
+    await archiver_cascade(session, flight, True)
 
     # Désarchiver la lyre seule la rendrait invisible : rangée dans un flight archivé.
     with pytest.raises(HTTPException) as exc:
@@ -119,7 +119,7 @@ async def test_delete_introuvable_404(db_session):
 async def test_delete_flight_non_vide_409(db_session):
     session = db_session
     flight, _lyre, _sous_flight, _cable = await _flight_avec_contenu(session)
-    await _archiver_cascade(session, flight, True)
+    await archiver_cascade(session, flight, True)
 
     with pytest.raises(HTTPException) as exc:
         await delete_equipment(flight.id, None, session)

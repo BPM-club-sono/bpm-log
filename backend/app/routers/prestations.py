@@ -7,8 +7,8 @@ moteur de synchronisation (`POST /sync/batch`, type `presta_check`).
 
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 
 from app.deps import CurrentUser, DbSession
@@ -20,6 +20,7 @@ from app.models import (
     EquipmentVrac,
     Fournisseur,
     LogScan,
+    Modele,
     Prestation,
     TicketReparation,
 )
@@ -30,10 +31,17 @@ from app.models.enums import (
     StatutPrestation,
     TypeActionScan,
 )
+from app.routers.equipment import creer_equipements, effacer_photos, lire_donnees, lire_photo
+from app.schemas.equipment import SerieCreee
 from app.schemas.prestation import (
     AllocationCreate,
     AllocationRead,
     ClotureIn,
+    EquipmentCreatePresta,
+    LocationRendue,
+    LocationsRendues,
+    ModeleDispo,
+    ModeleStepIn,
     PrestationCreate,
     PrestationDetail,
     PrestationRead,
@@ -41,16 +49,20 @@ from app.schemas.prestation import (
     valide_periode,
 )
 from app.security.rbac import RequireStaff
-from app.services import contenants
+from app.services import contenants, disponibilite
+from app.services.locations_rendues import TriLocations, trier_locations_rendues
 from app.services.prestation_statut import recalculer_statut, statut_derive
 
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
 
 def _allocation_read(
-    alloc: AllocationPresta, loc: tuple[int, str] | None = None
+    alloc: AllocationPresta,
+    loc: tuple[int, str] | None = None,
+    modele: Modele | None = None,
 ) -> AllocationRead:
-    """`loc` = (fournisseur_id, fournisseur_nom) si l'équipement est loué, sinon None."""
+    """`loc` = (fournisseur_id, fournisseur_nom) si l'équipement est loué, sinon None ;
+    `modele` = le modèle de l'équipement, pour regrouper les unités à l'affichage."""
     eq = alloc.equipment if "equipment" in alloc.__dict__ else None
     return AllocationRead(
         id=alloc.id,
@@ -67,6 +79,10 @@ def _allocation_read(
         fournisseur_id=loc[0] if loc is not None else None,
         fournisseur_nom=loc[1] if loc is not None else None,
         equipment_contenant_id=eq.contenant_id if eq is not None else None,
+        equipment_statut=eq.statut_actuel if eq is not None else None,
+        equipment_modele_id=modele.id if modele is not None else None,
+        equipment_modele_nom=modele.nom if modele is not None else None,
+        equipment_modele_marque=modele.marque if modele is not None else None,
     )
 
 
@@ -141,6 +157,28 @@ async def _get_presta_or_404(db: DbSession, presta_id: int) -> Prestation:
     return presta
 
 
+async def _ids_quantitatifs(db: DbSession, ids: list[int]) -> set[int]:
+    """Parmi `ids`, les vrac/consommables : des quantités, pas des unités, donc
+    hors règle de chevauchement des périodes."""
+    if not ids:
+        return set()
+    vrac = await db.execute(
+        select(EquipmentVrac.equipment_id).where(EquipmentVrac.equipment_id.in_(ids))
+    )
+    conso = await db.execute(
+        select(EquipmentConsommable.equipment_id).where(
+            EquipmentConsommable.equipment_id.in_(ids)
+        )
+    )
+    return {e for (e,) in vrac.all()} | {e for (e,) in conso.all()}
+
+
+def _fmt_conflits(conflits: list[tuple[str, str]]) -> str:
+    lignes = ", ".join(f"« {eq} » (pris par « {p} »)" for eq, p in conflits[:5])
+    reste = len(conflits) - 5
+    return lignes + (f" et {reste} autre{'s' if reste > 1 else ''}" if reste > 0 else "")
+
+
 @router.get("", response_model=list[PrestationRead])
 async def list_prestations(_user: CurrentUser, db: DbSession) -> list[Prestation]:
     # Chronologique : prestations datées d'abord (date_debut croissante), puis sans date.
@@ -182,11 +220,21 @@ async def _detail_response(db: DbSession, presta: Prestation) -> PrestationDetai
         .options(selectinload(AllocationPresta.equipment))
         .order_by(AllocationPresta.id)
     )
+    rows = list(allocs.all())
     loc_map = await _location_map(db)
+    modele_ids = {a.equipment.modele_id for a in rows if a.equipment.modele_id}
+    modele_map = (
+        {m.id: m for m in await db.scalars(select(Modele).where(Modele.id.in_(modele_ids)))}
+        if modele_ids
+        else {}
+    )
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
         allocations=[
-            _allocation_read(a, loc_map.get(a.equipment_id)) for a in allocs.all()
+            _allocation_read(
+                a, loc_map.get(a.equipment_id), modele_map.get(a.equipment.modele_id)
+            )
+            for a in rows
         ],
     )
 
@@ -218,6 +266,33 @@ async def update_prestation(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+    # Nouvelles dates : refusées si elles font chevaucher une autre prestation
+    # qui tient déjà une de nos unités (à libérer d'un côté ou de l'autre d'abord).
+    if {"date_debut", "date_fin"} & data.model_fields_set and (
+        presta.statut != StatutPrestation.TERMINEE
+    ):
+        rows = (
+            await db.execute(
+                select(AllocationPresta.equipment_id, Equipment.nom)
+                .join(Equipment, Equipment.id == AllocationPresta.equipment_id)
+                .where(
+                    AllocationPresta.presta_id == presta.id,
+                    AllocationPresta.statut != StatutAllocation.RETOURNE,
+                )
+            )
+        ).all()
+        noms = dict(rows)
+        quantitatifs = await _ids_quantitatifs(db, list(noms))
+        occ = await disponibilite.occupations(
+            db, presta, [eid for eid in noms if eid not in quantitatifs]
+        )
+        if occ:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ces dates chevauchent une autre prestation qui tient déjà : "
+                + _fmt_conflits([(noms[eid], p[1]) for eid, p in occ.items()])
+                + ".",
+            )
     await db.commit()
     await db.refresh(presta)
     return presta
@@ -259,6 +334,11 @@ async def add_allocation(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
+    if data.quantite > 1 and not await _ids_quantitatifs(db, [equipment.id]):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Un équipement unitaire s'alloue à l'unité : crée plusieurs exemplaires.",
+        )
 
     existing = await db.scalar(
         select(AllocationPresta).where(
@@ -266,6 +346,21 @@ async def add_allocation(
             AllocationPresta.equipment_id == data.equipment_id,
         )
     )
+    if existing is None:
+        raison = disponibilite.raison_blocage(equipment)
+        if raison is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"« {equipment.nom} » est {raison} : il ne peut pas être alloué.",
+            )
+        if not await _ids_quantitatifs(db, [equipment.id]):
+            occ = await disponibilite.occupations(db, presta, [equipment.id])
+            if occ:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"« {equipment.nom} » est déjà pris par « {occ[equipment.id][1]} » "
+                    "sur ces dates.",
+                )
     if existing is not None:
         existing.quantite = data.quantite
         alloc = existing
@@ -278,9 +373,21 @@ async def add_allocation(
         )
         db.add(alloc)
 
-    # Contenant : on alloue aussi son contenu standard (les enfants suivent la caisse).
+    # Contenant : on alloue aussi son contenu standard (les enfants suivent la caisse),
+    # sauf les items hors service ou déjà pris ailleurs, comptés pour prévenir l'UI.
+    contenu_ignore = 0
     if data.inclure_contenu:
         descendant_ids = await _standard_descendant_ids(db, data.equipment_id)
+        if descendant_ids:
+            enfants = (
+                await db.scalars(select(Equipment).where(Equipment.id.in_(descendant_ids)))
+            ).all()
+            occ = await disponibilite.occupations(db, presta, descendant_ids)
+            exclus = {
+                e.id for e in enfants if disponibilite.raison_blocage(e) or e.id in occ
+            }
+            contenu_ignore = len(exclus)
+            descendant_ids = [d for d in descendant_ids if d not in exclus]
         if descendant_ids:
             already = {
                 eid
@@ -315,7 +422,52 @@ async def add_allocation(
         )
     ).first()
     loc = (loc_row[1], loc_row[2]) if loc_row is not None else None
-    return _allocation_read(alloc, loc)
+    return _allocation_read(alloc, loc).model_copy(update={"contenu_ignore": contenu_ignore})
+
+
+@router.post(
+    "/{presta_id}/equipements",
+    response_model=SerieCreee,
+    status_code=status.HTTP_201_CREATED,
+)
+async def creer_et_allouer(
+    presta_id: int,
+    user: RequireStaff,
+    db: DbSession,
+    donnees: str = Form(..., description="JSON d'EquipmentCreatePresta."),
+    photo: UploadFile | None = File(None),
+) -> SerieCreee:
+    """Crée N fiches et les alloue à la prestation, en une seule transaction."""
+    presta = await _get_presta_or_404(db, presta_id)
+    payload = lire_donnees(donnees, EquipmentCreatePresta)
+    if payload.quantite_allouee > 1 and payload.type == "standard":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Un équipement unitaire s'alloue à l'unité : crée plusieurs exemplaires.",
+        )
+    image = await lire_photo(photo)
+    eqs = await creer_equipements(db, payload, user, image)
+    # Les photos sont écrites : tout échec à partir d'ici doit les effacer.
+    try:
+        quantitatifs = await _ids_quantitatifs(db, [e.id for e in eqs])
+        for eq in eqs:
+            db.add(
+                AllocationPresta(
+                    presta_id=presta.id,
+                    equipment_id=eq.id,
+                    quantite=payload.quantite_allouee if eq.id in quantitatifs else 1,
+                    statut=StatutAllocation.PLANIFIE,
+                )
+            )
+        await db.flush()
+        await recalculer_statut(db, presta)
+        await db.commit()
+    except BaseException:
+        effacer_photos([e.photo_chemin for e in eqs if e.photo_chemin])
+        raise
+    return SerieCreee(
+        ids=[e.id for e in eqs], noms=[e.nom for e in eqs], modele_id=payload.modele_id
+    )
 
 
 @router.delete(
@@ -335,19 +487,270 @@ async def remove_allocation(
             status_code=status.HTTP_404_NOT_FOUND, detail="Allocation introuvable."
         )
 
-    # Supprimer un flight retire aussi les allocations de tout son contenu, pour
-    # ne jamais laisser d'items orphelins dans la prestation.
+    await _supprimer_allocation(db, alloc)
+    await recalculer_statut(db, presta)
+    await db.commit()
+
+
+async def _supprimer_allocation(db: DbSession, alloc: AllocationPresta) -> None:
+    """Supprime une allocation. Supprimer un flight retire aussi les allocations de
+    tout son contenu, pour ne jamais laisser d'items orphelins dans la prestation."""
     descendant_ids = await contenants.descendant_ids(db, alloc.equipment_id)
     if descendant_ids:
         await db.execute(
             AllocationPresta.__table__.delete().where(
-                AllocationPresta.presta_id == presta_id,
+                AllocationPresta.presta_id == alloc.presta_id,
                 AllocationPresta.equipment_id.in_(descendant_ids),
             )
         )
     await db.delete(alloc)
+
+
+# --- Ajout par modèle ------------------------------------------------------
+#
+# Le stepper « − n + » d'un modèle : le serveur choisit l'unité, l'UI ne voit que
+# des compteurs. Une ligne par (modèle, prestataire) : le matériel loué d'un
+# même modèle a son propre compteur.
+
+
+#: Clé de `pg_advisory_xact_lock` réservée à l'ajout par modèle (2e clé = modele_id).
+_VERROU_MODELE = 4201
+
+
+class _UnitesModele:
+    """Unités d'un ensemble de modèles vues depuis une prestation."""
+
+    def __init__(
+        self,
+        unites: list[Equipment],
+        loc_map: dict[int, tuple[int, str]],
+        allocs: dict[int, AllocationPresta],
+        occ: dict[int, tuple[int, str]],
+    ) -> None:
+        self.unites = unites
+        self.loc_map = loc_map
+        self.allocs = allocs
+        self.occ = occ
+
+    def fournisseur(self, eq: Equipment) -> int | None:
+        loc = self.loc_map.get(eq.id)
+        return loc[0] if loc else None
+
+    def ajoutable(self, eq: Equipment) -> bool:
+        return (
+            eq.id not in self.allocs
+            and disponibilite.raison_blocage(eq) is None
+            and eq.id not in self.occ
+        )
+
+    def retirable(self, eq: Equipment) -> bool:
+        """Planifiée et pas venue avec son flight (on retire le flight, pas l'item)."""
+        alloc = self.allocs.get(eq.id)
+        return (
+            alloc is not None
+            and alloc.statut == StatutAllocation.PLANIFIE
+            and eq.contenant_id not in self.allocs
+        )
+
+
+async def _unites_modele(
+    db: DbSession, presta: Prestation, modele_ids: list[int]
+) -> _UnitesModele:
+    unites = list(
+        (
+            await db.scalars(
+                select(Equipment).where(
+                    Equipment.modele_id.in_(modele_ids), Equipment.archive.is_(False)
+                )
+            )
+        ).all()
+    )
+    allocs = {
+        a.equipment_id: a
+        for a in (
+            await db.scalars(
+                select(AllocationPresta).where(AllocationPresta.presta_id == presta.id)
+            )
+        ).all()
+    }
+    occ = await disponibilite.occupations(
+        db, presta, [u.id for u in unites if u.id not in allocs]
+    )
+    return _UnitesModele(unites, await _location_map(db), allocs, occ)
+
+
+async def _lignes_modeles(
+    db: DbSession, presta: Prestation, modeles: list[Modele]
+) -> list[ModeleDispo]:
+    if not modeles:
+        return []
+    vue = await _unites_modele(db, presta, [m.id for m in modeles])
+    lignes: dict[tuple[int, int | None], ModeleDispo] = {}
+
+    def ligne(modele: Modele, fid: int | None, fnom: str | None) -> ModeleDispo:
+        key = (modele.id, fid)
+        if key not in lignes:
+            lignes[key] = ModeleDispo(
+                modele_id=modele.id,
+                nom=modele.nom,
+                marque=modele.marque,
+                fournisseur_id=fid,
+                fournisseur_nom=fnom,
+                dispo=0,
+                total=0,
+                alloues=0,
+                retirable=False,
+            )
+        return lignes[key]
+
+    par_id = {m.id: m for m in modeles}
+    for eq in vue.unites:
+        loc = vue.loc_map.get(eq.id)
+        row = ligne(par_id[eq.modele_id], *(loc or (None, None)))
+        if eq.statut_actuel not in disponibilite.STATUTS_HORS_PARC:
+            row.total += 1
+        if eq.id in vue.allocs:
+            row.alloues += 1
+            row.retirable = row.retirable or vue.retirable(eq)
+        elif vue.ajoutable(eq):
+            row.dispo += 1
+    # Un modèle sans unité reste listé (0/0) : on voit qu'il existe.
+    for m in modeles:
+        if not any(k[0] == m.id for k in lignes):
+            ligne(m, None, None)
+    return sorted(
+        lignes.values(),
+        key=lambda r: (r.nom.lower(), r.fournisseur_id is not None, r.fournisseur_nom or ""),
+    )
+
+
+async def _modele_or_404(db: DbSession, modele_id: int) -> Modele:
+    modele = await db.get(Modele, modele_id)
+    if modele is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modèle introuvable.")
+    return modele
+
+
+async def _ligne(
+    db: DbSession, presta: Prestation, modele: Modele, fournisseur_id: int | None
+) -> ModeleDispo:
+    for row in await _lignes_modeles(db, presta, [modele]):
+        if row.fournisseur_id == fournisseur_id:
+            return row
+    return ModeleDispo(
+        modele_id=modele.id,
+        nom=modele.nom,
+        marque=modele.marque,
+        fournisseur_id=fournisseur_id,
+        dispo=0,
+        total=0,
+        alloues=0,
+        retirable=False,
+    )
+
+
+@router.get("/{presta_id}/modeles", response_model=list[ModeleDispo])
+async def list_modeles_presta(
+    presta_id: int,
+    _user: CurrentUser,
+    db: DbSession,
+    q: str | None = Query(
+        default=None,
+        description="Recherche sur le nom ou la marque ; vide = modèles déjà alloués ici",
+    ),
+) -> list[ModeleDispo]:
+    presta = await _get_presta_or_404(db, presta_id)
+    stmt = select(Modele).order_by(Modele.nom)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(Modele.nom.ilike(like) | Modele.marque.ilike(like)).limit(20)
+    else:
+        stmt = stmt.where(
+            Modele.id.in_(
+                select(Equipment.modele_id)
+                .join(AllocationPresta, AllocationPresta.equipment_id == Equipment.id)
+                .where(AllocationPresta.presta_id == presta.id)
+            )
+        )
+    modeles = list((await db.scalars(stmt)).all())
+    return await _lignes_modeles(db, presta, modeles)
+
+
+@router.post("/{presta_id}/modeles/{modele_id}/ajout", response_model=ModeleDispo)
+async def ajouter_unite_modele(
+    presta_id: int,
+    modele_id: int,
+    data: ModeleStepIn,
+    db: DbSession,
+    _user: RequireStaff,
+) -> ModeleDispo:
+    """« + » : alloue une unité libre du modèle, choisie par le serveur.
+
+    Ordre de choix : unités en vrac d'abord (on n'ouvre pas un flight pour une
+    lyre), puis par nom et référence — déterministe, l'unité exacte se règle de
+    toute façon au scan de sortie.
+    """
+    presta = await _get_presta_or_404(db, presta_id)
+    modele = await _modele_or_404(db, modele_id)
+    # Deux « + » simultanés (ici ou sur une autre prestation) ne doivent pas
+    # choisir la même unité : on sérialise par modèle jusqu'au commit.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:k, :m)"), {"k": _VERROU_MODELE, "m": modele.id}
+    )
+    vue = await _unites_modele(db, presta, [modele.id])
+    candidates = sorted(
+        (
+            eq
+            for eq in vue.unites
+            if vue.fournisseur(eq) == data.fournisseur_id and vue.ajoutable(eq)
+        ),
+        key=lambda eq: (eq.contenant_id is not None, eq.nom, eq.barcode_uid),
+    )
+    if not candidates:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Plus aucun « {modele.nom} » disponible.",
+        )
+    db.add(
+        AllocationPresta(
+            presta_id=presta.id,
+            equipment_id=candidates[0].id,
+            quantite=1,
+            statut=StatutAllocation.PLANIFIE,
+        )
+    )
     await recalculer_statut(db, presta)
     await db.commit()
+    return await _ligne(db, presta, modele, data.fournisseur_id)
+
+
+@router.post("/{presta_id}/modeles/{modele_id}/retrait", response_model=ModeleDispo)
+async def retirer_unite_modele(
+    presta_id: int,
+    modele_id: int,
+    data: ModeleStepIn,
+    db: DbSession,
+    _user: RequireStaff,
+) -> ModeleDispo:
+    """« − » : retire la dernière unité ajoutée du modèle, si elle est encore
+    planifiée. Une unité déjà sortie se règle au pointage, pas ici."""
+    presta = await _get_presta_or_404(db, presta_id)
+    modele = await _modele_or_404(db, modele_id)
+    vue = await _unites_modele(db, presta, [modele.id])
+    retirables = [
+        vue.allocs[eq.id]
+        for eq in vue.unites
+        if vue.fournisseur(eq) == data.fournisseur_id and vue.retirable(eq)
+    ]
+    if not retirables:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Aucun « {modele.nom} » planifié à retirer.",
+        )
+    await _supprimer_allocation(db, max(retirables, key=lambda a: a.id))
+    await recalculer_statut(db, presta)
+    await db.commit()
+    return await _ligne(db, presta, modele, data.fournisseur_id)
 
 
 # --- Clôture ---------------------------------------------------------------
@@ -447,3 +850,61 @@ async def rouvrir_prestation(
     presta.statut = await statut_derive(db, presta.id)
     await db.commit()
     return await _detail_response(db, presta)
+
+
+# --- Archivage des locations rendues --------------------------------------
+
+
+async def _locations_rendues(db: DbSession, tri: TriLocations) -> LocationsRendues:
+    loc = await _location_map(db)
+
+    def ligne(eq: Equipment, raison: str | None) -> LocationRendue:
+        fournisseur = loc.get(eq.id)
+        return LocationRendue(
+            equipment_id=eq.id,
+            nom=eq.nom,
+            fournisseur_nom=fournisseur[1] if fournisseur else None,
+            raison=raison,
+        )
+
+    return LocationsRendues(
+        archivables=[ligne(eq, None) for eq in tri.archivables],
+        gardes=[ligne(eq, raison) for eq, raison in tri.gardes],
+    )
+
+
+@router.get("/{presta_id}/locations-rendues", response_model=LocationsRendues)
+async def lire_locations_rendues(
+    presta_id: int,
+    db: DbSession,
+    _user: CurrentUser,
+) -> LocationsRendues:
+    """Aperçu : locations de la prestation archivables d'un coup, et celles gardées
+    avec leur raison (règle dans app/services/locations_rendues.py)."""
+    presta = await _get_presta_or_404(db, presta_id)
+    return await _locations_rendues(db, await trier_locations_rendues(db, presta))
+
+
+@router.post("/{presta_id}/locations-rendues/archivage", response_model=LocationsRendues)
+async def archiver_locations_rendues(
+    presta_id: int,
+    db: DbSession,
+    _user: RequireStaff,
+) -> LocationsRendues:
+    """Archive (avec leur contenu) les locations rendues d'une prestation clôturée.
+
+    Le tri est refait ici, pas repris de l'aperçu : `archivables` liste ce qui a
+    vraiment été archivé. Rejouer la route n'archive plus rien.
+    """
+    presta = await _get_presta_or_404(db, presta_id)
+    if presta.statut != StatutPrestation.TERMINEE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La prestation n'est pas clôturée.",
+        )
+    tri = await trier_locations_rendues(db, presta)
+    for eq in tri.archivables:
+        await contenants.archiver_cascade(db, eq, True)
+    resultat = await _locations_rendues(db, tri)
+    await db.commit()
+    return resultat

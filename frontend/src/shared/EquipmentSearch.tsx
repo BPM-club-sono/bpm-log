@@ -24,6 +24,14 @@ interface EquipmentSearchProps {
   renderMeta?: (eq: EquipmentListItem) => string | null;
   /** Côté droit de chaque résultat ; le statut par défaut. */
   renderTrailing?: (eq: EquipmentListItem) => ReactNode;
+  /** Paramètres ajoutés à la requête (ex. `pour_presta=12`). */
+  extraQuery?: string;
+  /** Raison pour laquelle un résultat n'est pas sélectionnable (grisé), sinon null. */
+  indisponible?: (eq: EquipmentListItem) => string | null;
+  /** Remplace la loupe par un bouton (ex. bascule de mode). */
+  icon?: string;
+  onIconClick?: () => void;
+  iconLabel?: string;
 }
 
 /** Recherche serveur du parc (nom ou code-barres), debounce 300 ms.
@@ -41,6 +49,11 @@ export function EquipmentSearch({
   emptyHint,
   renderMeta,
   renderTrailing = (e) => <StatusBadge statut={e.statut_actuel} />,
+  extraQuery,
+  indisponible,
+  icon,
+  onIconClick,
+  iconLabel,
 }: EquipmentSearchProps) {
   const [results, setResults] = useState<EquipmentListItem[]>([]);
   const q = value.trim();
@@ -55,7 +68,7 @@ export function EquipmentSearch({
     const timer = setTimeout(async () => {
       try {
         const r = await api<EquipmentListItem[]>(
-          `/equipments?q=${encodeURIComponent(q)}`,
+          `/equipments?q=${encodeURIComponent(q)}${extraQuery ? `&${extraQuery}` : ""}`,
         );
         if (stale) return;
         setResults(
@@ -69,7 +82,7 @@ export function EquipmentSearch({
       stale = true;
       clearTimeout(timer);
     };
-  }, [q, enabled, excludeIds]);
+  }, [q, enabled, excludeIds, extraQuery]);
 
   const visible = enabled ? results : [];
 
@@ -80,16 +93,20 @@ export function EquipmentSearch({
         onChange={onChange}
         placeholder={placeholder}
         disabled={disabled}
+        icon={icon}
+        onIconClick={onIconClick}
+        iconLabel={iconLabel}
       />
       {visible.length > 0 && (
         <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-bg-soft">
           {visible.map((e) => {
             const meta = renderMeta?.(e);
+            const raison = indisponible?.(e) ?? null;
             return (
               <li key={e.id}>
                 <button
                   type="button"
-                  disabled={disabled}
+                  disabled={disabled || raison !== null}
                   onClick={() => onSelect(e)}
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-opacity hover:opacity-70 disabled:opacity-50"
                 >
@@ -105,7 +122,13 @@ export function EquipmentSearch({
                       {meta ? ` · ${meta}` : ""}
                     </p>
                   </div>
-                  {renderTrailing(e)}
+                  {raison !== null ? (
+                    <span className="flex-none rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-semibold text-danger">
+                      {raison}
+                    </span>
+                  ) : (
+                    renderTrailing(e)
+                  )}
                 </button>
               </li>
             );

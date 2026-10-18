@@ -25,6 +25,38 @@ class CategorieRead(BaseModel):
     description: str | None
 
 
+#: Nom de modèle : espaces de bord retirés, jamais vide. Pas d'autre normalisation
+#: (casse, tirets) : le nom saisi est le nom affiché, on veut des noms propres.
+NomModele = Annotated[
+    str,
+    BeforeValidator(lambda v: v.strip() if isinstance(v, str) else v),
+    Field(min_length=1, max_length=120),
+]
+
+
+class ModeleRead(BaseModel):
+    id: int
+    nom: str
+    marque: str | None
+    categorie_id: int | None
+    categorie_nom: str | None = None
+    nb_unites: int = 0
+
+
+class ModeleCreate(BaseModel):
+    nom: NomModele
+    marque: str | None = None
+    categorie_id: int | None = None
+
+
+class ModeleUpdate(BaseModel):
+    """Champs absents = inchangés ; `marque`/`categorie_id` à null = effacés."""
+
+    nom: NomModele | None = None
+    marque: str | None = None
+    categorie_id: int | None = None
+
+
 class EmplacementRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -119,6 +151,11 @@ class ConsoPreview(BaseModel):
     en_alerte: bool
 
 
+class OccupationPresta(BaseModel):
+    presta_id: int
+    presta_nom: str
+
+
 class EquipmentListItem(BaseModel):
     """Élément de la liste Parc : infos + nom catégorie/emplacement + preview par type."""
 
@@ -127,6 +164,8 @@ class EquipmentListItem(BaseModel):
     nom: str
     categorie_id: int | None
     categorie_nom: str | None
+    modele_id: int | None = None
+    modele_nom: str | None = None
     emplacement_id: int | None
     emplacement_nom: str | None
     contenant_id: int | None = None
@@ -139,6 +178,9 @@ class EquipmentListItem(BaseModel):
     archive: bool = False
     vrac: VracPreview | None = None
     conso: ConsoPreview | None = None
+    # Renseigné seulement avec `?pour_presta=` : prestation aux dates qui se
+    # chevauchent qui tient déjà cette unité (elle n'est alors pas allouable).
+    occupe_par: OccupationPresta | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -202,6 +244,8 @@ class EquipmentDetail(BaseModel):
     nom: str
     categorie_id: int | None
     categorie_nom: str | None
+    modele_id: int | None = None
+    modele_nom: str | None = None
     emplacement_id: int | None
     emplacement_nom: str | None
     contenant_id: int | None = None
@@ -229,6 +273,8 @@ class EquipmentCreate(BaseModel):
     nom: str
     type: EquipmentType = "standard"
     categorie_id: int | None = None
+    # Obligatoire pour un item unitaire (standard, hors flight et location).
+    modele_id: int | None = None
     emplacement_id: int | None = None
     contenant_id: int | None = None
     # Flight : équipement contenant (rangement). Réservé au type standard.
@@ -247,11 +293,22 @@ class EquipmentCreate(BaseModel):
     fournisseur_id: int | None = None
     fournisseur_nom: str | None = None
     reference_devis: str | None = None
+    # Création en série : N fiches numérotées « <nom> 1..N » (standard uniquement).
+    nombre: int = Field(default=1, ge=1)
+
+
+class SerieCreee(BaseModel):
+    """Résultat d'une création en série : les fiches créées, dans l'ordre."""
+
+    ids: list[int]
+    noms: list[str]
+    modele_id: int | None
 
 
 class EquipmentUpdate(BaseModel):
     nom: str | None = None
     categorie_id: int | None = None
+    modele_id: int | None = None
     emplacement_id: int | None = None
     contenant_id: int | None = None
     est_contenant: bool | None = None

@@ -5,7 +5,9 @@ import uuid as uuid_lib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -23,6 +25,8 @@ from app.models import (
     InventoryLock,
     LogScan,
     Membre,
+    Modele,
+    Prestation,
     TicketReparation,
 )
 from app.models.enums import StatutEquipment, TypeActionScan
@@ -40,9 +44,11 @@ from app.schemas.equipment import (
     EquipmentType,
     EquipmentUpdate,
     LocationInfo,
+    OccupationPresta,
     PathSegment,
     PhotoUploadResult,
     ScanHistoryItem,
+    SerieCreee,
     TicketHistoryItem,
     VracDetailInfo,
     VracPreview,
@@ -50,7 +56,7 @@ from app.schemas.equipment import (
 )
 from app.schemas.inventory import InventaireEntry, VracLock
 from app.security.rbac import RequireAdmin, RequireStaff
-from app.services import barcode, contenants, references
+from app.services import barcode, contenants, disponibilite, references, serie
 
 router = APIRouter(tags=["catalogue"])
 
@@ -114,6 +120,27 @@ async def _resolve_fournisseur(
         await db.flush()
         return f.id
     return None
+
+
+async def _appliquer_modele(db: DbSession, eq: Equipment, modele_id: int) -> None:
+    """Rattache `eq` à un modèle : la catégorie de l'item suit celle du modèle.
+
+    404 si le modèle n'existe pas, 400 sur un vrac/consommable (des quantités,
+    pas des unités : le regroupement par modèle n'a pas de sens).
+    """
+    modele = await db.get(Modele, modele_id)
+    if modele is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modèle introuvable.")
+    if (
+        await db.get(EquipmentVrac, eq.id) is not None
+        or await db.get(EquipmentConsommable, eq.id) is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Un vrac ou un consommable n'a pas de modèle.",
+        )
+    eq.modele_id = modele.id
+    eq.categorie_id = modele.categorie_id
 
 
 # --------------------------------------------------------------------------- #
@@ -299,6 +326,7 @@ async def _build_contenu(db: DbSession, container_id: int) -> list[ContenuChild]
 
 async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> EquipmentDetail:
     categorie = await db.get(Categorie, eq.categorie_id) if eq.categorie_id else None
+    modele = await db.get(Modele, eq.modele_id) if eq.modele_id else None
     emplacement = await db.get(Emplacement, eq.emplacement_id) if eq.emplacement_id else None
     contenant = await db.get(Equipment, eq.contenant_id) if eq.contenant_id else None
     chemin = await _compute_chemin(db, eq)
@@ -411,6 +439,8 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         nom=eq.nom,
         categorie_id=eq.categorie_id,
         categorie_nom=categorie.nom if categorie else None,
+        modele_id=eq.modele_id,
+        modele_nom=modele.nom if modele else None,
         emplacement_id=eq.emplacement_id,
         emplacement_nom=emplacement.nom if emplacement else None,
         contenant_id=eq.contenant_id,
@@ -439,8 +469,11 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
 async def list_equipments(
     user: CurrentUser,
     db: DbSession,
-    q: str | None = Query(default=None, description="Recherche sur le nom ou le code-barres"),
+    q: str | None = Query(
+        default=None, description="Recherche sur le nom, le code-barres ou le modèle"
+    ),
     categorie_id: int | None = Query(default=None),
+    modele_id: int | None = Query(default=None),
     emplacement_id: int | None = Query(default=None),
     statut: StatutEquipment | None = Query(default=None),
     type: EquipmentType | None = Query(default=None, description="standard|vrac|consommable"),
@@ -455,13 +488,22 @@ async def list_equipments(
         default=False,
         description="false (défaut) = matériel actif ; true = matériel archivé",
     ),
+    pour_presta: int | None = Query(
+        default=None,
+        description="Renseigne `occupe_par` : prestation qui tient déjà l'unité sur "
+        "une période qui chevauche celle-ci",
+    ),
 ) -> list[EquipmentListItem]:
-    stmt = select(Equipment)
+    stmt = select(Equipment).outerjoin(Modele, Modele.id == Equipment.modele_id)
     if q:
         like = f"%{q}%"
-        stmt = stmt.where(Equipment.nom.ilike(like) | Equipment.barcode_uid.ilike(like))
+        stmt = stmt.where(
+            Equipment.nom.ilike(like) | Equipment.barcode_uid.ilike(like) | Modele.nom.ilike(like)
+        )
     if categorie_id is not None:
         stmt = stmt.where(Equipment.categorie_id == categorie_id)
+    if modele_id is not None:
+        stmt = stmt.where(Equipment.modele_id == modele_id)
     if emplacement_id is not None:
         stmt = stmt.where(Equipment.emplacement_id == emplacement_id)
     if statut is not None:
@@ -477,6 +519,7 @@ async def list_equipments(
 
     # Maps en masse (parc de petite taille).
     cat_map = {c.id: c.nom for c in (await db.scalars(select(Categorie))).all()}
+    modele_map = {m.id: m.nom for m in (await db.scalars(select(Modele))).all()}
     emp_map = {e.id: e.nom for e in (await db.scalars(select(Emplacement))).all()}
     # Nom de chaque équipement (pour contenant_nom).
     eq_rows = (await db.execute(select(Equipment.id, Equipment.nom))).all()
@@ -501,6 +544,15 @@ async def list_equipments(
             )
         ).all()
     }
+
+    occupation_map: dict[int, tuple[int, str]] = {}
+    if pour_presta is not None:
+        presta = await db.get(Prestation, pour_presta)
+        if presta is not None:
+            unitaires = [
+                e.id for e in equipments if e.id not in vrac_map and e.id not in conso_map
+            ]
+            occupation_map = await disponibilite.occupations(db, presta, unitaires)
 
     now = datetime.now(UTC)
     items: list[EquipmentListItem] = []
@@ -546,6 +598,8 @@ async def list_equipments(
                 nom=eq.nom,
                 categorie_id=eq.categorie_id,
                 categorie_nom=cat_map.get(eq.categorie_id) if eq.categorie_id else None,
+                modele_id=eq.modele_id,
+                modele_nom=modele_map.get(eq.modele_id) if eq.modele_id else None,
                 emplacement_id=eq.emplacement_id,
                 emplacement_nom=emp_map.get(eq.emplacement_id) if eq.emplacement_id else None,
                 contenant_id=eq.contenant_id,
@@ -558,6 +612,11 @@ async def list_equipments(
                 archive=eq.archive,
                 vrac=vrac_preview,
                 conso=conso_preview,
+                occupe_par=(
+                    OccupationPresta(presta_id=occ[0], presta_nom=occ[1])
+                    if (occ := occupation_map.get(eq.id))
+                    else None
+                ),
             )
         )
     return items
@@ -578,6 +637,22 @@ async def get_equipment_by_barcode(
             detail=f"Aucun équipement avec le code-barres {code}.",
         )
     return equipment
+
+
+@router.get("/equipments/noms-serie", response_model=list[str])
+async def apercu_noms_serie(
+    db: DbSession,
+    _user: CurrentUser,
+    base: str = Query(min_length=1),
+    nombre: int = Query(ge=1),
+) -> list[str]:
+    """Aperçu des noms qu'une création en série de `nombre` unités produirait."""
+    if not base.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le nom est obligatoire.",
+        )
+    return await serie.noms_serie(db, base, nombre)
 
 
 @router.get("/equipments/{equipment_id}", response_model=EquipmentDetail)
@@ -670,21 +745,95 @@ async def _assign_barcode(db: DbSession, eq: Equipment, provided: str | None) ->
     eq.barcode_uid = code
 
 
-@router.post(
-    "/equipments",
-    response_model=EquipmentDetail,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_equipment(
-    payload: EquipmentCreate,
-    user: RequireStaff,
+async def lire_photo(file: UploadFile | None) -> tuple[bytes, str] | None:
+    """Lit et valide une photo téléversée : (contenu, extension), ou None sans fichier.
+
+    415 si le format n'est pas une image acceptée, 413 au-delà de 8 Mo.
+    """
+    if file is None:
+        return None
+    ext = _ALLOWED_TYPES.get(file.content_type or "")
+    if ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Format image non supporté (jpeg, png, webp).",
+        )
+    data = await file.read()
+    if len(data) > _MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image trop volumineuse (max 8 Mo).",
+        )
+    return data, ext
+
+
+def ecrire_photo(data: bytes, ext: str) -> str:
+    """Écrit la photo sous un nom unique dans le dossier photos et renvoie ce nom."""
+    photos_dir = Path(settings.photos_dir)
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid_lib.uuid4().hex}{ext}"
+    (photos_dir / filename).write_bytes(data)
+    return filename
+
+
+def effacer_photos(noms: list[str]) -> None:
+    """Supprime des fichiers photo du disque (nettoyage après un échec)."""
+    for nom in noms:
+        (Path(settings.photos_dir) / nom).unlink(missing_ok=True)
+
+
+async def creer_equipements(
     db: DbSession,
-) -> EquipmentDetail:
-    """Crée un équipement (standard/vrac/consommable, flight, option location externe)."""
+    payload: EquipmentCreate,
+    user: Membre,
+    photo: tuple[bytes, str] | None,
+) -> list[Equipment]:
+    """Crée `payload.nombre` équipements (standard/vrac/consommable, flight, location).
+
+    Une fiche seule garde le nom saisi ; une série (N > 1) est numérotée
+    « <nom> k » à la suite des numéros déjà pris. Chaque fiche reçoit sa propre
+    copie de la photo : supprimer la photo d'une fiche efface son fichier.
+    **Ne commit pas** ; en cas d'échec, les fichiers photo déjà écrits sont effacés.
+    """
+    if not payload.nom.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le nom est obligatoire.",
+        )
+    if payload.nombre > 1:
+        # Une série = des unités interchangeables : ni quantités (vrac/consommable),
+        # ni flight, ni code-barres imposé (il serait le même pour toutes).
+        if payload.type != "standard" or payload.est_contenant:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Seul un équipement standard (hors flight) se crée en série.",
+            )
+        if payload.barcode_uid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Une série ne peut pas porter un code-barres imposé.",
+            )
     if payload.est_contenant and payload.type != "standard":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Seul un équipement standard peut être un flight.",
+        )
+    # Un item unitaire porte son modèle dès la création (ajout en nombre aux
+    # prestations). Un flight est souvent unique, une location n'est pas à nous.
+    if (
+        payload.modele_id is None
+        and payload.type == "standard"
+        and not payload.est_contenant
+        and not payload.externe
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le modèle est obligatoire pour un équipement unitaire.",
+        )
+    if payload.modele_id is not None and payload.type != "standard":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Un vrac ou un consommable n'a pas de modèle.",
         )
     # Règle de frontière : ranger dans un contenant exclut l'emplacement fixe.
     if payload.contenant_id is not None:
@@ -704,53 +853,131 @@ async def create_equipment(
             )
 
     prefixe = await _prefixe_equipment(db, payload.externe, fournisseur_id)
-    eq_id, reference = await _reserver_reference(db, prefixe)
-
-    eq = Equipment(
-        id=eq_id,
-        barcode_uid=reference,
-        nom=payload.nom,
-        categorie_id=payload.categorie_id,
-        emplacement_id=None if payload.contenant_id is not None else payload.emplacement_id,
-        contenant_id=payload.contenant_id,
-        est_contenant=payload.est_contenant,
-        statut_actuel=payload.statut_actuel,
-        created_by_membre_id=user.id,
+    noms = (
+        [payload.nom]
+        if payload.nombre == 1
+        else await serie.noms_serie(db, payload.nom, payload.nombre)
     )
-    db.add(eq)
-    await db.flush()
-    if payload.barcode_uid:
-        await _assign_barcode(db, eq, payload.barcode_uid)
 
-    if payload.type == "vrac":
-        db.add(
-            EquipmentVrac(
-                equipment_id=eq.id,
-                quantite_theorique=payload.quantite_theorique or 0,
+    photos_ecrites: list[str] = []
+    eqs: list[Equipment] = []
+    try:
+        for nom in noms:
+            eq_id, reference = await _reserver_reference(db, prefixe)
+            photo_chemin: str | None = None
+            if photo is not None:
+                photo_chemin = ecrire_photo(*photo)
+                photos_ecrites.append(photo_chemin)
+            eq = Equipment(
+                id=eq_id,
+                barcode_uid=reference,
+                nom=nom,
+                categorie_id=payload.categorie_id,
+                emplacement_id=(
+                    None if payload.contenant_id is not None else payload.emplacement_id
+                ),
+                contenant_id=payload.contenant_id,
+                est_contenant=payload.est_contenant,
+                statut_actuel=payload.statut_actuel,
+                photo_chemin=photo_chemin,
+                created_by_membre_id=user.id,
             )
-        )
-    elif payload.type == "consommable":
-        db.add(
-            EquipmentConsommable(
-                equipment_id=eq.id,
-                stock_actuel=payload.stock_actuel or 0,
-                seuil_alerte=payload.seuil_alerte or 0,
-                unite=payload.unite,
-            )
-        )
+            db.add(eq)
+            await db.flush()
+            if payload.barcode_uid:
+                await _assign_barcode(db, eq, payload.barcode_uid)
 
-    if fournisseur_id is not None:
-        db.add(
-            EquipmentLocation(
-                equipment_id=eq.id,
-                fournisseur_id=fournisseur_id,
-                reference_devis=payload.reference_devis,
-            )
-        )
+            if payload.modele_id is not None:
+                await _appliquer_modele(db, eq, payload.modele_id)
 
+            if payload.type == "vrac":
+                db.add(
+                    EquipmentVrac(
+                        equipment_id=eq.id,
+                        quantite_theorique=payload.quantite_theorique or 0,
+                    )
+                )
+            elif payload.type == "consommable":
+                db.add(
+                    EquipmentConsommable(
+                        equipment_id=eq.id,
+                        stock_actuel=payload.stock_actuel or 0,
+                        seuil_alerte=payload.seuil_alerte or 0,
+                        unite=payload.unite,
+                    )
+                )
+
+            if fournisseur_id is not None:
+                db.add(
+                    EquipmentLocation(
+                        equipment_id=eq.id,
+                        fournisseur_id=fournisseur_id,
+                        reference_devis=payload.reference_devis,
+                    )
+                )
+            eqs.append(eq)
+        await db.flush()
+    except BaseException:
+        effacer_photos(photos_ecrites)
+        raise
+    return eqs
+
+
+@router.post(
+    "/equipments",
+    response_model=EquipmentDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_equipment(
+    payload: EquipmentCreate,
+    user: RequireStaff,
+    db: DbSession,
+) -> EquipmentDetail:
+    """Crée un équipement (standard/vrac/consommable, flight, option location externe)."""
+    # Cette route renvoie une seule fiche : une série passe par /equipments/serie.
+    if payload.nombre > 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Utilise /equipments/serie pour créer plusieurs exemplaires.",
+        )
+    eqs = await creer_equipements(db, payload, user, photo=None)
     await db.commit()
-    await db.refresh(eq)
-    return await _build_detail(db, eq, user.id)
+    await db.refresh(eqs[0])
+    return await _build_detail(db, eqs[0], user.id)
+
+
+def lire_donnees[T: BaseModel](raw: str, schema: type[T]) -> T:
+    """Parse le champ JSON `donnees` d'un multipart ; 422 si invalide."""
+    try:
+        return schema.model_validate_json(raw)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+
+
+@router.post(
+    "/equipments/serie",
+    response_model=SerieCreee,
+    status_code=status.HTTP_201_CREATED,
+)
+async def creer_serie(
+    user: RequireStaff,
+    db: DbSession,
+    donnees: str = Form(..., description="JSON d'EquipmentCreate."),
+    photo: UploadFile | None = File(None),
+) -> SerieCreee:
+    """Crée N fiches d'un coup (multipart : données JSON + photo optionnelle, copiée)."""
+    payload = lire_donnees(donnees, EquipmentCreate)
+    # Lue et validée avant toute écriture en base : une photo refusée ne crée rien.
+    image = await lire_photo(photo)
+    eqs = await creer_equipements(db, payload, user, image)
+    try:
+        await db.commit()
+    except BaseException:
+        effacer_photos([e.photo_chemin for e in eqs if e.photo_chemin])
+        raise
+    return SerieCreee(
+        ids=[e.id for e in eqs], noms=[e.nom for e in eqs], modele_id=payload.modele_id
+    )
 
 
 @router.patch("/equipments/{equipment_id}", response_model=EquipmentDetail)
@@ -769,7 +996,15 @@ async def update_equipment(
 
     if payload.nom is not None:
         eq.nom = payload.nom
-    if payload.categorie_id is not None:
+    if payload.modele_id is not None:
+        await _appliquer_modele(db, eq, payload.modele_id)
+    elif payload.categorie_id is not None and payload.categorie_id != eq.categorie_id:
+        # Avec un modèle, la catégorie est celle du modèle (on la change là-bas).
+        if eq.modele_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La catégorie suit le modèle : change-la sur le modèle.",
+            )
         eq.categorie_id = payload.categorie_id
     # Localisation : emplacement fixe et contenant sont exclusifs (règle de frontière).
     # Poser l'un efface l'autre ; si les deux sont fournis, le contenant l'emporte.
@@ -861,31 +1096,15 @@ async def upload_equipment_photo(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
 
-    ext = _ALLOWED_TYPES.get(file.content_type or "")
-    if ext is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Format image non supporté (jpeg, png, webp).",
-        )
-    data = await file.read()
-    if len(data) > _MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Image trop volumineuse (max 8 Mo).",
-        )
-
-    photos_dir = Path(settings.photos_dir)
-    photos_dir.mkdir(parents=True, exist_ok=True)
+    image = await lire_photo(file)
+    assert image is not None  # File(...) : le fichier est obligatoire sur cette route
     old = eq.photo_chemin
-    filename = f"{uuid_lib.uuid4().hex}{ext}"
-    (photos_dir / filename).write_bytes(data)
+    filename = ecrire_photo(*image)
     eq.photo_chemin = filename
     await db.commit()
 
     if old:
-        old_path = photos_dir / old
-        if old_path.exists():
-            old_path.unlink(missing_ok=True)
+        (Path(settings.photos_dir) / old).unlink(missing_ok=True)
 
     return PhotoUploadResult(photo_url=build_photo_url(filename))
 
@@ -912,26 +1131,6 @@ def _supprimer_photo(eq: Equipment) -> None:
     eq.photo_chemin = None
 
 
-async def _archiver_cascade(db: DbSession, eq: Equipment, valeur: bool) -> int:
-    """Pose `archive=valeur` sur l'équipement et sur tout son contenu. Ne commit pas.
-
-    Le rangement (`contenant_id`, `emplacement_id`) est laissé intact : un flight
-    archivé reste reconstituable à l'identique au désarchivage. Retourne le nombre
-    d'équipements touchés (la caisse comprise).
-    """
-    ids = await contenants.descendant_ids(db, eq.id)
-    eq.archive = valeur
-    touches = 1
-    if ids:
-        enfants = (
-            await db.scalars(select(Equipment).where(Equipment.id.in_(ids)))
-        ).all()
-        for enfant in enfants:
-            enfant.archive = valeur
-            touches += 1
-    return touches
-
-
 # --------------------------------------------------------------------------- #
 # Archivage / suppression
 # --------------------------------------------------------------------------- #
@@ -945,7 +1144,7 @@ async def archiver_equipment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
-    await _archiver_cascade(db, eq, True)
+    await contenants.archiver_cascade(db, eq, True)
     await db.commit()
     await db.refresh(eq)
     return await _build_detail(db, eq, user.id)
@@ -970,7 +1169,7 @@ async def desarchiver_equipment(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Le flight qui contient cet objet est archivé : désarchivez-le d'abord.",
             )
-    await _archiver_cascade(db, eq, False)
+    await contenants.archiver_cascade(db, eq, False)
     await db.commit()
     await db.refresh(eq)
     return await _build_detail(db, eq, user.id)

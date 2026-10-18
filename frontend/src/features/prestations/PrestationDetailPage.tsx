@@ -8,6 +8,8 @@ import type {
   ClotureDecision,
   EquipmentListItem,
   PrestationDetail,
+  StatutAllocation,
+  StatutEquipment,
   StatutPrestation,
 } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
@@ -17,13 +19,34 @@ import { EquipmentSearch } from "@/shared/EquipmentSearch";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
-import { buildAllocTree, fournisseurChips } from "./prestationTree";
+import { LocationsRendues } from "./LocationsRendues";
+import { ModeleSearch } from "./ModeleSearch";
+import {
+  ecrireModeRecherche,
+  lireModeRecherche,
+  type ModeRecherche,
+} from "./modeRecherche";
+import { buildAllocTree, fournisseurChips, grouperParModele } from "./prestationTree";
 import { formatPeriode } from "@/lib/prestationDate";
 import { useToast } from "@/shared/Toast";
 import { STATUT_LABEL, STATUT_STYLE, derivePrestaStatut } from "./statut";
 import { rapportCloture, type LigneRapport } from "./rapportCloture";
 
 type Mode = "info" | "sortie" | "retour" | "cloture";
+
+const STATUT_ALLOC_LABEL: Record<StatutAllocation, string> = {
+  Planifie: "Planifié",
+  Sorti: "Sorti",
+  Retourne: "Retourné",
+};
+
+/** Statuts qui interdisent l'allocation (miroir de services/disponibilite.py). */
+const STATUT_BLOQUANT: Partial<Record<StatutEquipment, string>> = {
+  En_Panne: "HS",
+  En_Reparation: "HS",
+  Perdu: "Perdu",
+  Reforme: "Réformé",
+};
 
 function clamp(v: number, low: number, high: number): number {
   return Math.max(low, Math.min(v, high));
@@ -374,21 +397,38 @@ function InfoView({
   const [reopening, setReopening] = useState(false);
   // "tous" | "interne" | String(fournisseur_id) — un loueur précis.
   const [filter, setFilter] = useState<string>("tous");
+  const [modeRecherche, setModeRecherche] = useState<ModeRecherche>(lireModeRecherche);
   const allocatedIds = useMemo(
     () => new Set(allocs.map((a) => a.equipment_id)),
     [allocs],
   );
 
+  function basculerRecherche() {
+    const next = modeRecherche === "modele" ? "nom" : "modele";
+    ecrireModeRecherche(next);
+    setModeRecherche(next);
+    setSearch("");
+  }
+
   async function addEquipment(eq: EquipmentListItem) {
     setAdding(true);
     try {
-      await api(`/prestations/${detail.id}/allocations`, {
+      const res = await api<Allocation>(`/prestations/${detail.id}/allocations`, {
         method: "POST",
         // Un contenant entraîne son contenu (les items suivent la caisse).
         body: { equipment_id: eq.id, quantite: 1, inclure_contenu: !!eq.est_contenant },
       });
       setSearch("");
       await onReload();
+      const ignores = res.contenu_ignore ?? 0;
+      if (ignores > 0) {
+        toast(
+          `${ignores} objet${ignores > 1 ? "s" : ""} du flight non ajouté${ignores > 1 ? "s" : ""} (HS ou déjà pris).`,
+          "info",
+        );
+      }
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : "Ajout impossible.", "error");
     } finally {
       setAdding(false);
     }
@@ -398,16 +438,6 @@ function InfoView({
     await api(`/prestations/${detail.id}/allocations/${alloc.id}`, {
       method: "DELETE",
     });
-    await onReload();
-  }
-
-  async function allocateCreated(created: { id: number }, quantite: number) {
-    await api(`/prestations/${detail.id}/allocations`, {
-      method: "POST",
-      body: { equipment_id: created.id, quantite: Math.max(1, quantite) },
-    });
-    setShowModal(false);
-    setSearch("");
     await onReload();
   }
 
@@ -442,18 +472,43 @@ function InfoView({
   // Arbre des contenants : les items d'un flight sont affichés imbriqués sous
   // leur caisse (style timeline), pas en vrac dans la liste plate.
   const { topLevel, descendantsOf } = buildAllocTree(visibleAllocs);
+  // Unités d'un même modèle regroupées (dès 2) : chacune n'apparaît qu'une fois,
+  // sous son modèle, même rangée dans un flight — étiquetée alors avec son flight,
+  // et le flight renvoie au groupe plutôt que de la lister une seconde fois.
+  const groupes = grouperParModele(visibleAllocs);
+  const groupees = new Set(groupes.flatMap((g) => g.unites.map((u) => u.id)));
+  const nomAlloc = (a: Allocation) =>
+    a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`;
+  const nomParEquipement = new Map(visibleAllocs.map((a) => [a.equipment_id, nomAlloc(a)]));
+  const flightDe = (a: Allocation) =>
+    a.equipment_contenant_id != null ? nomParEquipement.get(a.equipment_contenant_id) : undefined;
 
+  // Une unité (quantité 1) affiche son état ; un lot, ses compteurs.
   const metaLine = (a: Allocation) => (
     <p className="mt-1 text-xs text-fg-muted">
-      Prévu {a.quantite} · sorti {a.quantite_sortie} · retourné {a.quantite_retournee}
+      {a.quantite === 1
+        ? STATUT_ALLOC_LABEL[a.statut]
+        : `Prévu ${a.quantite} · sorti ${a.quantite_sortie} · retourné ${a.quantite_retournee}`}
     </p>
   );
-  const locationBadge = (a: Allocation) =>
-    a.equipment_externe ? (
-      <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-        Location
-      </span>
-    ) : null;
+  // Unité tombée en panne (ou perdue) depuis son allocation : à remplacer à la main.
+  const estHs = (a: Allocation) =>
+    a.statut !== "Retourne" && !!a.equipment_statut && !!STATUT_BLOQUANT[a.equipment_statut];
+  const nbHs = allocs.filter(estHs).length;
+  const badges = (a: Allocation) => (
+    <>
+      {estHs(a) && (
+        <span className="flex-none rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-semibold text-danger">
+          {STATUT_BLOQUANT[a.equipment_statut!]}
+        </span>
+      )}
+      {a.equipment_externe && (
+        <span className="flex-none rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+          Location
+        </span>
+      )}
+    </>
+  );
   const deleteBtn = (a: Allocation) =>
     editable && a.id > 0 ? (
       <button
@@ -464,6 +519,33 @@ function InfoView({
         <Icon name="delete" className="text-lg" />
       </button>
     ) : null;
+
+  // Ligne d'une timeline (contenu de flight ou unités d'un modèle).
+  const ligneTimeline = (c: Allocation, isLast: boolean, flight?: string) => (
+    <li key={c.id} className="relative flex gap-3 pb-3 last:pb-0">
+      {!isLast && <span className="absolute left-[7px] top-4 h-full w-px bg-line" />}
+      <span className="relative z-10 mt-1 flex h-4 w-4 flex-none items-center justify-center">
+        <span className="h-2.5 w-2.5 rounded-full border-2 border-line bg-bg" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+          {descendantsOf(c).length > 0 && (
+            <Icon name="inventory_2" className="flex-none text-sm text-fg-muted" />
+          )}
+          <span className="truncate">{nomAlloc(c)}</span>
+          {flight && (
+            <span className="inline-flex flex-none items-center gap-0.5 rounded-full bg-bg-elev px-1.5 py-0.5 text-[10px] font-semibold text-fg-muted">
+              <Icon name="inventory_2" className="text-[11px]" />
+              {flight}
+            </span>
+          )}
+          {badges(c)}
+        </p>
+        {metaLine(c)}
+      </div>
+      {deleteBtn(c)}
+    </li>
+  );
 
   return (
     <div className="space-y-4">
@@ -487,20 +569,52 @@ function InfoView({
           )}
         </div>
       )}
+      {detail.statut === "Terminee" && canManage && (
+        <LocationsRendues prestaId={detail.id} onDone={onReload} />
+      )}
+      {nbHs > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          <Icon name="warning" className="text-lg" />
+          {nbHs} unité{nbHs > 1 ? "s" : ""} HS dans la prestation : à remplacer.
+        </div>
+      )}
       {editable && (
         <div className="space-y-2">
-          <EquipmentSearch
-            value={search}
-            onChange={setSearch}
-            onSelect={addEquipment}
-            excludeIds={allocatedIds}
-            disabled={adding}
-            placeholder="Ajouter du matériel…"
-            renderMeta={(e) => (e.est_contenant ? "contenu inclus" : null)}
-            renderTrailing={() => (
-              <Icon name="add_circle" className="text-xl text-fg-muted" />
-            )}
-          />
+          {modeRecherche === "modele" ? (
+            <ModeleSearch
+              prestaId={detail.id}
+              value={search}
+              onChange={setSearch}
+              version={allocs.map((a) => a.id).join(",")}
+              onChanged={onReload}
+              onToggleMode={basculerRecherche}
+            />
+          ) : (
+            <EquipmentSearch
+              value={search}
+              onChange={setSearch}
+              onSelect={addEquipment}
+              excludeIds={allocatedIds}
+              disabled={adding}
+              placeholder="Nom ou code-barres…"
+              extraQuery={`pour_presta=${detail.id}`}
+              indisponible={(e) =>
+                STATUT_BLOQUANT[e.statut_actuel] ??
+                (e.occupe_par ? `Pris · ${e.occupe_par.presta_nom}` : null)
+              }
+              renderMeta={(e) =>
+                [e.modele_nom, e.est_contenant ? "contenu inclus" : null]
+                  .filter(Boolean)
+                  .join(" · ") || null
+              }
+              renderTrailing={() => (
+                <Icon name="add_circle" className="text-xl text-fg-muted" />
+              )}
+              icon="search"
+              onIconClick={basculerRecherche}
+              iconLabel="Passer à la recherche par modèle"
+            />
+          )}
 
           <button
             type="button"
@@ -541,79 +655,84 @@ function InfoView({
         )}
 
         <ul className="divide-y divide-line">
-          {topLevel.map((a) => {
-            const children = descendantsOf(a);
+          {groupes.map((g) => (
+            <li key={`modele-${g.modeleId}`} className="py-4" data-testid={`groupe-${g.nom}`}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+                  <Icon name="category" className="flex-none text-base text-fg-muted" />
+                  <span className="truncate">{g.nom}</span>
+                  {g.marque && (
+                    <span className="truncate font-normal text-fg-muted">· {g.marque}</span>
+                  )}
+                </p>
+                <span className="flex-none text-xs text-fg-muted">
+                  {g.unites.length} unités
+                </span>
+              </div>
+              <ol className="relative ml-2 mt-2">
+                {g.unites.map((u, i) =>
+                  ligneTimeline(u, i === g.unites.length - 1, flightDe(u)),
+                )}
+              </ol>
+            </li>
+          ))}
+          {topLevel
+            .filter((a) => !groupees.has(a.id))
+            .map((a) => {
+              const contenu = descendantsOf(a);
 
-            // Article simple (hors flight) : ligne plate classique.
-            if (children.length === 0) {
+              // Article simple (hors flight) : ligne plate classique.
+              if (contenu.length === 0) {
+                return (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 py-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{nomAlloc(a)}</p>
+                      {metaLine(a)}
+                    </div>
+                    {badges(a)}
+                    {deleteBtn(a)}
+                  </li>
+                );
+              }
+
+              // Flight : en-tête caisse + ses items en timeline (clairement dedans).
+              // Les unités déjà listées sous leur modèle sont résumées en fin de liste.
+              const children = contenu.filter((c) => !groupees.has(c.id));
+              const renvois = new Map<string, number>();
+              for (const c of contenu) {
+                if (!groupees.has(c.id)) continue;
+                const nom = c.equipment_modele_nom ?? "unités";
+                renvois.set(nom, (renvois.get(nom) ?? 0) + 1);
+              }
               return (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 py-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
+                <li key={`flight-${a.id}`} className="py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+                      <Icon name="inventory_2" className="flex-none text-base text-fg-muted" />
+                      <span className="truncate">{nomAlloc(a)}</span>
+                      {badges(a)}
                     </p>
-                    {metaLine(a)}
+                    {deleteBtn(a)}
                   </div>
-                  {locationBadge(a)}
-                  {deleteBtn(a)}
+                  <p className="mt-0.5 pl-[26px] text-xs text-fg-muted">
+                    {contenu.length} article{contenu.length > 1 ? "s" : ""} dans le flight
+                  </p>
+                  {children.length > 0 && (
+                    <ol className="relative ml-2 mt-2">
+                      {children.map((c, i) => ligneTimeline(c, i === children.length - 1))}
+                    </ol>
+                  )}
+                  {[...renvois].map(([nom, n]) => (
+                    <p key={nom} className="mt-1 pl-[26px] text-xs italic text-fg-muted">
+                      + {n} {nom}, voir plus haut
+                    </p>
+                  ))}
                 </li>
               );
-            }
-
-            // Flight : en-tête caisse + ses items en timeline (clairement dedans).
-            return (
-              <li key={`flight-${a.id}`} className="py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
-                    <Icon name="inventory_2" className="flex-none text-base text-fg-muted" />
-                    <span className="truncate">
-                      {a.equipment_nom ?? a.equipment_barcode ?? `#${a.equipment_id}`}
-                    </span>
-                    {locationBadge(a)}
-                  </p>
-                  {deleteBtn(a)}
-                </div>
-                <p className="mt-0.5 pl-[26px] text-xs text-fg-muted">
-                  {children.length} article{children.length > 1 ? "s" : ""} dans le flight
-                </p>
-                <ol className="relative ml-2 mt-2">
-                  {children.map((c, i) => {
-                    const isLast = i === children.length - 1;
-                    const isContainer = descendantsOf(c).length > 0;
-                    return (
-                      <li key={c.id} className="relative flex gap-3 pb-3 last:pb-0">
-                        {!isLast && (
-                          <span className="absolute left-[7px] top-4 h-full w-px bg-line" />
-                        )}
-                        <span className="relative z-10 mt-1 flex h-4 w-4 flex-none items-center justify-center">
-                          <span className="h-2.5 w-2.5 rounded-full border-2 border-line bg-bg" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                            {isContainer && (
-                              <Icon
-                                name="inventory_2"
-                                className="flex-none text-sm text-fg-muted"
-                              />
-                            )}
-                            <span className="truncate">
-                              {c.equipment_nom ?? c.equipment_barcode ?? `#${c.equipment_id}`}
-                            </span>
-                            {locationBadge(c)}
-                          </p>
-                          {metaLine(c)}
-                        </div>
-                        {deleteBtn(c)}
-                      </li>
-                    );
-                  })}
-                </ol>
-              </li>
-            );
-          })}
+            })}
         </ul>
         {visibleAllocs.length === 0 && (
           <p className="py-8 text-center text-sm text-fg-muted">
@@ -642,9 +761,13 @@ function InfoView({
             </p>
             <EquipmentForm
               externeDefault
-              showQuantite
+              prestaId={detail.id}
               submitLabel="Créer et allouer"
-              onCreated={(created, quantite) => allocateCreated(created, quantite)}
+              onCreated={async () => {
+                setShowModal(false);
+                setSearch("");
+                await onReload();
+              }}
             />
           </div>
         </div>

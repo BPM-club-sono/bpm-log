@@ -64,6 +64,19 @@ export function CatalogPage() {
     };
   }, [archived]);
 
+  // Lien « voir les unités d'un modèle » (`?modele=<id>`, page Modèles ou
+  // création en série) : pas de filtre caché, on pré-remplit la recherche avec
+  // le nom du modèle, que l'utilisateur voit et efface comme n'importe quelle saisie.
+  const modeleParam = params.get("modele");
+  useEffect(() => {
+    if (!modeleParam || loading) return;
+    const nom = equipments.find((e) => String(e.modele_id) === modeleParam)?.modele_nom;
+    if (nom) setQuery(nom);
+    const next = new URLSearchParams(params);
+    next.delete("modele");
+    setParams(next, { replace: true });
+  }, [modeleParam, loading, equipments, params, setParams]);
+
   function selectFiltre(f: Filtre) {
     setFiltre(f);
     if (f === "tous") setParams({});
@@ -75,7 +88,12 @@ export function CatalogPage() {
     return equipments.filter((e) => {
       if (filtre === "externe" && !e.externe) return false;
       if (filtre !== "tous" && filtre !== "externe" && e.type !== filtre) return false;
-      if (q && !e.nom.toLowerCase().includes(q) && !e.barcode_uid.toLowerCase().includes(q))
+      if (
+        q &&
+        !e.nom.toLowerCase().includes(q) &&
+        !e.barcode_uid.toLowerCase().includes(q) &&
+        !(e.modele_nom ?? "").toLowerCase().includes(q)
+      )
         return false;
       return true;
     });
@@ -83,24 +101,33 @@ export function CatalogPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-start justify-between gap-3">
+      {/* Titre seul sur sa ligne, raccourcis en dessous : côte à côte, ils
+          écrasaient le titre et débordaient sur mobile. */}
+      <header className="space-y-3">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold">Parc matériel</h1>
           <p className="text-sm text-fg-muted">
             {filtered.length} équipement{filtered.length > 1 ? "s" : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <Link
             to="/inventaire/rangement"
-            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
           >
             <Icon name="account_tree" className="text-base" />
             Rangement
           </Link>
           <Link
+            to="/modeles"
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+          >
+            <Icon name="category" className="text-base" />
+            Modèles
+          </Link>
+          <Link
             to="/etiquettes"
-            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
           >
             <Icon name="print" className="text-base" />
             Étiquettes
@@ -111,7 +138,7 @@ export function CatalogPage() {
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Rechercher un nom ou un code-barres…"
+        placeholder="Nom, code-barres ou modèle…"
       />
 
       <div className="flex flex-wrap gap-2">
@@ -236,6 +263,11 @@ function Preview({ item }: { item: EquipmentListItem }) {
   }
   return (
     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-fg-muted">
+      {item.modele_nom && (
+        <span className="inline-flex items-center gap-1 font-medium text-fg">
+          {item.modele_nom}
+        </span>
+      )}
       {item.categorie_nom && (
         <span className="inline-flex items-center gap-1">
           <Icon name="category" className="text-sm" />

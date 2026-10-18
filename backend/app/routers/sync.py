@@ -19,7 +19,6 @@ from app.models import (
     AllocationPresta,
     Equipment,
     EquipmentConsommable,
-    EquipmentLocation,
     EquipmentVrac,
     InventaireVrac,
     LogScan,
@@ -229,11 +228,6 @@ async def _apply_presta_check(
         and alloc.quantite_sortie > 0
         and alloc.quantite_retournee >= alloc.quantite_sortie
     ):
-        # Matériel de location entièrement rendu : on l'archive (trace conservée,
-        # masqué du Parc).
-        location = await db.get(EquipmentLocation, equipment.id)
-        if location is not None:
-            equipment.archive = True
         # Déclaré perdu (ou laissé en suspens) à la clôture, puis rendu : l'écart est
         # réglé, il sort du rapport de clôture, et l'équipement n'est plus perdu.
         # Un « cassé » reste en panne : il est revenu, mais toujours à réparer.
