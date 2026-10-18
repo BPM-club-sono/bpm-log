@@ -38,6 +38,8 @@ from app.schemas.prestation import (
     AllocationRead,
     ClotureIn,
     EquipmentCreatePresta,
+    LocationRendue,
+    LocationsRendues,
     ModeleDispo,
     ModeleStepIn,
     PrestationCreate,
@@ -48,6 +50,7 @@ from app.schemas.prestation import (
 )
 from app.security.rbac import RequireStaff
 from app.services import contenants, disponibilite
+from app.services.locations_rendues import TriLocations, trier_locations_rendues
 from app.services.prestation_statut import recalculer_statut, statut_derive
 
 router = APIRouter(prefix="/prestations", tags=["prestations"])
@@ -830,3 +833,61 @@ async def rouvrir_prestation(
     presta.statut = await statut_derive(db, presta.id)
     await db.commit()
     return await _detail_response(db, presta)
+
+
+# --- Archivage des locations rendues --------------------------------------
+
+
+async def _locations_rendues(db: DbSession, tri: TriLocations) -> LocationsRendues:
+    loc = await _location_map(db)
+
+    def ligne(eq: Equipment, raison: str | None) -> LocationRendue:
+        fournisseur = loc.get(eq.id)
+        return LocationRendue(
+            equipment_id=eq.id,
+            nom=eq.nom,
+            fournisseur_nom=fournisseur[1] if fournisseur else None,
+            raison=raison,
+        )
+
+    return LocationsRendues(
+        archivables=[ligne(eq, None) for eq in tri.archivables],
+        gardes=[ligne(eq, raison) for eq, raison in tri.gardes],
+    )
+
+
+@router.get("/{presta_id}/locations-rendues", response_model=LocationsRendues)
+async def lire_locations_rendues(
+    presta_id: int,
+    db: DbSession,
+    _user: CurrentUser,
+) -> LocationsRendues:
+    """Aperçu : locations de la prestation archivables d'un coup, et celles gardées
+    avec leur raison (règle dans app/services/locations_rendues.py)."""
+    presta = await _get_presta_or_404(db, presta_id)
+    return await _locations_rendues(db, await trier_locations_rendues(db, presta))
+
+
+@router.post("/{presta_id}/locations-rendues/archivage", response_model=LocationsRendues)
+async def archiver_locations_rendues(
+    presta_id: int,
+    db: DbSession,
+    _user: RequireStaff,
+) -> LocationsRendues:
+    """Archive (avec leur contenu) les locations rendues d'une prestation clôturée.
+
+    Le tri est refait ici, pas repris de l'aperçu : `archivables` liste ce qui a
+    vraiment été archivé. Rejouer la route n'archive plus rien.
+    """
+    presta = await _get_presta_or_404(db, presta_id)
+    if presta.statut != StatutPrestation.TERMINEE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La prestation n'est pas clôturée.",
+        )
+    tri = await trier_locations_rendues(db, presta)
+    for eq in tri.archivables:
+        await contenants.archiver_cascade(db, eq, True)
+    resultat = await _locations_rendues(db, tri)
+    await db.commit()
+    return resultat

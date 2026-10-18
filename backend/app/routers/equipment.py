@@ -1125,26 +1125,6 @@ def _supprimer_photo(eq: Equipment) -> None:
     eq.photo_chemin = None
 
 
-async def _archiver_cascade(db: DbSession, eq: Equipment, valeur: bool) -> int:
-    """Pose `archive=valeur` sur l'équipement et sur tout son contenu. Ne commit pas.
-
-    Le rangement (`contenant_id`, `emplacement_id`) est laissé intact : un flight
-    archivé reste reconstituable à l'identique au désarchivage. Retourne le nombre
-    d'équipements touchés (la caisse comprise).
-    """
-    ids = await contenants.descendant_ids(db, eq.id)
-    eq.archive = valeur
-    touches = 1
-    if ids:
-        enfants = (
-            await db.scalars(select(Equipment).where(Equipment.id.in_(ids)))
-        ).all()
-        for enfant in enfants:
-            enfant.archive = valeur
-            touches += 1
-    return touches
-
-
 # --------------------------------------------------------------------------- #
 # Archivage / suppression
 # --------------------------------------------------------------------------- #
@@ -1158,7 +1138,7 @@ async def archiver_equipment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
-    await _archiver_cascade(db, eq, True)
+    await contenants.archiver_cascade(db, eq, True)
     await db.commit()
     await db.refresh(eq)
     return await _build_detail(db, eq, user.id)
@@ -1183,7 +1163,7 @@ async def desarchiver_equipment(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Le flight qui contient cet objet est archivé : désarchivez-le d'abord.",
             )
-    await _archiver_cascade(db, eq, False)
+    await contenants.archiver_cascade(db, eq, False)
     await db.commit()
     await db.refresh(eq)
     return await _build_detail(db, eq, user.id)

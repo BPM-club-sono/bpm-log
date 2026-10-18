@@ -153,3 +153,17 @@ class ClotureItem(BaseModel):
 
 class ClotureIn(BaseModel):
     items: list[ClotureItem] = Field(default_factory=list)
+
+
+class LocationRendue(BaseModel):
+    """Une location d'une prestation clôturée, vue par l'archivage en lot."""
+
+    equipment_id: int
+    nom: str
+    fournisseur_nom: str | None
+    raison: str | None  # None = archivable ; sinon pourquoi elle est gardée
+
+
+class LocationsRendues(BaseModel):
+    archivables: list[LocationRendue]
+    gardes: list[LocationRendue]
