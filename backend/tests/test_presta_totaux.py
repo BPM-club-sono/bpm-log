@@ -7,6 +7,7 @@ import uuid
 
 import pytest
 from conftest import make_equipment
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models import (
@@ -191,3 +192,43 @@ async def test_fige_a_la_cloture(db_session, staff):
         )
     ).all()
     assert figes == [(None, None), (None, None)]
+
+
+async def _presta_cloturee(s, staff, m) -> Prestation:
+    p = await _presta(s)
+    await _allouer(
+        s,
+        staff,
+        p,
+        await make_equipment(s, "Lyre 1", modele_id=m.id),
+        await make_equipment(s, "Lyre 2", modele_id=m.id),
+    )
+    await cloturer_prestation(p.id, ClotureIn(), s, staff)
+    return p
+
+
+async def test_recloture_ne_refige_pas(db_session, staff):
+    s = db_session
+    m = await _modele(s, poids=10, prix_interne=20)
+    p = await _presta_cloturee(s, staff, m)
+
+    m.prix_interne = 100
+    m.poids = 1
+    await s.flush()
+    # Clôture rejouée (double envoi, nouvel essai) : les valeurs figées restent.
+    t = (await cloturer_prestation(p.id, ClotureIn(), s, staff)).totaux
+    assert (t.prix_total, t.poids_total, t.fige) == (40, 20, True)
+
+
+async def test_type_presta_cloturee_refuse(db_session, staff):
+    s = db_session
+    m = await _modele(s, prix_interne=20, prix_externe=50)
+    p = await _presta_cloturee(s, staff, m)
+
+    # Même type : sans effet, accepté.
+    await update_prestation(p.id, PrestationUpdate(type=TypePrestation.INTERNE), s, staff)
+    with pytest.raises(HTTPException) as exc:
+        await update_prestation(p.id, PrestationUpdate(type=TypePrestation.EXTERNE), s, staff)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Prestation clôturée : rouvre-la pour changer son type."
+    assert (await _totaux(s, staff, p)).tarif == "interne"

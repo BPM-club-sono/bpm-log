@@ -265,6 +265,16 @@ async def update_prestation(
     _user: RequireStaff,
 ) -> Prestation:
     presta = await _get_presta_or_404(db, presta_id)
+    # Les prix sont figés au tarif du type à la clôture : en changer mélangerait deux tarifs.
+    if (
+        presta.statut == StatutPrestation.TERMINEE
+        and data.type is not None
+        and data.type != presta.type
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Prestation clôturée : rouvre-la pour changer son type.",
+        )
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(presta, field, value)
     # Un PATCH partiel (une seule borne) doit rester cohérent avec la valeur déjà
@@ -775,6 +785,7 @@ async def cloturer_prestation(
 ) -> PrestationDetail:
     """Tranche les items non retournés et termine la prestation."""
     presta = await _get_presta_or_404(db, presta_id)
+    deja_terminee = presta.statut == StatutPrestation.TERMINEE
     allocs = list(
         (
             await db.scalars(
@@ -838,7 +849,10 @@ async def cloturer_prestation(
                 )
         # "ouvert" : on ne touche à rien, l'écart reste visible.
 
-    await figer_allocations(db, presta)
+    # Clôture rejouée sur une presta déjà terminée (double envoi) : les valeurs
+    # figées restent celles de la première clôture.
+    if not deja_terminee:
+        await figer_allocations(db, presta)
     presta.statut = StatutPrestation.TERMINEE
     await db.commit()
     return await _detail_response(db, presta)
