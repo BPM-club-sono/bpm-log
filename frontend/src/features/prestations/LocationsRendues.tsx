@@ -17,6 +17,7 @@ export function LocationsRendues({ prestaId, onDone }: LocationsRenduesProps) {
   const { toast } = useToast();
   const [apercu, setApercu] = useState<LocationsRenduesData | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rafraichir, setRafraichir] = useState(0);
 
   useEffect(() => {
     let stale = false;
@@ -30,7 +31,7 @@ export function LocationsRendues({ prestaId, onDone }: LocationsRenduesProps) {
     return () => {
       stale = true;
     };
-  }, [prestaId]);
+  }, [prestaId, rafraichir]);
 
   if (!apercu || apercu.archivables.length === 0) return null;
   const n = apercu.archivables.length;
@@ -51,7 +52,9 @@ export function LocationsRendues({ prestaId, onDone }: LocationsRenduesProps) {
         { method: "POST" },
       );
       const k = r.archivables.length;
-      toast(`${k} location${k > 1 ? "s" : ""} archivée${k > 1 ? "s" : ""}`, "success");
+      if (k > 0) {
+        toast(`${k} location${k > 1 ? "s" : ""} archivée${k > 1 ? "s" : ""}`, "success");
+      }
       if (r.gardes.length) {
         const liste = r.gardes
           .slice(0, 3)
@@ -60,6 +63,7 @@ export function LocationsRendues({ prestaId, onDone }: LocationsRenduesProps) {
         const reste = r.gardes.length - 3;
         toast(reste > 0 ? `${liste}\net ${reste} autre${reste > 1 ? "s" : ""}` : liste, "info");
       }
+      setRafraichir((v) => v + 1);
       await refreshEquipmentMirror();
       await onDone();
     } catch (e) {

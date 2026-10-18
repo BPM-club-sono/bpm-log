@@ -109,6 +109,10 @@ test("Prestation clôturée : archive les locations rendues seulement", async ({
   page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Archiver les locations rendues (1)" }).click();
   await expect(page.getByText("1 location archivée")).toBeVisible();
+  await expect(page.getByText(`« ${b.nom} » gardé`)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Archiver les locations rendues/ }),
+  ).toHaveCount(0);
 
   expect((await (await api.get(`equipments/${a.id}`)).json()).archive).toBe(true);
   expect((await (await api.get(`equipments/${b.id}`)).json()).archive).toBe(false);
