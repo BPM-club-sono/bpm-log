@@ -27,6 +27,7 @@ import { Icon } from "@/shared/Icon";
 import { PhotoViewer } from "@/shared/PhotoViewer";
 import { StatusBadge } from "@/shared/StatusBadge";
 import { useToast } from "@/shared/Toast";
+import { EquipmentSpecs } from "@/features/specs/EquipmentSpecs";
 import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
 
@@ -208,6 +209,7 @@ export function EquipmentDetailPage() {
               )
             }
           />
+          {eq.remarque && <Info label="Remarque" value={eq.remarque} />}
           {eq.externe && (
             <>
               <Info label="Fournisseur" value={eq.location?.fournisseur_nom ?? null} />
@@ -244,6 +246,8 @@ export function EquipmentDetailPage() {
           onDone={() => setMoving(false)}
         />
       )}
+
+      <EquipmentSpecs equipmentId={equipmentId} modeleNom={eq.modele_nom ?? null} />
 
       {eq.contenu && eq.contenu.length > 0 && <ContenuBlock contenu={eq.contenu} />}
 
@@ -895,6 +899,7 @@ function EditForm({
   );
   const [nouveauFournisseur, setNouveauFournisseur] = useState("");
   const [refDevis, setRefDevis] = useState(eq.location?.reference_devis ?? "");
+  const [remarque, setRemarque] = useState(eq.remarque ?? "");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(eq.photo_url);
 
@@ -1012,6 +1017,7 @@ function EditForm({
         barcode_uid: barcode,
         statut_actuel: statut,
         externe,
+        remarque,
       };
       // Avec un modèle, la catégorie suit la sienne : on n'envoie que le modèle.
       if (modele) body.modele_id = modele.id;
@@ -1189,6 +1195,15 @@ function EditForm({
           </Field>
         </>
       )}
+
+      <Field label="Remarque">
+        <textarea
+          value={remarque}
+          onChange={(e) => setRemarque(e.target.value)}
+          rows={2}
+          className={`${inputCls} h-auto py-2`}
+        />
+      </Field>
 
       <ExterneFields
         externe={externe}

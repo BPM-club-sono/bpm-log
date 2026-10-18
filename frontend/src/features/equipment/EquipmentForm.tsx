@@ -73,6 +73,7 @@ export function EquipmentForm({
   const [fournisseurId, setFournisseurId] = useState<number | "">("");
   const [nouveauFournisseur, setNouveauFournisseur] = useState("");
   const [refDevis, setRefDevis] = useState("");
+  const [remarque, setRemarque] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
@@ -188,6 +189,7 @@ export function EquipmentForm({
         else if (fournisseurId !== "") body.fournisseur_id = fournisseurId;
         body.reference_devis = refDevis || null;
       }
+      if (remarque.trim()) body.remarque = remarque.trim();
       body.nombre = nbExemplaires;
       if (avecQuantite) body.quantite_allouee = Math.max(1, quantite);
       const form = new FormData();
@@ -376,6 +378,15 @@ export function EquipmentForm({
           </Field>
         </>
       )}
+
+      <Field label="Remarque (facultatif)">
+        <textarea
+          value={remarque}
+          onChange={(e) => setRemarque(e.target.value)}
+          rows={2}
+          className={`${inputCls} h-auto py-2`}
+        />
+      </Field>
 
       <ExterneFields
         externe={externe}

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
-import type { Categorie, Modele } from "@/lib/types";
+import type { Categorie, Modele, Specs } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { useToast } from "@/shared/Toast";
+import { SpecsEditor } from "@/features/specs/SpecsEditor";
+import { SpecsSheet } from "@/features/specs/SpecsSheet";
 
 const inputCls =
   "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
@@ -24,6 +26,8 @@ export function ModelesPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Modele | null>(null);
   const [creating, setCreating] = useState(false);
+  const [ouvert, setOuvert] = useState<number | null>(null);
+  const [specsEdit, setSpecsEdit] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -98,7 +102,8 @@ export function ModelesPage() {
       {items.length > 0 && (
         <ul className="divide-y divide-line rounded-2xl border border-line bg-bg-soft">
           {items.map((m) => (
-            <li key={m.id} className="flex items-center gap-3 px-4 py-3">
+            <li key={m.id} className="px-4 py-3">
+              <div className="flex items-center gap-3">
               <Link
                 to={`/inventaire?modele=${m.id}`}
                 className="min-w-0 flex-1 hover:opacity-70"
@@ -112,6 +117,27 @@ export function ModelesPage() {
                   {m.categorie_nom ? ` · ${m.categorie_nom}` : ""}
                 </p>
               </Link>
+              <button
+                type="button"
+                onClick={() => setOuvert(ouvert === m.id ? null : m.id)}
+                className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-fg-muted"
+                aria-label="Voir les spécifications"
+                aria-expanded={ouvert === m.id}
+              >
+                <Icon name={ouvert === m.id ? "expand_less" : "expand_more"} className="text-lg" />
+              </button>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOuvert(m.id);
+                    setSpecsEdit(m.id);
+                  }}
+                  className="flex h-9 flex-none items-center justify-center rounded-lg border border-line px-2 text-xs font-medium text-fg-muted"
+                >
+                  Spécifications
+                </button>
+              )}
               {canManage && (
                 <button
                   type="button"
@@ -134,12 +160,41 @@ export function ModelesPage() {
                   <Icon name="delete" className="text-lg" />
                 </button>
               )}
+              </div>
+              {ouvert === m.id && (
+                <div className="pt-3">
+                  {specsEdit === m.id ? (
+                    <SpecsEditor
+                      cible="modeles"
+                      id={m.id}
+                      onCancel={() => setSpecsEdit(null)}
+                      onSaved={() => {
+                        setSpecsEdit(null);
+                        toast("Spécifications enregistrées.", "success");
+                      }}
+                    />
+                  ) : (
+                    <ModeleSpecs key={m.id} id={m.id} />
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
     </div>
   );
+}
+
+function ModeleSpecs({ id }: { id: number }) {
+  const [specs, setSpecs] = useState<Specs | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    api<Specs>(`/modeles/${id}/specs`).then(setSpecs, () => setError(true));
+  }, [id]);
+  if (error) return <p className="text-sm text-danger">Spécifications indisponibles.</p>;
+  if (!specs) return <p className="text-sm text-fg-muted">Chargement…</p>;
+  return <SpecsSheet specs={specs} />;
 }
 
 function ModeleForm({
