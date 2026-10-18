@@ -78,7 +78,7 @@ async def membre_id(db_session) -> int:
     Ne jamais supposer qu'un membre d'id 1 existe : c'est vrai sur la base de dev,
     pas sur la base vierge de la CI.
     """
-    membre = Membre(email=f"test-{uuid.uuid4().hex[:8]}@test.local", role=RoleMembre.STAFF)
+    membre = Membre(email=f"test-{uuid.uuid4().hex[:8]}@bpm.example", role=RoleMembre.STAFF)
     db_session.add(membre)
     await db_session.flush()
     return membre.id

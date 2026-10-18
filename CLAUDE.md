@@ -18,6 +18,7 @@ Monorepo: `backend/` (FastAPI + PostgreSQL) and `frontend/` (React PWA). The dom
 ../.venv/bin/python -m alembic upgrade head    # apply migrations (DB must be up)
 ../.venv/bin/python -m alembic revision --autogenerate -m "msg"   # new migration after model change
 ../.venv/bin/python -m app.seed --email admin@bpm.example --password "x"   # create initial Admin
+../.venv/bin/python -m app.import_csv --api http://localhost:8000/api [--apply]   # import inventaire CSV via l'API (simulation sans --apply ; BPM_TOKEN = id_token)
 ../.venv/bin/pytest                            # run tests
 ../.venv/bin/pytest tests/test_smoke.py::test_health_ok   # single test
 ../.venv/bin/ruff check .                       # lint (line-length 100, rules E/F/I/UP/B)
