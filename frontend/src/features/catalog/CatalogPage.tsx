@@ -105,31 +105,33 @@ export function CatalogPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-start justify-between gap-3">
+      {/* Titre seul sur sa ligne, raccourcis en dessous : côte à côte, ils
+          écrasaient le titre et débordaient sur mobile. */}
+      <header className="space-y-3">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold">Parc matériel</h1>
           <p className="text-sm text-fg-muted">
             {filtered.length} équipement{filtered.length > 1 ? "s" : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <Link
             to="/inventaire/rangement"
-            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
           >
             <Icon name="account_tree" className="text-base" />
             Rangement
           </Link>
           <Link
             to="/modeles"
-            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
           >
             <Icon name="category" className="text-base" />
             Modèles
           </Link>
           <Link
             to="/etiquettes"
-            className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
           >
             <Icon name="print" className="text-base" />
             Étiquettes
@@ -140,7 +142,7 @@ export function CatalogPage() {
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Rechercher un nom, un code-barres ou un modèle…"
+        placeholder="Nom, code-barres ou modèle…"
       />
 
       <div className="flex flex-wrap gap-2">
@@ -159,19 +161,26 @@ export function CatalogPage() {
 
       <div className="flex items-center justify-between gap-2">
         {modeles.length > 0 ? (
-          <select
-            value={modeleFiltre ?? ""}
-            onChange={(e) => updateParams(filtre, e.target.value || null)}
-            aria-label="Filtrer par modèle"
-            className="h-8 min-w-0 rounded-full border border-line bg-bg-soft px-3 text-xs font-medium text-fg-muted"
-          >
-            <option value="">Tous les modèles</option>
-            {modeles.map(([id, nom]) => (
-              <option key={id} value={id}>
-                {nom}
-              </option>
-            ))}
-          </select>
+          <div className="relative min-w-0">
+            {/* Flèche dessinée à la main : la native colle au bord de la pastille. */}
+            <select
+              value={modeleFiltre ?? ""}
+              onChange={(e) => updateParams(filtre, e.target.value || null)}
+              aria-label="Filtrer par modèle"
+              className="h-8 w-full min-w-0 appearance-none truncate rounded-full border border-line bg-bg-soft pl-3 pr-8 text-xs font-medium text-fg-muted"
+            >
+              <option value="">Tous les modèles</option>
+              {modeles.map(([id, nom]) => (
+                <option key={id} value={id}>
+                  {nom}
+                </option>
+              ))}
+            </select>
+            <Icon
+              name="expand_more"
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-base text-fg-muted"
+            />
+          </div>
         ) : (
           <span />
         )}
