@@ -103,8 +103,15 @@ class ConnecteurUpdate(BaseModel):
 
 # --- Spécifications d'un modèle / d'un équipement sans modèle ---------------
 
-#: Poids (kg), dimension (cm) ou prix (€) : jamais négatif.
-Positif = Annotated[float | None, Field(ge=0)]
+def _positif(maximum: float):
+    """Borne haute = capacité de la colonne Numeric (sinon 500 à l'écriture)."""
+    return Annotated[float | None, Field(ge=0, le=maximum, allow_inf_nan=False)]
+
+
+#: Poids (kg), dimension (cm) ou prix (€) : jamais négatif, borné à la colonne.
+Poids = _positif(999_999.99)  # Numeric(8,2)
+Dimension = _positif(9_999_999.9)  # Numeric(8,1)
+Prix = _positif(99_999_999.99)  # Numeric(10,2)
 
 
 class ConnectiqueIn(BaseModel):
@@ -152,11 +159,11 @@ class SpecsWrite(BaseModel):
     `valeurs`, seules les clés fournies sont touchées (None ou blanc = effacer)."""
 
     sous_categorie_id: int | None = None
-    poids: Positif = None
-    longueur: Positif = None
-    largeur: Positif = None
-    hauteur: Positif = None
-    prix_interne: Positif = None
-    prix_externe: Positif = None
+    poids: Poids = None
+    longueur: Dimension = None
+    largeur: Dimension = None
+    hauteur: Dimension = None
+    prix_interne: Prix = None
+    prix_externe: Prix = None
     valeurs: dict[int, str | None] = {}
     connectiques: list[ConnectiqueIn] = []

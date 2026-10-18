@@ -11,15 +11,9 @@ from app.deps import CurrentUser, DbSession
 from app.models import Categorie, Equipment, Modele
 from app.schemas.equipment import ModeleCreate, ModeleRead, ModeleUpdate
 from app.security.rbac import RequireAdmin, RequireStaff
+from app.services.erreurs import modele_or_404
 
 router = APIRouter(tags=["modeles"])
-
-
-async def _get_or_404(db: DbSession, modele_id: int) -> Modele:
-    modele = await db.get(Modele, modele_id)
-    if modele is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modèle introuvable.")
-    return modele
 
 
 async def _verifier_nom(db: DbSession, nom: str, modele_id: int | None) -> None:
@@ -102,7 +96,7 @@ async def create_modele(payload: ModeleCreate, _user: RequireStaff, db: DbSessio
 async def update_modele(
     modele_id: int, payload: ModeleUpdate, _user: RequireStaff, db: DbSession
 ) -> ModeleRead:
-    modele = await _get_or_404(db, modele_id)
+    modele = await modele_or_404(db, modele_id)
     champs = payload.model_fields_set
     if payload.nom is not None:
         await _verifier_nom(db, payload.nom, modele.id)
@@ -128,7 +122,7 @@ async def update_modele(
 
 @router.delete("/modeles/{modele_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_modele(modele_id: int, _user: RequireAdmin, db: DbSession) -> None:
-    modele = await _get_or_404(db, modele_id)
+    modele = await modele_or_404(db, modele_id)
     nb = await db.scalar(
         select(func.count()).select_from(Equipment).where(Equipment.modele_id == modele.id)
     )

@@ -9,6 +9,7 @@ import uuid
 import pytest
 from conftest import make_equipment, routes_montees
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from app.models import (
@@ -383,3 +384,25 @@ def test_ecriture_specs_exige_staff():
             assert hints["_user"] is RequireStaff, path
             vues += 1
     assert vues == 2
+
+
+async def test_put_renvoie_les_valeurs_arrondies_en_base(db_session, staff):
+    modele = await _modele(db_session)
+    specs = await ecrire_specs_modele(modele.id, SpecsWrite(poids=12.345), staff, db_session)
+    assert specs.poids == 12.35
+
+
+@pytest.mark.parametrize(
+    ("champ", "valeur"),
+    [
+        ("poids", 1e9),
+        ("poids", float("inf")),
+        ("poids", float("nan")),
+        ("longueur", 1e9),
+        ("prix_interne", 1e9),
+        ("prix_externe", float("inf")),
+    ],
+)
+def test_nombres_hors_colonne_refuses_en_422(champ, valeur):
+    with pytest.raises(ValidationError):
+        SpecsWrite(**{champ: valeur})

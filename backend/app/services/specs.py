@@ -21,8 +21,8 @@ from app.models import (
     ValeurSpecification,
 )
 from app.models.enums import TypeChampSpec
-from app.routers.referentiel import _conflit, _introuvable, _invalide, _sous_categorie_or_404
 from app.schemas.specs import ConnectiqueRead, SpecsRead, SpecsWrite, ValeurSpecRead
+from app.services.erreurs import conflit, introuvable, invalide, sous_categorie_or_404
 
 _NOMBRE = re.compile(r"-?\d+(\.\d+)?")
 _COLONNES = (
@@ -130,15 +130,15 @@ def normaliser_valeur(champ: ChampSpecification, brut: str) -> str:
         # Virgule décimale française acceptée, stockée avec un point.
         nombre = valeur.replace(",", ".")
         if not _NOMBRE.fullmatch(nombre):
-            raise _invalide(f"« {champ.nom} » attend un nombre (ex. 1,5).")
+            raise invalide(f"« {champ.nom} » attend un nombre (ex. 1,5).")
         return nombre
     if champ.type == TypeChampSpec.OUI_NON:
         if valeur not in ("true", "false"):
-            raise _invalide(f"« {champ.nom} » attend oui ou non.")
+            raise invalide(f"« {champ.nom} » attend oui ou non.")
         return valeur
     if champ.type == TypeChampSpec.CHOIX:
         if valeur not in (champ.options or []):
-            raise _invalide(f"« {valeur} » n'est pas un choix proposé pour « {champ.nom} ».")
+            raise invalide(f"« {valeur} » n'est pas un choix proposé pour « {champ.nom} ».")
         return valeur
     return valeur
 
@@ -148,9 +148,9 @@ async def _verifier_sous_categorie(
 ) -> None:
     if sous_categorie_id is None:
         return
-    sc = await _sous_categorie_or_404(db, sous_categorie_id)
+    sc = await sous_categorie_or_404(db, sous_categorie_id)
     if sc.categorie_id != categorie_id:
-        raise _invalide("La sous-catégorie n'appartient pas à la catégorie.")
+        raise invalide("La sous-catégorie n'appartient pas à la catégorie.")
 
 
 async def _valeurs_normalisees(
@@ -163,7 +163,7 @@ async def _valeurs_normalisees(
         c.id: c for c in await _champs_applicables(db, cible.categorie_id, data.sous_categorie_id)
     }
     if hors_portee := sorted(set(data.valeurs) - set(champs)):
-        raise _invalide(f"Champ(s) non applicable(s) ici : {', '.join(map(str, hors_portee))}.")
+        raise invalide(f"Champ(s) non applicable(s) ici : {', '.join(map(str, hors_portee))}.")
     return {
         cid: normaliser_valeur(champs[cid], brut) if brut and brut.strip() else None
         for cid, brut in data.valeurs.items()
@@ -173,11 +173,11 @@ async def _valeurs_normalisees(
 async def _verifier_connectiques(db: DbSession, data: SpecsWrite) -> None:
     cles = [(c.connecteur_id, c.sens) for c in data.connectiques]
     if len(set(cles)) != len(cles):
-        raise _invalide("Un même connecteur est saisi deux fois dans le même sens.")
+        raise invalide("Un même connecteur est saisi deux fois dans le même sens.")
     ids = {c.connecteur_id for c in data.connectiques}
     connus = set((await db.scalars(select(Connecteur.id).where(Connecteur.id.in_(ids)))).all())
     if ids - connus:
-        raise _introuvable("Connecteur introuvable.")
+        raise introuvable("Connecteur introuvable.")
 
 
 def _cible_kw(cible: Modele | Equipment) -> dict[str, int]:
@@ -188,7 +188,7 @@ async def ecrire_specs(db: DbSession, cible: Modele | Equipment, data: SpecsWrit
     """Écrit les specs de `cible` (sans commit). Tout est validé avant la moindre
     écriture. 409 sur une unité rattachée à un modèle."""
     if isinstance(cible, Equipment) and cible.modele_id is not None:
-        raise _conflit("Les spécifications se modifient sur le modèle.")
+        raise conflit("Les spécifications se modifient sur le modèle.")
     await _verifier_sous_categorie(db, cible.categorie_id, data.sous_categorie_id)
     valeurs = await _valeurs_normalisees(db, cible, data)
     await _verifier_connectiques(db, data)

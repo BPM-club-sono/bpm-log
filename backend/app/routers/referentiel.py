@@ -5,7 +5,7 @@ Supprimer un champ ou un connecteur est toujours permis et supprime en cascade s
 valeurs / connectiques (l'UI demande confirmation avec le nombre d'usages).
 """
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Query, status
 from sqlalchemy import func, select
 
 from app.deps import CurrentUser, DbSession
@@ -35,20 +35,9 @@ from app.schemas.specs import (
     SousCategorieUpdate,
 )
 from app.security.rbac import RequireStaff
+from app.services.erreurs import conflit, introuvable, invalide, sous_categorie_or_404
 
 router = APIRouter(tags=["referentiel"])
-
-
-def _conflit(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-
-
-def _introuvable(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
-
-
-def _invalide(detail: str) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
 
 
 async def _compter(db: DbSession, stmt) -> int:
@@ -61,14 +50,14 @@ async def _compter(db: DbSession, stmt) -> int:
 async def _categorie_or_404(db: DbSession, categorie_id: int) -> Categorie:
     cat = await db.get(Categorie, categorie_id)
     if cat is None:
-        raise _introuvable("Catégorie introuvable.")
+        raise introuvable("Catégorie introuvable.")
     return cat
 
 
 async def _verifier_nom_categorie(db: DbSession, nom: str, categorie_id: int | None) -> None:
     existing = await db.scalar(select(Categorie).where(Categorie.nom == nom))
     if existing is not None and existing.id != categorie_id:
-        raise _conflit(f"La catégorie « {nom} » existe déjà.")
+        raise conflit(f"La catégorie « {nom} » existe déjà.")
 
 
 @router.post("/categories", response_model=CategorieRead, status_code=status.HTTP_201_CREATED)
@@ -115,7 +104,7 @@ async def delete_categorie(categorie_id: int, _user: RequireStaff, db: DbSession
     }
     for libelle, stmt in utilisations.items():
         if nb := await _compter(db, stmt):
-            raise _conflit(
+            raise conflit(
                 f"Catégorie utilisée par {nb} {libelle}{'s' if nb > 1 else ''} : "
                 "détache-les avant de la supprimer."
             )
@@ -124,13 +113,6 @@ async def delete_categorie(categorie_id: int, _user: RequireStaff, db: DbSession
 
 
 # --- Sous-catégories --------------------------------------------------------
-
-
-async def _sous_categorie_or_404(db: DbSession, sous_categorie_id: int) -> SousCategorie:
-    sc = await db.get(SousCategorie, sous_categorie_id)
-    if sc is None:
-        raise _introuvable("Sous-catégorie introuvable.")
-    return sc
 
 
 async def _nb_usages_sous_categorie(db: DbSession, sous_categorie_id: int) -> int:
@@ -158,7 +140,7 @@ async def _verifier_nom_sous_categorie(
         )
     )
     if existing is not None and existing.id != sous_categorie_id:
-        raise _conflit(f"La sous-catégorie « {nom} » existe déjà dans cette catégorie.")
+        raise conflit(f"La sous-catégorie « {nom} » existe déjà dans cette catégorie.")
 
 
 async def _read_sous_categorie(db: DbSession, sc: SousCategorie) -> SousCategorieRead:
@@ -199,7 +181,7 @@ async def create_sous_categorie(
 async def update_sous_categorie(
     sous_categorie_id: int, payload: SousCategorieUpdate, _user: RequireStaff, db: DbSession
 ) -> SousCategorieRead:
-    sc = await _sous_categorie_or_404(db, sous_categorie_id)
+    sc = await sous_categorie_or_404(db, sous_categorie_id)
     await _verifier_nom_sous_categorie(db, payload.nom, sc.categorie_id, sc.id)
     sc.nom = payload.nom
     await db.commit()
@@ -209,9 +191,9 @@ async def update_sous_categorie(
 
 @router.delete("/sous-categories/{sous_categorie_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sous_categorie(sous_categorie_id: int, _user: RequireStaff, db: DbSession) -> None:
-    sc = await _sous_categorie_or_404(db, sous_categorie_id)
+    sc = await sous_categorie_or_404(db, sous_categorie_id)
     if nb := await _nb_usages_sous_categorie(db, sc.id):
-        raise _conflit(
+        raise conflit(
             f"Sous-catégorie utilisée par {nb} modèle{'s' if nb > 1 else ''} / équipement"
             f"{'s' if nb > 1 else ''} : détache-les avant de la supprimer."
         )
@@ -221,7 +203,7 @@ async def delete_sous_categorie(sous_categorie_id: int, _user: RequireStaff, db:
         .select_from(ChampSpecification)
         .where(ChampSpecification.sous_categorie_id == sc.id),
     ):
-        raise _conflit("Des champs de spécification sont restreints à cette sous-catégorie.")
+        raise conflit("Des champs de spécification sont restreints à cette sous-catégorie.")
     await db.delete(sc)
     await db.commit()
 
@@ -232,7 +214,7 @@ async def delete_sous_categorie(sous_categorie_id: int, _user: RequireStaff, db:
 async def _champ_or_404(db: DbSession, champ_id: int) -> ChampSpecification:
     champ = await db.get(ChampSpecification, champ_id)
     if champ is None:
-        raise _introuvable("Champ introuvable.")
+        raise introuvable("Champ introuvable.")
     return champ
 
 
@@ -263,16 +245,16 @@ async def _verifier_portee(db: DbSession, categorie_id: int, sous_categorie_id: 
     await _categorie_or_404(db, categorie_id)
     if sous_categorie_id is None:
         return
-    sc = await _sous_categorie_or_404(db, sous_categorie_id)
+    sc = await sous_categorie_or_404(db, sous_categorie_id)
     if sc.categorie_id != categorie_id:
-        raise _invalide("La sous-catégorie n'appartient pas à la catégorie du champ.")
+        raise invalide("La sous-catégorie n'appartient pas à la catégorie du champ.")
 
 
 def _verifier_options(type_: TypeChampSpec, options: list[str]) -> list[str]:
     if type_ != TypeChampSpec.CHOIX:
         return []
     if not options:
-        raise _invalide("Un champ à choix demande au moins une option.")
+        raise invalide("Un champ à choix demande au moins une option.")
     return options
 
 
@@ -320,7 +302,7 @@ async def update_champ(
 
     type_ = payload.type if payload.type is not None else champ.type
     if type_ != champ.type and nb_valeurs:
-        raise _conflit(
+        raise conflit(
             f"Le type ne peut pas changer : {nb_valeurs} valeur{'s' if nb_valeurs > 1 else ''} "
             "déjà saisie" + ("s." if nb_valeurs > 1 else ".")
         )
@@ -344,7 +326,7 @@ async def update_champ(
             )
         ).all()
         for valeur in sorted(set(utilisees) - set(options)):
-            raise _conflit(f"L'option « {valeur} » est encore utilisée par des valeurs.")
+            raise conflit(f"L'option « {valeur} » est encore utilisée par des valeurs.")
 
     if payload.nom is not None:
         champ.nom = payload.nom
@@ -374,14 +356,14 @@ async def delete_champ(champ_id: int, _user: RequireStaff, db: DbSession) -> Non
 async def _connecteur_or_404(db: DbSession, connecteur_id: int) -> Connecteur:
     connecteur = await db.get(Connecteur, connecteur_id)
     if connecteur is None:
-        raise _introuvable("Connecteur introuvable.")
+        raise introuvable("Connecteur introuvable.")
     return connecteur
 
 
 async def _verifier_nom_connecteur(db: DbSession, nom: str, connecteur_id: int | None) -> None:
     existing = await db.scalar(select(Connecteur).where(Connecteur.nom == nom))
     if existing is not None and existing.id != connecteur_id:
-        raise _conflit(f"Le connecteur « {nom} » existe déjà.")
+        raise conflit(f"Le connecteur « {nom} » existe déjà.")
 
 
 async def _nb_usages_connecteur(db: DbSession, connecteur_id: int) -> int:
