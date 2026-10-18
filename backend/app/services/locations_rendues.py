@@ -16,8 +16,13 @@ dans cet ordre :
 6. flight (`est_contenant`) dont un descendant ne passerait pas 1–5 ou n'est pas
    une location de cette prestation → « contenu du flight non rendu ».
 
-Les descendants d'un flight archivable ne sont pas listés à part : l'archivage
-en cascade (`contenants.archiver_cascade`) les emporte avec lui.
+Le contenu d'un flight loué suit son flight et n'est jamais listé à part, dans
+aucune des deux listes : si le flight est archivable, l'archivage en cascade
+(`contenants.archiver_cascade`) l'emporte avec lui ; si le flight est gardé (pour
+son contenu ou pour lui-même), tout son contenu reste gardé avec lui, même les
+locations rendues — on ne laisse jamais un flight actif au contenu en partie
+archivé. Vaut à toute profondeur : un flight extérieur gardé masque tout ce qu'il
+contient, sous-flights compris.
 
 Si un équipement porte plusieurs allocations sur la prestation, chaque test est
 évalué sur toutes ses allocations avant de passer au suivant.
@@ -120,21 +125,26 @@ async def trier_locations_rendues(db: DbSession, presta: Prestation) -> TriLocat
         key=lambda eq: (eq.nom, eq.id),
     )
     finales: dict[int, str | None] = dict(raisons)
-    emportes: set[int] = set()  # contenu d'un flight archivable
+    # Contenu d'un flight candidat, archivable ou gardé : il suit son flight et
+    # n'est jamais listé (ni archivé) à part.
+    suivent_leur_flight: set[int] = set()
     for eq in candidats:
-        if not eq.est_contenant or raisons[eq.id] is not None:
+        if not eq.est_contenant:
             continue
         descendants = await contenants.descendant_ids(db, eq.id)
-        if any(raisons.get(d, RAISON_CONTENU) is not None for d in descendants):
+        suivent_leur_flight.update(descendants)
+        if raisons[eq.id] is None and any(
+            raisons.get(d, RAISON_CONTENU) is not None for d in descendants
+        ):
             finales[eq.id] = RAISON_CONTENU
-        else:
-            emportes.update(descendants)
 
     tri = TriLocations()
     for eq in candidats:
+        if eq.id in suivent_leur_flight:
+            continue
         raison = finales[eq.id]
         if raison is not None:
             tri.gardes.append((eq, raison))
-        elif eq.id not in emportes:
+        else:
             tri.archivables.append(eq)
     return tri

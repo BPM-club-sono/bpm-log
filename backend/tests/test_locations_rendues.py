@@ -218,12 +218,36 @@ async def test_flight_loue_garde_si_contenu_loue_garde(db_session, fournisseur):
 
     tri = await trier_locations_rendues(db_session, presta)
 
+    # Le flight extérieur gardé masque tout ce qu'il contient, sous-flight compris.
     assert tri.archivables == []
-    assert _raisons(tri) == {
-        flight.id: "contenu du flight non rendu",
-        sous.id: "contenu du flight non rendu",
-        perdu.id: "perdue",
-    }
+    assert _raisons(tri) == {flight.id: "contenu du flight non rendu"}
+
+
+async def test_contenu_rendu_d_un_flight_garde_reste_garde(db_session, staff, fournisseur):
+    presta = await _presta(db_session)
+    flight = await _location(db_session, fournisseur, "Flight F", est_contenant=True)
+    lyre_a = await _location(db_session, fournisseur, "Lyre A", contenant_id=flight.id)
+    lyre_b = await _location(db_session, fournisseur, "Lyre B", contenant_id=flight.id)
+    await _allouer(db_session, presta, flight)
+    await _allouer(db_session, presta, lyre_a, retournee=0, decision=DecisionCloture.PERDU)
+    await _allouer(db_session, presta, lyre_b)
+
+    apercu = await lire_locations_rendues(presta.id, db_session, staff)
+
+    assert [(r.equipment_id, r.raison) for r in apercu.gardes] == [
+        (flight.id, "contenu du flight non rendu")
+    ]
+    assert apercu.archivables == []
+
+    out = await archiver_locations_rendues(presta.id, db_session, staff)
+
+    listes = {r.equipment_id for r in out.archivables + out.gardes}
+    assert lyre_a.id not in listes and lyre_b.id not in listes
+    assert out.archivables == []
+    await db_session.refresh(lyre_b)
+    await db_session.refresh(flight)
+    assert lyre_b.archive is False
+    assert flight.archive is False
 
 
 async def test_flight_loue_archive_avec_contenu(db_session, staff, fournisseur):
@@ -278,3 +302,19 @@ async def test_archivage_refuse_si_presta_ouverte(db_session, staff, fournisseur
     assert exc.value.detail == "La prestation n'est pas clôturée."
     await db_session.refresh(eq)
     assert eq.archive is False
+
+
+async def test_contenu_d_un_flight_garde_pour_lui_meme_reste_garde(db_session, fournisseur):
+    presta = await _presta(db_session)
+    flight = await _location(
+        db_session, fournisseur, "Flight HS", est_contenant=True,
+        statut_actuel=StatutEquipment.EN_PANNE,
+    )
+    lyre = await _location(db_session, fournisseur, "Lyre du flight HS", contenant_id=flight.id)
+    await _allouer(db_session, presta, flight)
+    await _allouer(db_session, presta, lyre)
+
+    tri = await trier_locations_rendues(db_session, presta)
+
+    assert tri.archivables == []
+    assert _raisons(tri) == {flight.id: "hors service"}
