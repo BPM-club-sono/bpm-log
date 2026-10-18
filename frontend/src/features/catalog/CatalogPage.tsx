@@ -110,7 +110,7 @@ export function CatalogPage() {
             {filtered.length} équipement{filtered.length > 1 ? "s" : ""}
           </p>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid gap-2 ${canEdit ? "grid-cols-2" : "grid-cols-3"}`}>
           <Link
             to="/inventaire/rangement"
             className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
@@ -125,6 +125,15 @@ export function CatalogPage() {
             <Icon name="category" className="text-base" />
             Modèles
           </Link>
+          {canEdit && (
+            <Link
+              to="/referentiel"
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"
+            >
+              <Icon name="tune" className="text-base" />
+              Référentiel
+            </Link>
+          )}
           <Link
             to="/etiquettes"
             className="inline-flex items-center justify-center gap-1 rounded-lg border border-line px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-bg-elev"

@@ -31,6 +31,82 @@ export interface Categorie {
   description: string | null;
 }
 
+export type TypeChampSpec = "nombre" | "texte" | "choix" | "oui_non";
+export type SensConnectique = "entree" | "sortie";
+
+export interface SousCategorie {
+  id: number;
+  nom: string;
+  categorie_id: number;
+  nb_utilisations: number;
+}
+
+export interface ChampSpec {
+  id: number;
+  nom: string;
+  type: TypeChampSpec;
+  unite: string | null;
+  options: string[];
+  categorie_id: number;
+  sous_categorie_id: number | null;
+  ordre: number;
+  nb_valeurs: number;
+}
+
+export interface Connecteur {
+  id: number;
+  nom: string;
+  nb_utilisations: number;
+}
+
+export interface ConnectiqueIn {
+  connecteur_id: number;
+  sens: SensConnectique;
+  quantite: number;
+}
+
+export interface Connectique extends ConnectiqueIn {
+  connecteur_nom: string;
+}
+
+export interface ValeurSpec {
+  champ_id: number;
+  nom: string;
+  type: TypeChampSpec;
+  unite: string | null;
+  options: string[];
+  valeur: string | null;
+}
+
+export interface Specs {
+  /** « modele » : specs du modèle ; « equipement » : specs propres d'un item sans modèle. */
+  source: "modele" | "equipement";
+  modele_id: number | null;
+  categorie_id: number | null;
+  sous_categorie_id: number | null;
+  sous_categorie_nom: string | null;
+  poids: number | null;
+  longueur: number | null;
+  largeur: number | null;
+  hauteur: number | null;
+  prix_interne: number | null;
+  prix_externe: number | null;
+  valeurs: ValeurSpec[];
+  connectiques: Connectique[];
+}
+
+export interface SpecsWrite {
+  sous_categorie_id?: number | null;
+  poids?: number | null;
+  longueur?: number | null;
+  largeur?: number | null;
+  hauteur?: number | null;
+  prix_interne?: number | null;
+  prix_externe?: number | null;
+  valeurs?: Record<number, string | null>;
+  connectiques?: ConnectiqueIn[];
+}
+
 /** Modèle commercial (MH-100…) : regroupe les unités identiques. */
 export interface Modele {
   id: number;
@@ -111,12 +187,34 @@ export interface Allocation {
   equipment_modele_id?: number | null;
   equipment_modele_nom?: string | null;
   equipment_modele_marque?: string | null;
+  /** Prix (selon le tarif de la prestation) et poids d'une unité. */
+  prix_unitaire?: number | null;
+  poids_unitaire?: number | null;
   /** Réponse d'ajout d'un flight : items du contenu non alloués (HS, pris). */
   contenu_ignore?: number;
 }
 
+export interface TotalConnectique {
+  connecteur_id: number;
+  connecteur_nom: string;
+  sens: SensConnectique;
+  quantite: number;
+}
+
+export interface TotauxPresta {
+  tarif: "interne" | "externe";
+  /** Figés à la clôture (sauf les connectiques). */
+  fige: boolean;
+  poids_total: number;
+  nb_sans_poids: number;
+  prix_total: number;
+  nb_sans_prix: number;
+  connectiques: TotalConnectique[];
+}
+
 export interface PrestationDetail extends Prestation {
   allocations: Allocation[];
+  totaux: TotauxPresta;
 }
 
 export type ClotureDecision = "retourne" | "perdu" | "casse" | "ouvert";
@@ -335,6 +433,7 @@ export interface EquipmentDetail {
   contenant_id?: number | null;
   contenant_nom?: string | null;
   est_contenant?: boolean;
+  remarque?: string | null;
   chemin?: PathSegment[];
   contenu?: ContenuChild[];
   statut_actuel: StatutEquipment;
