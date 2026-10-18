@@ -293,6 +293,16 @@ class EquipmentCreate(BaseModel):
     fournisseur_id: int | None = None
     fournisseur_nom: str | None = None
     reference_devis: str | None = None
+    # Création en série : N fiches numérotées « <nom> 1..N » (standard uniquement).
+    nombre: int = Field(default=1, ge=1)
+
+
+class SerieCreee(BaseModel):
+    """Résultat d'une création en série : les fiches créées, dans l'ordre."""
+
+    ids: list[int]
+    noms: list[str]
+    modele_id: int | None
 
 
 class EquipmentUpdate(BaseModel):

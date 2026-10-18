@@ -5,7 +5,9 @@ import uuid as uuid_lib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -46,6 +48,7 @@ from app.schemas.equipment import (
     PathSegment,
     PhotoUploadResult,
     ScanHistoryItem,
+    SerieCreee,
     TicketHistoryItem,
     VracDetailInfo,
     VracPreview,
@@ -644,6 +647,11 @@ async def apercu_noms_serie(
     nombre: int = Query(ge=1),
 ) -> list[str]:
     """Aperçu des noms qu'une création en série de `nombre` unités produirait."""
+    if not base.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le nom est obligatoire.",
+        )
     return await serie.noms_serie(db, base, nombre)
 
 
@@ -737,17 +745,74 @@ async def _assign_barcode(db: DbSession, eq: Equipment, provided: str | None) ->
     eq.barcode_uid = code
 
 
-@router.post(
-    "/equipments",
-    response_model=EquipmentDetail,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_equipment(
-    payload: EquipmentCreate,
-    user: RequireStaff,
+async def lire_photo(file: UploadFile | None) -> tuple[bytes, str] | None:
+    """Lit et valide une photo téléversée : (contenu, extension), ou None sans fichier.
+
+    415 si le format n'est pas une image acceptée, 413 au-delà de 8 Mo.
+    """
+    if file is None:
+        return None
+    ext = _ALLOWED_TYPES.get(file.content_type or "")
+    if ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Format image non supporté (jpeg, png, webp).",
+        )
+    data = await file.read()
+    if len(data) > _MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image trop volumineuse (max 8 Mo).",
+        )
+    return data, ext
+
+
+def ecrire_photo(data: bytes, ext: str) -> str:
+    """Écrit la photo sous un nom unique dans le dossier photos et renvoie ce nom."""
+    photos_dir = Path(settings.photos_dir)
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid_lib.uuid4().hex}{ext}"
+    (photos_dir / filename).write_bytes(data)
+    return filename
+
+
+def _effacer_photos(noms: list[str]) -> None:
+    """Supprime des fichiers photo du disque (nettoyage après un échec)."""
+    for nom in noms:
+        (Path(settings.photos_dir) / nom).unlink(missing_ok=True)
+
+
+async def creer_equipements(
     db: DbSession,
-) -> EquipmentDetail:
-    """Crée un équipement (standard/vrac/consommable, flight, option location externe)."""
+    payload: EquipmentCreate,
+    user: Membre,
+    photo: tuple[bytes, str] | None,
+) -> list[Equipment]:
+    """Crée `payload.nombre` équipements (standard/vrac/consommable, flight, location).
+
+    Une fiche seule garde le nom saisi ; une série (N > 1) est numérotée
+    « <nom> k » à la suite des numéros déjà pris. Chaque fiche reçoit sa propre
+    copie de la photo : supprimer la photo d'une fiche efface son fichier.
+    **Ne commit pas** ; en cas d'échec, les fichiers photo déjà écrits sont effacés.
+    """
+    if not payload.nom.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Le nom est obligatoire.",
+        )
+    if payload.nombre > 1:
+        # Une série = des unités interchangeables : ni quantités (vrac/consommable),
+        # ni flight, ni code-barres imposé (il serait le même pour toutes).
+        if payload.type != "standard" or payload.est_contenant:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Seul un équipement standard (hors flight) se crée en série.",
+            )
+        if payload.barcode_uid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Une série ne peut pas porter un code-barres imposé.",
+            )
     if payload.est_contenant and payload.type != "standard":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -764,6 +829,11 @@ async def create_equipment(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Le modèle est obligatoire pour un équipement unitaire.",
+        )
+    if payload.modele_id is not None and payload.type != "standard":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Un vrac ou un consommable n'a pas de modèle.",
         )
     # Règle de frontière : ranger dans un contenant exclut l'emplacement fixe.
     if payload.contenant_id is not None:
@@ -783,61 +853,120 @@ async def create_equipment(
             )
 
     prefixe = await _prefixe_equipment(db, payload.externe, fournisseur_id)
-    eq_id, reference = await _reserver_reference(db, prefixe)
-
-    eq = Equipment(
-        id=eq_id,
-        barcode_uid=reference,
-        nom=payload.nom,
-        categorie_id=payload.categorie_id,
-        emplacement_id=None if payload.contenant_id is not None else payload.emplacement_id,
-        contenant_id=payload.contenant_id,
-        est_contenant=payload.est_contenant,
-        statut_actuel=payload.statut_actuel,
-        created_by_membre_id=user.id,
+    noms = (
+        [payload.nom]
+        if payload.nombre == 1
+        else await serie.noms_serie(db, payload.nom, payload.nombre)
     )
-    db.add(eq)
-    await db.flush()
-    if payload.barcode_uid:
-        await _assign_barcode(db, eq, payload.barcode_uid)
 
-    if payload.modele_id is not None:
-        if payload.type != "standard":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Un vrac ou un consommable n'a pas de modèle.",
+    photos_ecrites: list[str] = []
+    eqs: list[Equipment] = []
+    try:
+        for nom in noms:
+            eq_id, reference = await _reserver_reference(db, prefixe)
+            photo_chemin: str | None = None
+            if photo is not None:
+                photo_chemin = ecrire_photo(*photo)
+                photos_ecrites.append(photo_chemin)
+            eq = Equipment(
+                id=eq_id,
+                barcode_uid=reference,
+                nom=nom,
+                categorie_id=payload.categorie_id,
+                emplacement_id=(
+                    None if payload.contenant_id is not None else payload.emplacement_id
+                ),
+                contenant_id=payload.contenant_id,
+                est_contenant=payload.est_contenant,
+                statut_actuel=payload.statut_actuel,
+                photo_chemin=photo_chemin,
+                created_by_membre_id=user.id,
             )
-        await _appliquer_modele(db, eq, payload.modele_id)
+            db.add(eq)
+            await db.flush()
+            if payload.barcode_uid:
+                await _assign_barcode(db, eq, payload.barcode_uid)
 
-    if payload.type == "vrac":
-        db.add(
-            EquipmentVrac(
-                equipment_id=eq.id,
-                quantite_theorique=payload.quantite_theorique or 0,
-            )
-        )
-    elif payload.type == "consommable":
-        db.add(
-            EquipmentConsommable(
-                equipment_id=eq.id,
-                stock_actuel=payload.stock_actuel or 0,
-                seuil_alerte=payload.seuil_alerte or 0,
-                unite=payload.unite,
-            )
-        )
+            if payload.modele_id is not None:
+                await _appliquer_modele(db, eq, payload.modele_id)
 
-    if fournisseur_id is not None:
-        db.add(
-            EquipmentLocation(
-                equipment_id=eq.id,
-                fournisseur_id=fournisseur_id,
-                reference_devis=payload.reference_devis,
-            )
-        )
+            if payload.type == "vrac":
+                db.add(
+                    EquipmentVrac(
+                        equipment_id=eq.id,
+                        quantite_theorique=payload.quantite_theorique or 0,
+                    )
+                )
+            elif payload.type == "consommable":
+                db.add(
+                    EquipmentConsommable(
+                        equipment_id=eq.id,
+                        stock_actuel=payload.stock_actuel or 0,
+                        seuil_alerte=payload.seuil_alerte or 0,
+                        unite=payload.unite,
+                    )
+                )
 
+            if fournisseur_id is not None:
+                db.add(
+                    EquipmentLocation(
+                        equipment_id=eq.id,
+                        fournisseur_id=fournisseur_id,
+                        reference_devis=payload.reference_devis,
+                    )
+                )
+            eqs.append(eq)
+        await db.flush()
+    except BaseException:
+        _effacer_photos(photos_ecrites)
+        raise
+    return eqs
+
+
+@router.post(
+    "/equipments",
+    response_model=EquipmentDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_equipment(
+    payload: EquipmentCreate,
+    user: RequireStaff,
+    db: DbSession,
+) -> EquipmentDetail:
+    """Crée un équipement (standard/vrac/consommable, flight, option location externe)."""
+    eqs = await creer_equipements(db, payload, user, photo=None)
     await db.commit()
-    await db.refresh(eq)
-    return await _build_detail(db, eq, user.id)
+    await db.refresh(eqs[0])
+    return await _build_detail(db, eqs[0], user.id)
+
+
+@router.post(
+    "/equipments/serie",
+    response_model=SerieCreee,
+    status_code=status.HTTP_201_CREATED,
+)
+async def creer_serie(
+    user: RequireStaff,
+    db: DbSession,
+    donnees: str = Form(..., description="JSON d'EquipmentCreate."),
+    photo: UploadFile | None = File(None),
+) -> SerieCreee:
+    """Crée N fiches d'un coup (multipart : données JSON + photo optionnelle, copiée)."""
+    try:
+        payload = EquipmentCreate.model_validate_json(donnees)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+    # Lue et validée avant toute écriture en base : une photo refusée ne crée rien.
+    image = await lire_photo(photo)
+    eqs = await creer_equipements(db, payload, user, image)
+    try:
+        await db.commit()
+    except BaseException:
+        _effacer_photos([e.photo_chemin for e in eqs if e.photo_chemin])
+        raise
+    return SerieCreee(
+        ids=[e.id for e in eqs], noms=[e.nom for e in eqs], modele_id=payload.modele_id
+    )
 
 
 @router.patch("/equipments/{equipment_id}", response_model=EquipmentDetail)
@@ -956,31 +1085,15 @@ async def upload_equipment_photo(
             status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable."
         )
 
-    ext = _ALLOWED_TYPES.get(file.content_type or "")
-    if ext is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Format image non supporté (jpeg, png, webp).",
-        )
-    data = await file.read()
-    if len(data) > _MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Image trop volumineuse (max 8 Mo).",
-        )
-
-    photos_dir = Path(settings.photos_dir)
-    photos_dir.mkdir(parents=True, exist_ok=True)
+    image = await lire_photo(file)
+    assert image is not None  # File(...) : le fichier est obligatoire sur cette route
     old = eq.photo_chemin
-    filename = f"{uuid_lib.uuid4().hex}{ext}"
-    (photos_dir / filename).write_bytes(data)
+    filename = ecrire_photo(*image)
     eq.photo_chemin = filename
     await db.commit()
 
     if old:
-        old_path = photos_dir / old
-        if old_path.exists():
-            old_path.unlink(missing_ok=True)
+        (Path(settings.photos_dir) / old).unlink(missing_ok=True)
 
     return PhotoUploadResult(photo_url=build_photo_url(filename))
 
