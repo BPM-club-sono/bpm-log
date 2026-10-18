@@ -19,6 +19,7 @@ import { EquipmentSearch } from "@/shared/EquipmentSearch";
 import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
+import { LocationsRendues } from "./LocationsRendues";
 import { ModeleSearch } from "./ModeleSearch";
 import {
   ecrireModeRecherche,
@@ -530,6 +531,9 @@ function InfoView({
             </Button>
           )}
         </div>
+      )}
+      {detail.statut === "Terminee" && canManage && (
+        <LocationsRendues prestaId={detail.id} onDone={onReload} />
       )}
       {nbHs > 0 && (
         <div className="flex items-center gap-2 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { creerModele, expect, test } from "./fixtures";
+import { creerEquipement, creerModele, expect, test } from "./fixtures";
 
 test("Parc : création de 3 exemplaires d'un modèle", async ({ page, api }) => {
   const modele = await creerModele(api, "MH-100");
@@ -67,4 +67,49 @@ test("Parc : série externe de 2 sans modèle", async ({ page, api }) => {
   for (const k of [1, 2]) {
     await expect(page.getByText(`${base} ${k}`, { exact: true })).toBeVisible();
   }
+});
+
+test("Prestation clôturée : archive les locations rendues seulement", async ({ page, api }) => {
+  const loueur = `Loueur ${randomUUID().slice(0, 8)}`;
+  const a = await creerEquipement(api, "Loc A", { externe: true, fournisseur_nom: loueur });
+  const b = await creerEquipement(api, "Loc B", { externe: true, fournisseur_nom: loueur });
+  const presta = await (
+    await api.post("prestations", { data: { nom: `Presta ${randomUUID().slice(0, 8)}` } })
+  ).json();
+  const alloc: Record<number, number> = {};
+  for (const eq of [a, b]) {
+    const res = await api.post(`prestations/${presta.id}/allocations`, {
+      data: { equipment_id: eq.id },
+    });
+    expect(res.status()).toBe(201);
+  }
+  const detail = await (await api.get(`prestations/${presta.id}`)).json();
+  for (const al of detail.allocations) alloc[al.equipment_id] = al.id;
+
+  const t0 = Date.now();
+  const evt = (equipment_id: number, sens: "sortie" | "retour", i: number) => ({
+    uuid_client: randomUUID(),
+    type: "presta_check",
+    offline_created_at: new Date(t0 + i * 1000).toISOString(),
+    payload: { presta_id: presta.id, equipment_id, sens, delta: 1 },
+  });
+  const sync = await api.post("sync/batch", {
+    data: { items: [evt(a.id, "sortie", 0), evt(a.id, "retour", 1), evt(b.id, "sortie", 2)] },
+  });
+  expect(sync.ok()).toBeTruthy();
+  // Le retour archive déjà la location au pointage : on la désarchive pour retrouver le
+  // cas de l'archivage en lot (location rendue avant que la règle existe, ou restaurée).
+  expect((await api.post(`equipments/${a.id}/desarchive`)).ok()).toBeTruthy();
+  const clo = await api.post(`prestations/${presta.id}/cloture`, {
+    data: { items: [{ allocation_id: alloc[b.id], decision: "perdu" }] },
+  });
+  expect(clo.ok()).toBeTruthy();
+
+  await page.goto(`/prestations/${presta.id}`);
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Archiver les locations rendues (1)" }).click();
+  await expect(page.getByText("1 location archivée")).toBeVisible();
+
+  expect((await (await api.get(`equipments/${a.id}`)).json()).archive).toBe(true);
+  expect((await (await api.get(`equipments/${b.id}`)).json()).archive).toBe(false);
 });

@@ -422,3 +422,15 @@ export interface DashboardData {
   activite: ActiviteItem[];
 }
 
+
+export interface LocationRendue {
+  equipment_id: number;
+  nom: string;
+  fournisseur_nom: string | null;
+  raison: string | null;
+}
+
+export interface LocationsRendues {
+  archivables: LocationRendue[];
+  gardes: LocationRendue[];
+}
