@@ -16,6 +16,7 @@ from app.models import AllocationPresta, Equipment, Membre, Modele, Prestation
 from app.models.enums import TypePrestation
 from app.routers.equipment import (
     apercu_noms_serie,
+    create_equipment,
     creer_equipements,
     creer_serie,
     lire_photo,
@@ -157,6 +158,18 @@ async def test_serie_echec_supprime_les_photos_ecrites(db_session, staff):
         )
     assert exc.value.status_code == 409
     assert _fichiers_photos() == avant
+
+
+async def test_route_json_refuse_plusieurs_exemplaires(db_session, staff):
+    m = await _modele(db_session)
+    base = f"MH {uuid.uuid4().hex[:6]}"
+    with pytest.raises(HTTPException) as exc:
+        payload = EquipmentCreate(nom=base, modele_id=m.id, nombre=2)
+        await create_equipment(payload, staff, db_session)
+    assert exc.value.status_code == 422
+    assert "/equipments/serie" in exc.value.detail
+    crees = await db_session.scalars(select(Equipment).where(Equipment.nom.startswith(base)))
+    assert crees.all() == []
 
 
 async def test_lire_photo_valide_le_format():

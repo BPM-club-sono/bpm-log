@@ -934,6 +934,12 @@ async def create_equipment(
     db: DbSession,
 ) -> EquipmentDetail:
     """Crée un équipement (standard/vrac/consommable, flight, option location externe)."""
+    # Cette route renvoie une seule fiche : une série passe par /equipments/serie.
+    if payload.nombre > 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Utilise /equipments/serie pour créer plusieurs exemplaires.",
+        )
     eqs = await creer_equipements(db, payload, user, photo=None)
     await db.commit()
     await db.refresh(eqs[0])
