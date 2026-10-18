@@ -262,13 +262,14 @@ export function SpecsEditor({
       <div className="space-y-2">
         <p className="text-xs font-medium text-fg-muted">Connectique</p>
         {lignes.map((l, i) => (
-          <div key={i} className="flex items-center gap-2">
+          // Grille et non flex : `inputCls` porte `w-full`, qui l'emporte sur un `w-24` ajouté.
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_5.5rem_3.5rem_2.25rem] items-center gap-2">
             <select
               value={l.connecteur_id}
               onChange={(e) =>
                 majLigne(i, { connecteur_id: e.target.value === "" ? "" : Number(e.target.value) })
               }
-              className={`${inputCls} min-w-0 flex-1`}
+              className={inputCls}
               aria-label="Connecteur"
             >
               <option value="">Connecteur…</option>
@@ -281,7 +282,7 @@ export function SpecsEditor({
             <select
               value={l.sens}
               onChange={(e) => majLigne(i, { sens: e.target.value as SensConnectique })}
-              className={`${inputCls} w-24 flex-none`}
+              className={inputCls}
               aria-label="Sens"
             >
               <option value="entree">Entrée</option>
@@ -292,13 +293,13 @@ export function SpecsEditor({
               min={1}
               value={l.quantite}
               onChange={(e) => majLigne(i, { quantite: Number(e.target.value) })}
-              className={`${inputCls} w-16 flex-none`}
+              className={inputCls}
               aria-label="Quantité"
             />
             <button
               type="button"
               onClick={() => setLignes((prev) => prev.filter((_, k) => k !== i))}
-              className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-danger"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-danger"
               aria-label="Retirer"
             >
               <Icon name="delete" className="text-lg" />

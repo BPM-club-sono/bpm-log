@@ -82,6 +82,14 @@ test("spécifications d'un modèle et totaux de prestation", async ({ page, api 
   await ligne.getByLabel("Prix interne (€)").fill("30");
   await ligne.getByLabel("Puissance (W)").fill("300");
   await ligne.getByRole("button", { name: "Ajouter", exact: true }).click();
+  // Ligne de connectique : tient dans la carte sur téléphone, sélecteur de connecteur lisible.
+  const carte = await ligne.boundingBox();
+  for (const champ of ["Connecteur", "Sens", "Quantité", "Retirer"]) {
+    const box = await ligne.getByLabel(champ, { exact: true }).boundingBox();
+    expect(box!.x + box!.width, champ).toBeLessThanOrEqual(carte!.x + carte!.width);
+  }
+  const selecteur = await ligne.getByLabel("Connecteur", { exact: true }).boundingBox();
+  expect(selecteur!.width).toBeGreaterThan(100);
   await ligne.getByLabel("Connecteur", { exact: true }).selectOption({ label: connecteur.nom });
   await ligne.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByText("Spécifications enregistrées.")).toBeVisible();
