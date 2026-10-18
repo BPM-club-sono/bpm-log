@@ -94,3 +94,17 @@ async def make_equipment(session, nom: str, **kw) -> Equipment:
     session.add(eq)
     await session.flush()
     return eq
+
+
+def routes_montees():
+    """(chemin complet, méthodes, endpoint) des routes de l'app.
+
+    FastAPI garde les routeurs inclus imbriqués : on parcourt `original_router`.
+    """
+    for incl in app.routes:
+        routeur = getattr(incl, "original_router", None)
+        if routeur is None:
+            continue
+        prefixe = incl.include_context.prefix
+        for route in routeur.routes:
+            yield prefixe + route.path, route.methods or set(), route.endpoint

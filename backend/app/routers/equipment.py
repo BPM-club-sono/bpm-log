@@ -57,6 +57,7 @@ from app.schemas.equipment import (
 from app.schemas.inventory import InventaireEntry, VracLock
 from app.security.rbac import RequireAdmin, RequireStaff
 from app.services import barcode, contenants, disponibilite, references, serie
+from app.services.specs import effacer_specs_propres
 
 router = APIRouter(tags=["catalogue"])
 
@@ -123,7 +124,8 @@ async def _resolve_fournisseur(
 
 
 async def _appliquer_modele(db: DbSession, eq: Equipment, modele_id: int) -> None:
-    """Rattache `eq` à un modèle : la catégorie de l'item suit celle du modèle.
+    """Rattache `eq` à un modèle : la catégorie et les specs de l'item suivent
+    celles du modèle (ses specs propres sont effacées).
 
     404 si le modèle n'existe pas, 400 sur un vrac/consommable (des quantités,
     pas des unités : le regroupement par modèle n'a pas de sens).
@@ -141,6 +143,7 @@ async def _appliquer_modele(db: DbSession, eq: Equipment, modele_id: int) -> Non
         )
     eq.modele_id = modele.id
     eq.categorie_id = modele.categorie_id
+    await effacer_specs_propres(db, eq)
 
 
 # --------------------------------------------------------------------------- #
@@ -453,6 +456,7 @@ async def _build_detail(db: DbSession, eq: Equipment, membre_id: int) -> Equipme
         type=_derive_type(vrac is not None, conso is not None),
         externe=location is not None,
         archive=eq.archive,
+        remarque=eq.remarque,
         created_at=eq.created_at,
         vrac=vrac_info,
         conso=conso_info,
@@ -880,6 +884,7 @@ async def creer_equipements(
                 est_contenant=payload.est_contenant,
                 statut_actuel=payload.statut_actuel,
                 photo_chemin=photo_chemin,
+                remarque=(payload.remarque or "").strip() or None,
                 created_by_membre_id=user.id,
             )
             db.add(eq)
@@ -1033,6 +1038,8 @@ async def update_equipment(
         eq.statut_actuel = payload.statut_actuel
     if payload.barcode_uid is not None:
         await _assign_barcode(db, eq, payload.barcode_uid)
+    if "remarque" in payload.model_fields_set:
+        eq.remarque = (payload.remarque or "").strip() or None
 
     if payload.quantite_theorique is not None:
         vrac = await db.get(EquipmentVrac, eq.id)

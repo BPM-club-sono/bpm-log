@@ -112,6 +112,9 @@ async def update_modele(
     if "categorie_id" in champs and payload.categorie_id != modele.categorie_id:
         await _verifier_categorie(db, payload.categorie_id)
         modele.categorie_id = payload.categorie_id
+        # Une sous-catégorie appartient à une catégorie. Les valeurs saisies restent
+        # en base, masquées tant que leurs champs ne s'appliquent plus.
+        modele.sous_categorie_id = None
         # Le modèle fait foi : toutes ses unités suivent.
         await db.execute(
             update(Equipment)

@@ -7,10 +7,10 @@ import typing
 import uuid
 
 import pytest
+from conftest import routes_montees
 from fastapi import HTTPException
 from sqlalchemy import func, select
 
-from app.main import app
 from app.models import (
     Categorie,
     ChampSpecification,
@@ -197,17 +197,6 @@ async def test_suppression_champ_cascade(db_session, staff):
     assert restant == 0
 
 
-def _routes_montees():
-    """(chemin complet, méthodes, endpoint) ; FastAPI garde les routeurs inclus imbriqués."""
-    for incl in app.routes:
-        routeur = getattr(incl, "original_router", None)
-        if routeur is None:
-            continue
-        prefixe = incl.include_context.prefix
-        for route in routeur.routes:
-            yield prefixe + route.path, route.methods or set(), route.endpoint
-
-
 def test_ecritures_exigent_staff():
     prefixes = (
         "/api/categories",
@@ -216,7 +205,7 @@ def test_ecritures_exigent_staff():
         "/api/connecteurs",
     )
     vues = 0
-    for path, methods, endpoint in _routes_montees():
+    for path, methods, endpoint in routes_montees():
         if path.startswith(prefixes) and methods & {"POST", "PATCH", "DELETE"}:
             hints = typing.get_type_hints(endpoint, include_extras=True)
             assert hints["_user"] is RequireStaff, path
