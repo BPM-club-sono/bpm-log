@@ -34,7 +34,14 @@ npm run lint        # eslint
 npm run typecheck   # tsc --noEmit
 npm run test        # vitest run
 npm run test:watch  # vitest watch
+npm run e2e         # Playwright e2e (needs Postgres on localhost:5432, i.e. `docker compose up -d db`)
+npm run e2e -- pannes   # single spec file
+npm run e2e:ui      # Playwright UI mode (debug, time-travel)
 ```
+
+**E2E (Playwright)** — `frontend/e2e/`, config `frontend/playwright.config.ts`. A run is fully self-contained: it starts a fake OIDC issuer (`e2e/support/oidc-server.mjs`, replaces authentik), an API on a **throwaway DB** recreated each run (`e2e/support/start-api.sh`: migrate + seed one Admin), and a **production build** served by `vite preview` (real service worker, real offline behaviour). The backend has no test mode: it verifies the fake issuer's tokens exactly like authentik's, via `OIDC_ISSUER`/`OIDC_JWKS_URL`. Ports and DB name are derived from the checkout path, so it runs in a worktree without `worktree-stack.sh` and without touching 5173/8000.
+
+Writing tests: import `test`/`expect` from `e2e/fixtures.ts`. The page starts logged in as Admin (`test.use({ membre: "x@e2e.example" })` → provisioned Staff, `membre: null` → logged out; use `.example` emails, `.test` is rejected by email-validator). The `api` fixture is an authenticated client to set up/verify data; create per-test data with `creerEquipement()` (unique names) — never rely on shared state, tests run in parallel. Offline: `context.setOffline(true/false)` drives the real sync queue.
 
 ### Full stack via Docker (from repo root)
 
@@ -93,4 +100,6 @@ All API access goes through `api()` in [api.ts](frontend/src/lib/api.ts) — it 
 
 ### Vérification navigateur
 
-Après avoir terminé une modification frontend significative (nouvelle page, changement de flux, refonte de composant — pas pour un ajustement de style trivial), lancer le subagent `ui-tester` (outil Agent, `subagent_type: ui-tester`) avec la description de ce qui a changé et le parcours à vérifier, et inclure son verdict dans le rapport final. Pour un test manuel : `/uitest <flux>`.
+Après une modification frontend significative (nouvelle page, changement de flux, refonte de composant — pas pour un ajustement de style trivial) : **ajouter ou mettre à jour un test e2e** dans `frontend/e2e/` couvrant le parcours, puis lancer `npm run e2e` et inclure le résultat dans le rapport final. Tout flux terrain qui passe par la file de sync doit avoir son cas hors ligne (`context.setOffline`).
+
+Le subagent `ui-tester` (chrome-devtools MCP) reste disponible pour une exploration visuelle ponctuelle (`/uitest <flux>`), mais il n'est plus systématique et ne remplace pas un test e2e.

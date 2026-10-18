@@ -1,9 +1,9 @@
 ---
 name: ui-tester
 description: >
-  Teste l'application BPM Log dans le navigateur (chrome-devtools MCP) après une
-  modification frontend. Use proactively after completing any significant frontend
-  change, passing a description of what changed and which flow to verify.
+  Exploration visuelle ponctuelle de BPM Log dans le navigateur (chrome-devtools MCP).
+  Only use when the user explicitly asks for it (e.g. /uitest) — regression checks
+  go through the Playwright e2e suite (`npm run e2e` in frontend/), not this agent.
 model: sonnet
 mcpServers:
   - chrome-devtools

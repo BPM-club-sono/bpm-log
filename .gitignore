@@ -24,3 +24,8 @@ dist-ssr/
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# Tests e2e Playwright (frontend/)
+dist-e2e/
+test-results/
+playwright-report/
