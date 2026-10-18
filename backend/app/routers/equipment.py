@@ -53,7 +53,7 @@ from app.schemas.equipment import (
 )
 from app.schemas.inventory import InventaireEntry, VracLock
 from app.security.rbac import RequireAdmin, RequireStaff
-from app.services import barcode, contenants, disponibilite, references
+from app.services import barcode, contenants, disponibilite, references, serie
 
 router = APIRouter(tags=["catalogue"])
 
@@ -634,6 +634,17 @@ async def get_equipment_by_barcode(
             detail=f"Aucun équipement avec le code-barres {code}.",
         )
     return equipment
+
+
+@router.get("/equipments/noms-serie", response_model=list[str])
+async def apercu_noms_serie(
+    db: DbSession,
+    _user: CurrentUser,
+    base: str = Query(min_length=1),
+    nombre: int = Query(ge=1),
+) -> list[str]:
+    """Aperçu des noms qu'une création en série de `nombre` unités produirait."""
+    return await serie.noms_serie(db, base, nombre)
 
 
 @router.get("/equipments/{equipment_id}", response_model=EquipmentDetail)
