@@ -97,9 +97,6 @@ test("Prestation clôturée : archive les locations rendues seulement", async ({
     data: { items: [evt(a.id, "sortie", 0), evt(a.id, "retour", 1), evt(b.id, "sortie", 2)] },
   });
   expect(sync.ok()).toBeTruthy();
-  // Le retour archive déjà la location au pointage : on la désarchive pour retrouver le
-  // cas de l'archivage en lot (location rendue avant que la règle existe, ou restaurée).
-  expect((await api.post(`equipments/${a.id}/desarchive`)).ok()).toBeTruthy();
   const clo = await api.post(`prestations/${presta.id}/cloture`, {
     data: { items: [{ allocation_id: alloc[b.id], decision: "perdu" }] },
   });
