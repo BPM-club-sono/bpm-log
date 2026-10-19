@@ -163,13 +163,14 @@ def _nombre(brut: str) -> float | None:
 
 
 def _connectiques(entrees: str, sorties: str) -> list[tuple[str, str, int]]:
-    res: list[tuple[str, str, int]] = []
+    """Un connecteur répété dans une cellule (« XLR Male, XLR Male ») donne quantite 2."""
+    quantites: Counter[tuple[str, str]] = Counter()  # ordre d'apparition conservé
     for sens, brut in (("entree", entrees), ("sortie", sorties)):
         for nom in brut.split(","):
             nom = nom.strip()
             if nom:
-                res.append((nom, sens, 1))
-    return res
+                quantites[(nom, sens)] += 1
+    return [(nom, sens, quantite) for (nom, sens), quantite in quantites.items()]
 
 
 def _classer(feuille: str, type_: str, nom: str) -> tuple[str, str]:

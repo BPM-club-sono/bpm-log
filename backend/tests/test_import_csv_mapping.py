@@ -98,6 +98,15 @@ def test_connectiques_parsees(tmp_path):
     assert {"PowerCon", "DMX 3p Male", "LineCon", "LinkCon"} <= set(plan.connecteurs)
 
 
+def test_connecteur_doublon_fusionne(tmp_path):
+    ecrire(tmp_path, "Lights", [
+        ligne("Bar", "X", **{"Entrées": "XLR Male, XLR Male, PowerCon", "Sorties": "XLR Male"}),
+    ])  # fmt: skip
+    assert lire_dossier(tmp_path).modeles[0].connectiques == [
+        ("XLR Male", "entree", 2), ("PowerCon", "entree", 1), ("XLR Male", "sortie", 1),
+    ]  # fmt: skip
+
+
 def test_linkcon_forcee(tmp_path):
     ecrire(tmp_path, "Écrans et Mapping", [ligne("Cable", "Linkcon")])
     assert par_nom(lire_dossier(tmp_path))["Linkcon"].connectiques == [("LinkCon", "entree", 2)]
