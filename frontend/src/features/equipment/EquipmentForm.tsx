@@ -34,6 +34,8 @@ const TYPES: { value: FormType; label: string }[] = [
 interface EquipmentFormProps {
   /** Coche « location externe » par défaut (contexte presta externe). */
   externeDefault?: boolean;
+  /** Modèle pré-choisi (lien « Ajouter des unités » de la fiche modèle). */
+  modeleDefault?: Modele | null;
   /** Contexte prestation : crée et alloue directement à cette prestation. */
   prestaId?: number;
   submitLabel?: string;
@@ -48,14 +50,15 @@ interface EquipmentFormProps {
  */
 export function EquipmentForm({
   externeDefault = false,
+  modeleDefault = null,
   prestaId,
   submitLabel = "Créer l'équipement",
   onCreated,
 }: EquipmentFormProps) {
-  const [nom, setNom] = useState("");
+  const [nom, setNom] = useState(modeleDefault?.nom ?? "");
   const [type, setType] = useState<FormType>("standard");
   const [categorieId, setCategorieId] = useState<number | "">("");
-  const [modele, setModele] = useState<Modele | null>(null);
+  const [modele, setModele] = useState<Modele | null>(modeleDefault);
   const [rangementMode, setRangementMode] =
     useState<RangementMode>("emplacement");
   const [emplacementId, setEmplacementId] = useState<number | "">("");

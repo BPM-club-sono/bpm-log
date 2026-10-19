@@ -66,7 +66,7 @@ export function EquipmentSpecs({
       {specs.source === "modele" && (
         <p className="text-xs text-fg-muted">
           Héritées du modèle «{" "}
-          <Link to="/modeles" className="underline">
+          <Link to={`/modeles/${specs.modele_id}`} className="underline">
             {modeleNom ?? "modèle"}
           </Link>
           {" "}»

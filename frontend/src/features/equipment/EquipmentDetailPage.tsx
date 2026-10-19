@@ -192,7 +192,23 @@ export function EquipmentDetailPage() {
           )}
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          {eq.modele_nom && <Info label="Modèle" value={eq.modele_nom} />}
+          {eq.modele_nom && (
+            <Info
+              label="Modèle"
+              value={
+                eq.modele_id ? (
+                  <Link
+                    to={`/modeles/${eq.modele_id}`}
+                    className="font-medium hover:text-fg-muted"
+                  >
+                    {eq.modele_nom}
+                  </Link>
+                ) : (
+                  eq.modele_nom
+                )
+              }
+            />
+          )}
           <Info label="Catégorie" value={eq.categorie_nom} />
           <Info
             label="Rangement"

@@ -19,10 +19,11 @@ from app.models import (
     Membre,
     Modele,
     Prestation,
+    SousCategorie,
 )
 from app.models.enums import StatutAllocation, StatutEquipment, TypePrestation
 from app.routers.equipment import create_equipment, update_equipment
-from app.routers.modeles import delete_modele, update_modele
+from app.routers.modeles import delete_modele, get_modele, list_modeles, update_modele
 from app.routers.prestations import (
     add_allocation,
     ajouter_unite_modele,
@@ -278,3 +279,31 @@ async def test_detail_presta_expose_le_modele_des_unites(db_session, staff):
         par_eq[avec.id].equipment_modele_marque,
     ) == (m.id, m.nom, "Robe")
     assert par_eq[sans.id].equipment_modele_id is None
+
+
+async def test_fiche_modele_sous_categorie_et_unites(db_session, staff):
+    s = db_session
+    cat = Categorie(nom=f"Lights {uuid.uuid4().hex[:6]}")
+    s.add(cat)
+    await s.flush()
+    sc = SousCategorie(nom="Beam", categorie_id=cat.id)
+    s.add(sc)
+    await s.flush()
+    m = await _modele(s, categorie_id=cat.id, sous_categorie_id=sc.id)
+    await make_equipment(s, "MH fiche A", modele_id=m.id)
+    await make_equipment(s, "MH fiche B", modele_id=m.id)
+
+    fiche = await get_modele(m.id, staff, s)
+    assert (fiche.categorie_nom, fiche.sous_categorie_id, fiche.sous_categorie_nom) == (
+        cat.nom,
+        sc.id,
+        "Beam",
+    )
+    assert fiche.nb_unites == 2
+
+    liste = await list_modeles(staff, s, m.nom)
+    assert [(x.id, x.sous_categorie_nom, x.nb_unites) for x in liste] == [(m.id, "Beam", 2)]
+
+    with pytest.raises(HTTPException) as exc:
+        await get_modele(10**9, staff, s)
+    assert exc.value.status_code == 404

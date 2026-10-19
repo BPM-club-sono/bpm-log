@@ -74,26 +74,25 @@ test("spécifications d'un modèle et totaux de prestation", async ({ page, api 
     type: "Interne",
   });
 
-  await page.goto("/modeles");
-  const ligne = page.locator("li").filter({ hasText: modele.nom });
-  await ligne.getByRole("button", { name: "Voir les spécifications" }).click();
-  await ligne.getByRole("button", { name: "Éditer les spécifications" }).click();
-  await ligne.getByLabel("Poids (kg)").fill("12,5");
-  await ligne.getByLabel("Prix interne (€)").fill("30");
-  await ligne.getByLabel("Puissance (W)").fill("300");
-  await ligne.getByRole("button", { name: "Ajouter", exact: true }).click();
-  // Ligne de connectique : tient dans la carte sur téléphone, sélecteur de connecteur lisible.
-  const carte = await ligne.boundingBox();
+  await page.goto(`/modeles/${modele.id}`);
+  await page.getByRole("button", { name: "Éditer", exact: true }).click();
+  const fiche = page.locator("main");
+  await fiche.getByLabel("Poids (kg)").fill("12,5");
+  await fiche.getByLabel("Prix interne (€)").fill("30");
+  await fiche.getByLabel("Puissance (W)").fill("300");
+  await fiche.getByRole("button", { name: "Ajouter", exact: true }).click();
+  // Ligne de connectique : tient dans la page sur téléphone, sélecteur de connecteur lisible.
+  const carte = await fiche.boundingBox();
   for (const champ of ["Connecteur", "Sens", "Quantité", "Retirer"]) {
-    const box = await ligne.getByLabel(champ, { exact: true }).boundingBox();
+    const box = await fiche.getByLabel(champ, { exact: true }).boundingBox();
     expect(box!.x + box!.width, champ).toBeLessThanOrEqual(carte!.x + carte!.width);
   }
-  const selecteur = await ligne.getByLabel("Connecteur", { exact: true }).boundingBox();
+  const selecteur = await fiche.getByLabel("Connecteur", { exact: true }).boundingBox();
   expect(selecteur!.width).toBeGreaterThan(100);
-  await ligne.getByLabel("Connecteur", { exact: true }).selectOption({ label: connecteur.nom });
-  await ligne.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await fiche.getByLabel("Connecteur", { exact: true }).selectOption({ label: connecteur.nom });
+  await fiche.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByText("Spécifications enregistrées.")).toBeVisible();
-  await expect(ligne).toContainText("12,5 kg");
+  await expect(fiche).toContainText("12,5 kg");
 
   await page.goto(`/inventaire/${u1.id}`);
   await expect(page.getByText("12,5 kg")).toBeVisible();

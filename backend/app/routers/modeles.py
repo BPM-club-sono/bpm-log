@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select, update
 
 from app.deps import CurrentUser, DbSession
-from app.models import Categorie, Equipment, Modele
+from app.models import Categorie, Equipment, Modele, SousCategorie
 from app.schemas.equipment import ModeleCreate, ModeleRead, ModeleUpdate
 from app.security.rbac import RequireAdmin, RequireStaff
 from app.services.erreurs import modele_or_404
@@ -34,6 +34,9 @@ async def _verifier_categorie(db: DbSession, categorie_id: int | None) -> None:
 
 async def _read(db: DbSession, modele: Modele) -> ModeleRead:
     categorie = await db.get(Categorie, modele.categorie_id) if modele.categorie_id else None
+    sous_cat = (
+        await db.get(SousCategorie, modele.sous_categorie_id) if modele.sous_categorie_id else None
+    )
     nb = await db.scalar(
         select(func.count()).select_from(Equipment).where(Equipment.modele_id == modele.id)
     )
@@ -43,6 +46,8 @@ async def _read(db: DbSession, modele: Modele) -> ModeleRead:
         marque=modele.marque,
         categorie_id=modele.categorie_id,
         categorie_nom=categorie.nom if categorie else None,
+        sous_categorie_id=modele.sous_categorie_id,
+        sous_categorie_nom=sous_cat.nom if sous_cat else None,
         nb_unites=nb or 0,
     )
 
@@ -54,10 +59,11 @@ async def list_modeles(
     q: str | None = Query(default=None, description="Recherche sur le nom ou la marque"),
 ) -> list[ModeleRead]:
     stmt = (
-        select(Modele, Categorie.nom, func.count(Equipment.id))
+        select(Modele, Categorie.nom, SousCategorie.nom, func.count(Equipment.id))
         .outerjoin(Categorie, Categorie.id == Modele.categorie_id)
+        .outerjoin(SousCategorie, SousCategorie.id == Modele.sous_categorie_id)
         .outerjoin(Equipment, Equipment.modele_id == Modele.id)
-        .group_by(Modele.id, Categorie.nom)
+        .group_by(Modele.id, Categorie.nom, SousCategorie.nom)
         .order_by(Modele.nom)
     )
     if q and q.strip():
@@ -71,10 +77,17 @@ async def list_modeles(
             marque=m.marque,
             categorie_id=m.categorie_id,
             categorie_nom=cat_nom,
+            sous_categorie_id=m.sous_categorie_id,
+            sous_categorie_nom=sous_cat_nom,
             nb_unites=nb,
         )
-        for m, cat_nom, nb in rows.all()
+        for m, cat_nom, sous_cat_nom, nb in rows.all()
     ]
+
+
+@router.get("/modeles/{modele_id}", response_model=ModeleRead)
+async def get_modele(modele_id: int, _user: CurrentUser, db: DbSession) -> ModeleRead:
+    return await _read(db, await modele_or_404(db, modele_id))
 
 
 @router.post("/modeles", response_model=ModeleRead, status_code=status.HTTP_201_CREATED)

@@ -114,6 +114,8 @@ export interface Modele {
   marque: string | null;
   categorie_id: number | null;
   categorie_nom?: string | null;
+  sous_categorie_id?: number | null;
+  sous_categorie_nom?: string | null;
   nb_unites?: number;
 }
 

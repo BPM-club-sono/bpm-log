@@ -40,6 +40,8 @@ class ModeleRead(BaseModel):
     marque: str | None
     categorie_id: int | None
     categorie_nom: str | None = None
+    sous_categorie_id: int | None = None
+    sous_categorie_nom: str | None = None
     nb_unites: int = 0
 
 
