@@ -13,7 +13,7 @@ ENTETES = {
     ],
     "Son": ["Type", "Nom", "Entrées", "Sorties", "Poids", "Prix inté", "Prix exté", "État"],
     "Structure": ["Type", "Nom", "Longueur", "Poids", "Prix inté", "Prix exté", "État"],
-    "Écrans et Mapping": [
+    "Mapping": [
         "Type", "Nom", "Entrées", "Sorties", "Poids", "Prix inté", "Prix exté", "État", "Remarque",
     ],
     "Câbles": ["Type", "Nom", "Entrées", "Sorties", "Longueur", "Prix inté", "Prix exté", "État"],
@@ -42,8 +42,8 @@ def test_remap_types_et_noms(tmp_path):
         ligne("Stobe", "S1"), ligne("GrandMA", "G1"), ligne("Adaptateur", "A1"),
         ligne("Crochet", "Omega pixelblade"), ligne("Crochet", "Crochet EURO"),
     ])  # fmt: skip
-    ecrire(tmp_path, "Écrans et Mapping", [
-        ligne("Cable", "Linkcon"), ligne("Cable", "Ethercon"), ligne("Amplificateur", "VX1000"),
+    ecrire(tmp_path, "Mapping", [
+        ligne("Cable", "Linkcon"), ligne("Cable", "Ethernet"), ligne("Amplificateur", "VX1000"),
         ligne("Bumper", "Bumber 1m"),
     ])  # fmt: skip
     ecrire(tmp_path, "Son", [ligne("Mirco", "M1"), ligne("Cablage", "C1")])
@@ -56,8 +56,8 @@ def test_remap_types_et_noms(tmp_path):
         ("Omega pixelblade", "Accroche", "Omega"),
         ("Crochet EURO", "Accroche", "Crochet"),
         ("Linkcon", "Câbles", "Linkcon écran"),
-        ("Ethercon", "Câbles", "Ethernet"),
-        ("VX1000", "Écrans et Mapping", "Processeur vidéo"),
+        ("Ethernet", "Câbles", "Ethernet"),
+        ("VX1000", "Mapping", "Processeur vidéo"),
         ("Bumper 1m", "Accroche", "Bumper"),
         ("M1", "Son", "Micro"),
         ("C1", "Son", "Stagebox"),
@@ -68,7 +68,7 @@ def test_remap_types_et_noms(tmp_path):
 
 
 def test_renommages(tmp_path):
-    ecrire(tmp_path, "Écrans et Mapping", [ligne("Bumper", "Bumber 1m")])
+    ecrire(tmp_path, "Mapping", [ligne("Bumper", "Bumber 1m")])
     ecrire(tmp_path, "Son", [
         ligne("Platine", "Pieneer DJM 500"), ligne("Platine", "Pioreer XDJ-XZ"),
     ])  # fmt: skip
@@ -108,7 +108,7 @@ def test_connecteur_doublon_fusionne(tmp_path):
 
 
 def test_linkcon_forcee(tmp_path):
-    ecrire(tmp_path, "Écrans et Mapping", [ligne("Cable", "Linkcon")])
+    ecrire(tmp_path, "Mapping", [ligne("Cable", "Linkcon")])
     assert par_nom(lire_dossier(tmp_path))["Linkcon"].connectiques == [("LinkCon", "entree", 2)]
 
 
@@ -207,6 +207,6 @@ def test_donnees_reelles_si_presentes():
     assert sum(len(m.unites) for m in plan.modeles) == 519
     assert [a for a in plan.anomalies if "État vide" not in a] == []
     assert set(plan.sous_categories) <= {
-        "Lights", "Son", "Structure", "Câbles", "Accroche", "Écrans et Mapping", "Autre",
+        "Lights", "Son", "Structure", "Câbles", "Accroche", "Mapping", "Autre",
     }  # fmt: skip
     assert {m.categorie for m in plan.modeles} == set(plan.sous_categories)

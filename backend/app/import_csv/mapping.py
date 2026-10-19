@@ -23,20 +23,20 @@ REMAP_TYPE: dict[tuple[str, str], tuple[str, str]] = {
     ("Son", "Mirco"): ("Son", "Micro"),
     ("Son", "Cablage"): ("Son", "Stagebox"),
     ("Câbles", "Boitier élec"): ("Câbles", "Distribution élec"),
-    ("Écrans et Mapping", "Amplificateur"): ("Écrans et Mapping", "Processeur vidéo"),
-    ("Écrans et Mapping", "Crochet"): ("Accroche", "Crochet"),
-    ("Écrans et Mapping", "Manille"): ("Accroche", "Manille"),
-    ("Écrans et Mapping", "Elingue"): ("Accroche", "Elingue"),
-    ("Écrans et Mapping", "Bumper"): ("Accroche", "Bumper"),
+    ("Mapping", "Amplificateur"): ("Mapping", "Processeur vidéo"),
+    ("Mapping", "Crochet"): ("Accroche", "Crochet"),
+    ("Mapping", "Manille"): ("Accroche", "Manille"),
+    ("Mapping", "Elingue"): ("Accroche", "Elingue"),
+    ("Mapping", "Bumper"): ("Accroche", "Bumper"),
 }
 
 # (feuille, Type, Nom CSV) -> (catégorie, sous-catégorie), testé avant REMAP_TYPE.
 REMAP_NOM: dict[tuple[str, str, str], tuple[str, str]] = {
     ("Lights", "Crochet", "Omega pixelblade"): ("Accroche", "Omega"),
     ("Lights", "Crochet", "omega H Beam 2R"): ("Accroche", "Omega"),
-    ("Écrans et Mapping", "Cable", "Linkcon"): ("Câbles", "Linkcon écran"),
-    ("Écrans et Mapping", "Cable", "Ethercon"): ("Câbles", "Ethernet"),
-    ("Écrans et Mapping", "Cable", "Powercon"): ("Câbles", "Powercon"),
+    ("Mapping", "Cable", "Linkcon"): ("Câbles", "Linkcon écran"),
+    ("Mapping", "Cable", "Ethernet"): ("Câbles", "Ethernet"),
+    ("Mapping", "Cable", "Powercon"): ("Câbles", "Powercon"),
 }
 
 # Nom CSV -> nom du modèle (coquilles corrigées).
@@ -130,10 +130,10 @@ def _champs() -> list[ChampPrevu]:
         ("Câbles", "Ampérage", "nombre", "A", (), ("Distribution élec",)),
         ("Câbles", "Nb prises", "nombre", None, (), ("Distribution élec",)),
         ("Accroche", "Charge max", "nombre", "kg", (), None),
-        ("Écrans et Mapping", "Pitch", "nombre", "mm", (), ("Écran",)),
-        ("Écrans et Mapping", "Résolution", "texte", None, (), ("Écran", "Projecteur")),
-        ("Écrans et Mapping", "Luminosité", "nombre", "lumens", (), ("Projecteur",)),
-        ("Écrans et Mapping", "Capacité", "nombre", "Go", (), ("Stockage",)),
+        ("Mapping", "Pitch", "nombre", "mm", (), ("Écran",)),
+        ("Mapping", "Résolution", "texte", None, (), ("Écran", "Projecteur")),
+        ("Mapping", "Luminosité", "nombre", "lumens", (), ("Projecteur",)),
+        ("Mapping", "Capacité", "nombre", "Go", (), ("Stockage",)),
         ("Autre", "Ports", "nombre", None, (), ("Switch",)),
     ]
     champs: list[ChampPrevu] = []

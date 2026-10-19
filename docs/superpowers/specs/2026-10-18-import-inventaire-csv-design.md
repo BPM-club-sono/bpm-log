@@ -96,17 +96,17 @@ sous-catégorie somewhere.
 | Son | Sub, Tête, Monitor, Ampli, Rack, Console, Mixer, Platine, Controleur, Carte son, Pied | Son sheet as-is |
 | Son | Micro | Son type `Mirco` |
 | Son | Stagebox | Son type `Cablage` |
-| Câbles | Linkcon écran | Écrans et Mapping `Cable` / `Linkcon` — modèle connectiques **2× LinkCon, entrée** (user: special cable with two LinkCon inputs) |
-| Câbles | Ethernet | Écrans et Mapping `Cable` / `Ethercon` (modèle keeps name "Ethercon") |
-| Câbles | Powercon | Écrans et Mapping `Cable` / `Powercon` |
+| Câbles | Linkcon écran | Mapping `Cable` / `Linkcon` — modèle connectiques **2× LinkCon, entrée** (user: special cable with two LinkCon inputs) |
+| Câbles | Ethernet | Mapping `Cable` / `Ethernet` (CSV Nom renamed from "Ethercon") |
+| Câbles | Powercon | Mapping `Cable` / `Powercon` |
 | Câbles | Passe cables | Câbles sheet as-is |
 | Câbles | Distribution élec | Câbles type `Boitier élec` |
 | Accroche *(new)* | Crochet | Lights `Crochet` rows named Crochet EURO, Crochet pixelblade, Crochet 2R + Écrans `Crochet` |
 | Accroche | Omega | Lights `Crochet` rows named Omega pixelblade, omega H Beam 2R |
-| Accroche | Manille, Elingue, Bumper | Écrans et Mapping |
+| Accroche | Manille, Elingue, Bumper | Mapping |
 | Structure | Prolyte, Praticable, Pied praticable, Embase, Semelle | Structure sheet as-is (Prolyte kept, user) |
-| Écrans et Mapping | Écran, Projecteur, Lycra, Controleur, Stockage | as-is |
-| Écrans et Mapping | Processeur vidéo | type `Amplificateur` (VX1000) |
+| Mapping | Écran, Projecteur, Lycra, Controleur, Stockage | as-is |
+| Mapping | Processeur vidéo | type `Amplificateur` (VX1000) |
 | Autre | Échelle, Switch | as-is |
 
 ### Modèle renames (user-approved)
@@ -143,10 +143,10 @@ All other CSV names are kept verbatim (user: "keep the names from the CSV").
 | Câbles | Ampérage | nombre, A | Distribution élec |
 | Câbles | Nb prises | nombre | Distribution élec |
 | Accroche | Charge max | nombre, kg | all |
-| Écrans et Mapping | Pitch | nombre, mm | Écran |
-| Écrans et Mapping | Résolution | texte | Écran, Projecteur |
-| Écrans et Mapping | Luminosité | nombre, lumens | Projecteur |
-| Écrans et Mapping | Capacité | nombre, Go | Stockage |
+| Mapping | Pitch | nombre, mm | Écran |
+| Mapping | Résolution | texte | Écran, Projecteur |
+| Mapping | Luminosité | nombre, lumens | Projecteur |
+| Mapping | Capacité | nombre, Go | Stockage |
 | Autre | Ports | nombre | Switch |
 
 ## Re-runs / idempotency (my calls)
