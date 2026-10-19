@@ -1,5 +1,7 @@
 """Contraintes du modèle de données des spécifications techniques."""
 
+import uuid
+
 import pytest
 from conftest import make_equipment
 from sqlalchemy import func, select
@@ -16,8 +18,13 @@ from app.models import (
 from app.models.enums import SensConnectique, TypeChampSpec
 
 
+def _nom(base: str) -> str:
+    """Nom unique : la base de dev peut déjà contenir un import réel (« Son », « Speakon »…)."""
+    return f"{base} {uuid.uuid4().hex[:6]}"
+
+
 async def _champ(db_session) -> ChampSpecification:
-    cat = Categorie(nom="Son")
+    cat = Categorie(nom=_nom("Son"))
     db_session.add(cat)
     await db_session.flush()
     champ = ChampSpecification(
@@ -30,7 +37,7 @@ async def _champ(db_session) -> ChampSpecification:
 
 async def test_valeur_cible_exclusive(db_session):
     champ = await _champ(db_session)
-    modele = Modele(nom="M-1")
+    modele = Modele(nom=_nom("M-1"))
     db_session.add(modele)
     eq = await make_equipment(db_session, "Enceinte")
 
@@ -50,8 +57,8 @@ async def test_valeur_cible_exclusive(db_session):
 
 
 async def test_connectique_quantite_positive(db_session):
-    modele = Modele(nom="M-2")
-    conn = Connecteur(nom="XLR 3 broches")
+    modele = Modele(nom=_nom("M-2"))
+    conn = Connecteur(nom=_nom("XLR 3 broches"))
     db_session.add_all([modele, conn])
     await db_session.flush()
     with pytest.raises(IntegrityError):
@@ -68,8 +75,8 @@ async def test_connectique_quantite_positive(db_session):
 
 async def test_cascade_suppression(db_session):
     champ = await _champ(db_session)
-    modele = Modele(nom="M-3")
-    conn = Connecteur(nom="Speakon")
+    modele = Modele(nom=_nom("M-3"))
+    conn = Connecteur(nom=_nom("Speakon"))
     db_session.add_all([modele, conn])
     eq = await make_equipment(db_session, "Sans modèle")
     await db_session.flush()
