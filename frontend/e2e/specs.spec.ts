@@ -31,15 +31,21 @@ async function preparerReferentiel(api: APIRequestContext) {
   return { cat, champ, connecteur, modele };
 }
 
-test("référentiel : sous-catégorie, champ et connecteur", async ({ page }) => {
+test("référentiel : fiche catégorie, sous-catégorie, champ et connecteur", async ({
+  page,
+  api,
+}) => {
   const s = suffixe();
   const cat = `Lyres ${s}`;
   const connecteur = `PowerCon ${s}`;
 
   await page.goto("/referentiel");
-  await page.getByLabel("Nouvelle catégorie", { exact: true }).fill(cat);
-  await page.getByRole("button", { name: "Ajouter la catégorie" }).click();
-  await page.locator("button[aria-expanded]").filter({ hasText: cat }).click();
+  await page.getByRole("button", { name: "Nouvelle catégorie" }).click();
+  await page.getByLabel("Nom", { exact: true }).fill(cat);
+  await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page).toHaveURL(/\/referentiel\/categories\/\d+$/);
+  await expect(page.getByRole("heading", { name: cat })).toBeVisible();
+  const categorieId = Number(page.url().split("/").pop());
 
   await page.getByLabel("Nouvelle sous-catégorie").fill("Beam");
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
@@ -52,16 +58,36 @@ test("référentiel : sous-catégorie, champ et connecteur", async ({ page }) =>
   await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByText("Champ créé.")).toBeVisible();
 
+  // Les modèles de la catégorie sont listés sur sa fiche.
+  const modele = await creer<{ id: number; nom: string }>(api, "modeles", {
+    nom: `Beam ${s}`,
+    categorie_id: categorieId,
+  });
+  await page.reload();
+  await expect(page.getByText(/^Beam/).first()).toBeVisible();
+  await expect(page.getByText(/^Puissance/)).toBeVisible();
+  await expect(page.getByText("Modèles (1)")).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(modele.nom) })).toBeVisible();
+
+  // Liste : recherche par nom de sous-catégorie ou de champ.
+  await page.getByRole("link", { name: "Référentiel" }).click();
+  await page.getByRole("searchbox", { name: "Rechercher une catégorie" }).fill(cat);
+  await expect(page.getByRole("link", { name: new RegExp(cat) })).toContainText(
+    "1 sous-catégorie · 1 champ",
+  );
+
   await page.getByRole("tab", { name: "Connecteurs" }).click();
+  await page.getByRole("button", { name: "Nouveau connecteur" }).click();
   await page.getByLabel("Nouveau connecteur").fill(connecteur);
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   await expect(page.getByText(connecteur, { exact: true })).toBeVisible();
 
   await page.reload();
-  await page.locator("button[aria-expanded]").filter({ hasText: cat }).click();
-  await expect(page.getByText(/^Beam/)).toBeVisible();
-  await expect(page.getByText(/^Puissance/)).toBeVisible();
-  await page.getByRole("tab", { name: "Connecteurs" }).click();
+  await expect(page.getByRole("tab", { name: "Connecteurs" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("searchbox", { name: "Rechercher un connecteur" }).fill(connecteur);
   await expect(page.getByText(connecteur, { exact: true })).toBeVisible();
 });
 

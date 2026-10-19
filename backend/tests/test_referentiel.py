@@ -27,6 +27,7 @@ from app.routers.referentiel import (
     delete_categorie,
     delete_champ,
     delete_sous_categorie,
+    get_categorie,
     list_champs,
     update_champ,
 )
@@ -211,3 +212,11 @@ def test_ecritures_exigent_staff():
             assert hints["_user"] is RequireStaff, path
             vues += 1
     assert vues == 12
+
+
+async def test_fiche_categorie(db_session, staff):
+    c = await _categorie(db_session)
+    assert (await get_categorie(c.id, staff, db_session)).nom == c.nom
+    with pytest.raises(HTTPException) as exc:
+        await get_categorie(10**9, staff, db_session)
+    assert exc.value.status_code == 404

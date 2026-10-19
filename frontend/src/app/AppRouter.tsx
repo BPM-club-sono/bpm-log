@@ -87,6 +87,12 @@ const ReferentielPage = lazy(() =>
   })),
 );
 
+const CategorieDetailPage = lazy(() =>
+  import("@/features/referentiel/CategorieDetailPage").then((m) => ({
+    default: m.CategorieDetailPage,
+  })),
+);
+
 function PageFallback() {
   return <p className="p-8 text-center text-sm text-fg-muted">Chargement…</p>;
 }
@@ -122,6 +128,10 @@ const router = createBrowserRouter([
           { path: "/modeles", element: lazyRoute(<ModelesPage />) },
           { path: "/modeles/:id", element: lazyRoute(<ModeleDetailPage />) },
           { path: "/referentiel", element: lazyRoute(<ReferentielPage />) },
+          {
+            path: "/referentiel/categories/:id",
+            element: lazyRoute(<CategorieDetailPage />),
+          },
           { path: "/profil", element: lazyRoute(<ProfilePage />) },
         ],
       },

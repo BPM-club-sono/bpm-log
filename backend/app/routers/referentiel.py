@@ -60,6 +60,11 @@ async def _verifier_nom_categorie(db: DbSession, nom: str, categorie_id: int | N
         raise conflit(f"La catégorie « {nom} » existe déjà.")
 
 
+@router.get("/categories/{categorie_id}", response_model=CategorieRead)
+async def get_categorie(categorie_id: int, _user: CurrentUser, db: DbSession) -> Categorie:
+    return await _categorie_or_404(db, categorie_id)
+
+
 @router.post("/categories", response_model=CategorieRead, status_code=status.HTTP_201_CREATED)
 async def create_categorie(
     payload: CategorieCreate, _user: RequireStaff, db: DbSession

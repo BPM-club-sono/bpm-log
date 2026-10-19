@@ -161,7 +161,19 @@ export function ModeleDetailPage() {
             {modele.marque && <p className="text-sm text-fg-muted">{modele.marque}</p>}
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <Info label="Catégorie" value={modele.categorie_nom} />
+            <Info
+              label="Catégorie"
+              value={
+                modele.categorie_id != null ? (
+                  <Link
+                    to={`/referentiel/categories/${modele.categorie_id}`}
+                    className="font-medium hover:text-fg-muted"
+                  >
+                    {modele.categorie_nom}
+                  </Link>
+                ) : null
+              }
+            />
             <Info label="Sous-catégorie" value={modele.sous_categorie_nom} />
             <Info label="Marque" value={modele.marque} />
             <Info label="Unités" value={nb} />
