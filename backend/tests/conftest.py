@@ -5,6 +5,7 @@ bord (création du dossier photos dans /var, démarrage du scheduler, etc.).
 """
 
 import os
+import re
 import tempfile
 import uuid
 from contextlib import contextmanager
@@ -148,3 +149,35 @@ async def api_import(db_session, staff_import):
         transport = ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test/api") as c:
             yield c
+
+
+class TransportEnPanne(httpx.AsyncBaseTransport):
+    """Transport ASGI qui simule une panne sur la `n`-ième requête vérifiant `quand`.
+
+    La requête fautive n'atteint pas l'app : elle lève `httpx.ConnectError`, ou renvoie
+    `statut` (ex. 401) si donné. Les autres requêtes passent normalement.
+    """
+
+    def __init__(self, quand, n: int = 1, statut: int | None = None):
+        self.interne = ASGITransport(app=app)
+        self.quand, self.n, self.statut = quand, n, statut
+        self.vus = 0
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if self.quand(request):
+            self.vus += 1
+            if self.vus == self.n:
+                if self.statut is None:
+                    raise httpx.ConnectError("coupure simulée", request=request)
+                return httpx.Response(self.statut, json={"detail": "Panne simulée"})
+        return await self.interne.handle_async_request(request)
+
+
+def requete(methode: str, motif: str):
+    """Prédicat pour TransportEnPanne : méthode exacte, chemin `/api/<motif>` (regex)."""
+    regex = re.compile(rf"/api/{motif}")
+
+    def quand(request: httpx.Request) -> bool:
+        return request.method == methode and regex.fullmatch(request.url.path) is not None
+
+    return quand
