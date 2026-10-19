@@ -155,7 +155,7 @@ export function ModeleDetailPage() {
           }}
         />
       ) : (
-        <div className="space-y-3 border-b border-line pb-5">
+        <div className="space-y-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold">{modele.nom}</h1>
             {modele.marque && <p className="text-sm text-fg-muted">{modele.marque}</p>}
@@ -198,9 +198,9 @@ export function ModeleDetailPage() {
           }}
         />
       ) : (
-        <section className="space-y-3 rounded-2xl border border-line p-4">
+        <section className="space-y-3 border-t border-line pt-5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Spécifications</h2>
+            <h2 className="text-sm font-semibold text-fg-muted">Spécifications</h2>
             {canManage && specs && (
               <Button variant="ghost" className="h-9 px-3" onClick={() => setSpecsEdit(true)}>
                 Éditer
@@ -209,7 +209,9 @@ export function ModeleDetailPage() {
           </div>
           {nb > 0 && (
             <p className="text-xs text-fg-muted">
-              Partagées par les {nb} unité{nb > 1 ? "s" : ""} de ce modèle.
+              {nb > 1
+                ? `Partagées par les ${nb} unités de ce modèle.`
+                : "S'appliquent à l'unité de ce modèle."}
             </p>
           )}
           {specsError ? (
@@ -222,7 +224,7 @@ export function ModeleDetailPage() {
         </section>
       )}
 
-      <section className="space-y-2">
+      <section className="space-y-2 border-t border-line pt-5">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-fg-muted">
             Unités{unites ? ` (${unites.length})` : ""}
@@ -263,7 +265,7 @@ export function ModeleDetailPage() {
       </section>
 
       {isAdmin && (
-        <div className="space-y-3 rounded-2xl border border-line p-4">
+        <div className="space-y-3 border-t border-line pt-5">
           <h2 className="text-sm font-semibold text-danger">Zone dangereuse</h2>
           <p className="text-xs text-fg-muted">
             {nb > 0

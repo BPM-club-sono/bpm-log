@@ -118,7 +118,7 @@ export function CategorieDetailPage() {
           }}
         />
       ) : (
-        <div className="space-y-3 border-b border-line pb-5">
+        <div className="space-y-3">
           <div className="min-w-0">
             <h1 className="text-xl font-bold">{categorie.nom}</h1>
             {categorie.description && (
@@ -133,15 +133,15 @@ export function CategorieDetailPage() {
         </div>
       )}
 
-      <section className="rounded-2xl border border-line p-4">
+      <section className="border-t border-line pt-5">
         <SousCategories categorieId={categorie.id} items={sousCats} onChange={load} />
       </section>
 
-      <section className="rounded-2xl border border-line p-4">
+      <section className="border-t border-line pt-5">
         <Champs categorieId={categorie.id} items={champs} sousCats={sousCats} onChange={load} />
       </section>
 
-      <section className="space-y-2">
+      <section className="space-y-2 border-t border-line pt-5">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-fg-muted">Modèles ({modeles.length})</h2>
           <Link
@@ -184,7 +184,7 @@ export function CategorieDetailPage() {
       </section>
 
       {canManage && (
-        <div className="space-y-3 rounded-2xl border border-line p-4">
+        <div className="space-y-3 border-t border-line pt-5">
           <h2 className="text-sm font-semibold text-danger">Zone dangereuse</h2>
           <p className="text-xs text-fg-muted">
             {utilisee

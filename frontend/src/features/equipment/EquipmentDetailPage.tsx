@@ -321,7 +321,7 @@ function ContenuBlock({ contenu }: { contenu: ContenuChild[] }) {
     toast(`${contenu.length} étiquette(s) ajoutée(s) au panier`, "success");
   }
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 border-t border-line pt-5">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg-muted">
           Contenu · {contenu.length} élément{contenu.length > 1 ? "s" : ""}
@@ -538,7 +538,7 @@ function VracBlock({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 border-t border-line pt-5">
       <h2 className="text-sm font-semibold text-fg-muted">Inventaire vrac</h2>
       {err && <p className="text-sm text-danger">{err}</p>}
 
@@ -667,7 +667,7 @@ function ConsoBlock({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 border-t border-line pt-5">
       <h2 className="text-sm font-semibold text-fg-muted">Stock consommable</h2>
       <div className="py-2 text-center">
         <p className="text-xs uppercase tracking-wide text-fg-muted">Stock actuel</p>
@@ -815,7 +815,7 @@ function ActivityTimeline({
 
   if (events.length === 0) {
     return (
-      <section className="space-y-2">
+      <section className="space-y-2 border-t border-line pt-5">
         <h2 className="text-sm font-semibold text-fg-muted">Activité</h2>
         <p className="text-sm text-fg-muted">Aucune activité enregistrée.</p>
       </section>
@@ -823,7 +823,7 @@ function ActivityTimeline({
   }
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 border-t border-line pt-5">
       <h2 className="text-sm font-semibold text-fg-muted">Activité</h2>
       <ol className="relative ml-1">
         {events.map((ev, i) => {
