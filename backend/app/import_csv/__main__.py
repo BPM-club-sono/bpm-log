@@ -20,7 +20,7 @@ from app.import_csv.importeur import (
 from app.import_csv.mapping import lire_dossier
 from app.models.enums import RoleMembre
 
-DOSSIER_DEFAUT = Path(__file__).resolve().parents[3] / "assets" / "sheet-log" / "clean"
+DOSSIER_DEFAUT = Path(__file__).resolve().parents[3] / "assets" / "sheet-log"
 ROLES_AUTORISES = {RoleMembre.ADMIN.value, RoleMembre.STAFF.value}
 # Hôtes où http:// est admis : la machine locale, et la base des tests en process.
 HOTES_HTTP = {"localhost", "127.0.0.1", "::1", "test"}

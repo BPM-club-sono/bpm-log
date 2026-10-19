@@ -3,7 +3,7 @@
 ## Intent / why
 
 BPM's equipment inventory lives in a legacy Google Sheet, exported and cleaned into
-`assets/sheet-log/clean/*.csv` (one row per physical unit, 519 rows, 6 sheets). BPM Log
+`assets/sheet-log/*.csv` (one row per physical unit, 519 rows, 6 sheets). BPM Log
 now has everything needed to hold it (catégories, sous-catégories, champs de
 spécification, connecteurs, modèles with specs, units, panne tickets). The goal is a
 script that loads the whole sheet into BPM Log **through the backend's REST API** —
@@ -15,7 +15,7 @@ run it **once against prod**, which starts from an **empty inventory**.
 
 ## Goals
 
-- One command imports the full référentiel + parc from `assets/sheet-log/clean/`.
+- One command imports the full référentiel + parc from `assets/sheet-log/`.
 - Re-runnable on dev without creating duplicates.
 - Applies the cleanup decided below (catégorie reorganisation, renames, typo fixes).
 - Creates the empty champs de spécification listed below, so they can be filled in the app.

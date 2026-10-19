@@ -198,7 +198,7 @@ def test_champs_des_categories_presentes(tmp_path):
     assert [c.ordre for c in plan.champs] == sorted(c.ordre for c in plan.champs)
 
 
-DOSSIER_REEL = Path(__file__).resolve().parents[2] / "assets" / "sheet-log" / "clean"
+DOSSIER_REEL = Path(__file__).resolve().parents[2] / "assets" / "sheet-log"
 
 
 @pytest.mark.skipif(not DOSSIER_REEL.is_dir(), reason="assets/ absent (CI)")

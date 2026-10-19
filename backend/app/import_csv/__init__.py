@@ -7,7 +7,7 @@ Usage (depuis `backend/`) :
     # prod : écriture réelle, après le rapport de simulation et une confirmation
     ../.venv/bin/python -m app.import_csv --api https://<domaine>/api --apply
 
-Options : `--dossier PATH` (défaut `assets/sheet-log/clean`), `--yes` (sans confirmation),
+Options : `--dossier PATH` (défaut `assets/sheet-log`), `--yes` (sans confirmation),
 `--reappliquer-specs` (voir plus bas). `--api` doit finir par `/api` ; http:// n'est
 accepté que vers localhost (sinon le jeton passerait en clair).
 
