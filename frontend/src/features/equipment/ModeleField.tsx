@@ -4,6 +4,7 @@ import type { Categorie, Modele } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { SearchInput } from "@/shared/SearchInput";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 
 const MAX_RESULTS = 8;
 const DEBOUNCE_MS = 300;
@@ -154,21 +155,14 @@ export function ModeleField({ value, onChange, categories, required }: ModeleFie
             placeholder="Marque (optionnel)"
             className={inputCls}
           />
-          <select
+          <CategorieSelect
+            categories={categories}
             value={categorieId}
-            onChange={(e) =>
-              setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-            }
+            onChange={setCategorieId}
+            vide="Catégorie —"
             aria-label="Catégorie du modèle"
             className={inputCls}
-          >
-            <option value="">Catégorie —</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nom}
-              </option>
-            ))}
-          </select>
+          />
           <Button onClick={() => void create()} loading={saving} className="w-full">
             Créer le modèle
           </Button>

@@ -8,9 +8,10 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select, update
 
 from app.deps import CurrentUser, DbSession
-from app.models import Categorie, Equipment, Modele, SousCategorie
+from app.models import Categorie, Equipment, Modele
 from app.schemas.equipment import ModeleCreate, ModeleRead, ModeleUpdate
 from app.security.rbac import RequireAdmin, RequireStaff
+from app.services.categories import chemin, chemins
 from app.services.erreurs import modele_or_404
 
 router = APIRouter(tags=["modeles"])
@@ -34,9 +35,6 @@ async def _verifier_categorie(db: DbSession, categorie_id: int | None) -> None:
 
 async def _read(db: DbSession, modele: Modele) -> ModeleRead:
     categorie = await db.get(Categorie, modele.categorie_id) if modele.categorie_id else None
-    sous_cat = (
-        await db.get(SousCategorie, modele.sous_categorie_id) if modele.sous_categorie_id else None
-    )
     nb = await db.scalar(
         select(func.count()).select_from(Equipment).where(Equipment.modele_id == modele.id)
     )
@@ -46,8 +44,7 @@ async def _read(db: DbSession, modele: Modele) -> ModeleRead:
         marque=modele.marque,
         categorie_id=modele.categorie_id,
         categorie_nom=categorie.nom if categorie else None,
-        sous_categorie_id=modele.sous_categorie_id,
-        sous_categorie_nom=sous_cat.nom if sous_cat else None,
+        categorie_chemin=await chemin(db, modele.categorie_id),
         nb_unites=nb or 0,
     )
 
@@ -59,17 +56,17 @@ async def list_modeles(
     q: str | None = Query(default=None, description="Recherche sur le nom ou la marque"),
 ) -> list[ModeleRead]:
     stmt = (
-        select(Modele, Categorie.nom, SousCategorie.nom, func.count(Equipment.id))
+        select(Modele, Categorie.nom, func.count(Equipment.id))
         .outerjoin(Categorie, Categorie.id == Modele.categorie_id)
-        .outerjoin(SousCategorie, SousCategorie.id == Modele.sous_categorie_id)
         .outerjoin(Equipment, Equipment.modele_id == Modele.id)
-        .group_by(Modele.id, Categorie.nom, SousCategorie.nom)
+        .group_by(Modele.id, Categorie.nom)
         .order_by(Modele.nom)
     )
     if q and q.strip():
         like = f"%{q.strip()}%"
         stmt = stmt.where(Modele.nom.ilike(like) | Modele.marque.ilike(like))
     rows = await db.execute(stmt)
+    tous_chemins = await chemins(db)
     return [
         ModeleRead(
             id=m.id,
@@ -77,11 +74,10 @@ async def list_modeles(
             marque=m.marque,
             categorie_id=m.categorie_id,
             categorie_nom=cat_nom,
-            sous_categorie_id=m.sous_categorie_id,
-            sous_categorie_nom=sous_cat_nom,
+            categorie_chemin=tous_chemins.get(m.categorie_id) if m.categorie_id else None,
             nb_unites=nb,
         )
-        for m, cat_nom, sous_cat_nom, nb in rows.all()
+        for m, cat_nom, nb in rows.all()
     ]
 
 
@@ -118,10 +114,9 @@ async def update_modele(
         modele.marque = (payload.marque or "").strip() or None
     if "categorie_id" in champs and payload.categorie_id != modele.categorie_id:
         await _verifier_categorie(db, payload.categorie_id)
+        # Les valeurs saisies restent en base, masquées tant que leurs champs ne
+        # s'appliquent plus (champ hors de la nouvelle lignée).
         modele.categorie_id = payload.categorie_id
-        # Une sous-catégorie appartient à une catégorie. Les valeurs saisies restent
-        # en base, masquées tant que leurs champs ne s'appliquent plus.
-        modele.sous_categorie_id = None
         # Le modèle fait foi : toutes ses unités suivent.
         await db.execute(
             update(Equipment)

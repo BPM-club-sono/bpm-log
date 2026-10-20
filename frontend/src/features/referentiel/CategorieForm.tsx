@@ -2,22 +2,27 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Categorie } from "@/lib/types";
 import { Button } from "@/shared/Button";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 import { useToast } from "@/shared/Toast";
 import { inputCls } from "./shared";
 
-/** Création ou édition d'une catégorie (nom, description). */
+/** Création ou édition d'une catégorie (nom, description, catégorie parente).
+ *  `categories` : tout l'arbre, pour le choix du parent. */
 export function CategorieForm({
   initial,
+  categories,
   onCancel,
   onSaved,
 }: {
   initial: Categorie | null;
+  categories: Categorie[];
   onCancel: () => void;
   onSaved: (c: Categorie) => void | Promise<void>;
 }) {
   const { toast } = useToast();
   const [nom, setNom] = useState(initial?.nom ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
+  const [parentId, setParentId] = useState<number | "">(initial?.parent_id ?? "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -29,7 +34,11 @@ export function CategorieForm({
     setSaving(true);
     setErr(null);
     try {
-      const body = { nom: nom.trim(), description: description.trim() || null };
+      const body = {
+        nom: nom.trim(),
+        description: description.trim() || null,
+        parent_id: parentId === "" ? null : parentId,
+      };
       const c = initial
         ? await api<Categorie>(`/categories/${initial.id}`, { method: "PATCH", body })
         : await api<Categorie>("/categories", { method: "POST", body });
@@ -66,6 +75,20 @@ export function CategorieForm({
           onChange={(e) => setDescription(e.target.value)}
           className={inputCls}
         />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-xs font-medium text-fg-muted">Rangée dans</span>
+        <CategorieSelect
+          categories={categories}
+          value={parentId}
+          onChange={setParentId}
+          exclure={initial?.id}
+          vide="Aucune (catégorie principale)"
+          className={inputCls}
+        />
+        <span className="block text-xs text-fg-muted">
+          Une sous-catégorie hérite des champs de spécification de toutes ses parentes.
+        </span>
       </label>
       {err && <p className="text-sm text-danger">{err}</p>}
       <div className="flex gap-2">

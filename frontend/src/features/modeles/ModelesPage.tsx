@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
+import { cheminDe, descendantsIds, enfants } from "@/lib/categories";
 import type { Categorie, Modele } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { Icon } from "@/shared/Icon";
@@ -64,21 +65,34 @@ export function ModelesPage() {
 
   const sansCategorie = items.some((m) => m.categorie_id == null);
 
+  // Puces : les catégories racines, plus la catégorie filtrée si elle est plus
+  // profonde (lien « Voir dans Modèles » d'une fiche catégorie).
+  const puces = useMemo(() => {
+    const racines = enfants(categories, null).map((c) => ({ value: c.id as Filtre, label: c.nom }));
+    const choisie = categories.find((c) => c.id === filtre);
+    if (choisie && choisie.parent_id !== null) {
+      racines.push({ value: choisie.id, label: cheminDe(categories, choisie.id) });
+    }
+    return racines;
+  }, [categories, filtre]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Une catégorie couvre aussi ses sous-catégories, à toute profondeur.
+    const dans = typeof filtre === "number" ? descendantsIds(categories, filtre) : null;
     return items.filter((m) => {
       if (filtre === "aucune" && m.categorie_id != null) return false;
-      if (typeof filtre === "number" && m.categorie_id !== filtre) return false;
+      if (dans && (m.categorie_id == null || !dans.has(m.categorie_id))) return false;
       if (
         q &&
         !m.nom.toLowerCase().includes(q) &&
         !(m.marque ?? "").toLowerCase().includes(q) &&
-        !(m.sous_categorie_nom ?? "").toLowerCase().includes(q)
+        !(m.categorie_chemin ?? "").toLowerCase().includes(q)
       )
         return false;
       return true;
     });
-  }, [items, query, filtre]);
+  }, [items, categories, query, filtre]);
 
   return (
     <div className="space-y-4">
@@ -107,14 +121,14 @@ export function ModelesPage() {
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Nom, marque ou sous-catégorie…"
+        placeholder="Nom, marque ou catégorie…"
         aria-label="Rechercher un modèle"
       />
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Catégorie">
         {[
           { value: "tous" as Filtre, label: "Tous" },
-          ...categories.map((c) => ({ value: c.id as Filtre, label: c.nom })),
+          ...puces,
           ...(sansCategorie ? [{ value: "aucune" as Filtre, label: "Sans catégorie" }] : []),
         ].map((f) => (
           <button

@@ -1,5 +1,6 @@
 import { useAuth } from "@/app/AuthContext";
 import { ApiError } from "@/lib/api";
+import type { ChampSpec, TypeChampSpec } from "@/lib/types";
 import { useToast } from "@/shared/Toast";
 
 export const inputCls =
@@ -17,3 +18,21 @@ export function useFail() {
   return (err: unknown, fallback: string) =>
     toast(err instanceof ApiError ? err.message : fallback, "error");
 }
+
+export const TYPES: Record<TypeChampSpec, string> = {
+  nombre: "Nombre",
+  texte: "Texte",
+  choix: "Choix",
+  oui_non: "Oui / non",
+};
+
+/** Description courte d'un champ : type, unité, options. */
+export function resumeChamp(c: ChampSpec): string {
+  return (
+    TYPES[c.type] +
+    (c.unite ? ` (${c.unite})` : "") +
+    (c.type === "choix" && c.options.length > 0 ? ` : ${c.options.join(", ")}` : "")
+  );
+}
+
+export const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? "s" : ""}`;

@@ -19,7 +19,6 @@ from app.models import (
     Membre,
     Modele,
     Prestation,
-    SousCategorie,
 )
 from app.models.enums import StatutAllocation, StatutEquipment, TypePrestation
 from app.routers.equipment import create_equipment, update_equipment
@@ -238,7 +237,8 @@ async def test_modele_obligatoire_a_la_creation(db_session, staff):
 
 async def test_categorie_suit_le_modele(db_session, staff):
     s = db_session
-    lumiere, son = Categorie(nom="Lumière"), Categorie(nom="Son")
+    sfx = uuid.uuid4().hex[:6]
+    lumiere, son = Categorie(nom=f"Lumière {sfx}"), Categorie(nom=f"Son {sfx}")
     s.add_all([lumiere, son])
     await s.flush()
     m = await _modele(s, categorie_id=lumiere.id)
@@ -286,23 +286,25 @@ async def test_fiche_modele_sous_categorie_et_unites(db_session, staff):
     cat = Categorie(nom=f"Lights {uuid.uuid4().hex[:6]}")
     s.add(cat)
     await s.flush()
-    sc = SousCategorie(nom="Beam", categorie_id=cat.id)
+    sc = Categorie(nom="Beam", parent_id=cat.id)
     s.add(sc)
     await s.flush()
-    m = await _modele(s, categorie_id=cat.id, sous_categorie_id=sc.id)
+    m = await _modele(s, categorie_id=sc.id)
     await make_equipment(s, "MH fiche A", modele_id=m.id)
     await make_equipment(s, "MH fiche B", modele_id=m.id)
 
     fiche = await get_modele(m.id, staff, s)
-    assert (fiche.categorie_nom, fiche.sous_categorie_id, fiche.sous_categorie_nom) == (
-        cat.nom,
+    assert (fiche.categorie_id, fiche.categorie_nom, fiche.categorie_chemin) == (
         sc.id,
         "Beam",
+        f"{cat.nom} › Beam",
     )
     assert fiche.nb_unites == 2
 
     liste = await list_modeles(staff, s, m.nom)
-    assert [(x.id, x.sous_categorie_nom, x.nb_unites) for x in liste] == [(m.id, "Beam", 2)]
+    assert [(x.id, x.categorie_chemin, x.nb_unites) for x in liste] == [
+        (m.id, f"{cat.nom} › Beam", 2)
+    ]
 
     with pytest.raises(HTTPException) as exc:
         await get_modele(10**9, staff, s)

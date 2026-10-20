@@ -24,8 +24,7 @@ export function ModeleRow({ modele: m }: { modele: Modele }) {
             </span>
           </div>
           <p className="mt-1 truncate text-xs text-fg-muted">
-            {[m.categorie_nom, m.sous_categorie_nom].filter(Boolean).join(" · ") ||
-              "Sans catégorie"}
+            {m.categorie_chemin ?? m.categorie_nom ?? "Sans catégorie"}
           </p>
         </div>
       </Link>

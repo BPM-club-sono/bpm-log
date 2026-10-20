@@ -17,6 +17,7 @@ import { Icon } from "@/shared/Icon";
 import { ExterneFields, Field } from "./EquipmentDetailPage";
 import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 
 const inputCls =
   "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
@@ -313,24 +314,16 @@ export function EquipmentForm({
       )}
 
       <Field label="Catégorie">
-        <select
+        <CategorieSelect
+          categories={categories}
           // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
           value={
             avecModele && modele ? (modele.categorie_id ?? "") : categorieId
           }
           disabled={avecModele && !!modele}
-          onChange={(e) =>
-            setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-          }
+          onChange={setCategorieId}
           className={inputCls}
-        >
-          <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
+        />
       </Field>
       <RangementField
         mode={rangementMode}

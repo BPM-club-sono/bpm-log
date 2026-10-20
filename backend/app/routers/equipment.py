@@ -57,6 +57,7 @@ from app.schemas.equipment import (
 from app.schemas.inventory import InventaireEntry, VracLock
 from app.security.rbac import RequireAdmin, RequireStaff
 from app.services import barcode, contenants, disponibilite, references, serie
+from app.services.categories import chemins, ids_descendants
 from app.services.specs import effacer_specs_propres
 
 router = APIRouter(tags=["catalogue"])
@@ -505,7 +506,8 @@ async def list_equipments(
             Equipment.nom.ilike(like) | Equipment.barcode_uid.ilike(like) | Modele.nom.ilike(like)
         )
     if categorie_id is not None:
-        stmt = stmt.where(Equipment.categorie_id == categorie_id)
+        # Une catégorie couvre aussi ses sous-catégories, à toute profondeur.
+        stmt = stmt.where(Equipment.categorie_id.in_(ids_descendants(categorie_id)))
     if modele_id is not None:
         stmt = stmt.where(Equipment.modele_id == modele_id)
     if emplacement_id is not None:
@@ -1010,10 +1012,8 @@ async def update_equipment(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La catégorie suit le modèle : change-la sur le modèle.",
             )
+        # Comme sur le modèle : les valeurs saisies restent en base, masquées.
         eq.categorie_id = payload.categorie_id
-        # Comme sur le modèle : la sous-catégorie appartient à l'ancienne catégorie ;
-        # les valeurs saisies restent en base, masquées.
-        eq.sous_categorie_id = None
     # Localisation : emplacement fixe et contenant sont exclusifs (règle de frontière).
     # Poser l'un efface l'autre ; si les deux sont fournis, le contenant l'emporte.
     if payload.emplacement_id is not None:
@@ -1256,9 +1256,20 @@ async def delete_equipment(
 # Catégories / emplacements
 # --------------------------------------------------------------------------- #
 @router.get("/categories", response_model=list[CategorieRead])
-async def list_categories(_user: CurrentUser, db: DbSession) -> list[Categorie]:
+async def list_categories(_user: CurrentUser, db: DbSession) -> list[CategorieRead]:
+    """Tout l'arbre, à plat : le client le reconstruit avec `parent_id`."""
+    tous_chemins = await chemins(db)
     result = await db.scalars(select(Categorie).order_by(Categorie.nom))
-    return list(result.all())
+    return [
+        CategorieRead(
+            id=c.id,
+            nom=c.nom,
+            description=c.description,
+            parent_id=c.parent_id,
+            chemin=tous_chemins.get(c.id),
+        )
+        for c in result.all()
+    ]
 
 
 @router.get("/emplacements", response_model=list[EmplacementRead])

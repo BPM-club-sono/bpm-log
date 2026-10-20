@@ -31,7 +31,7 @@ async function preparerReferentiel(api: APIRequestContext) {
   return { cat, champ, connecteur, modele };
 }
 
-test("référentiel : fiche catégorie, sous-catégorie, champ et connecteur", async ({
+test("référentiel : arbre de catégories, champs hérités et connecteur", async ({
   page,
   api,
 }) => {
@@ -39,18 +39,16 @@ test("référentiel : fiche catégorie, sous-catégorie, champ et connecteur", a
   const cat = `Lyres ${s}`;
   const connecteur = `PowerCon ${s}`;
 
+  // Catégorie principale, créée depuis la liste.
   await page.goto("/referentiel");
   await page.getByRole("button", { name: "Nouvelle catégorie" }).click();
   await page.getByLabel("Nom", { exact: true }).fill(cat);
   await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page).toHaveURL(/\/referentiel\/categories\/\d+$/);
   await expect(page.getByRole("heading", { name: cat })).toBeVisible();
-  const categorieId = Number(page.url().split("/").pop());
+  const racineId = Number(page.url().split("/").pop());
 
-  await page.getByLabel("Nouvelle sous-catégorie").fill("Beam");
-  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
-  await expect(page.getByText(/^Beam/)).toBeVisible();
-
+  // Un champ sur la racine, une sous-catégorie, puis une sous-sous-catégorie.
   await page.getByRole("button", { name: "Nouveau champ" }).click();
   await page.getByLabel("Nom", { exact: true }).fill("Puissance");
   await page.getByLabel("Type").selectOption("nombre");
@@ -58,23 +56,55 @@ test("référentiel : fiche catégorie, sous-catégorie, champ et connecteur", a
   await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByText("Champ créé.")).toBeVisible();
 
-  // Les modèles de la catégorie sont listés sur sa fiche.
+  await page.getByLabel("Nouvelle sous-catégorie").fill("Beam");
+  await page.getByRole("button", { name: "Ajouter la sous-catégorie" }).click();
+  await page.getByRole("link", { name: /^Beam/ }).click();
+  await expect(page.getByRole("heading", { name: "Beam" })).toBeVisible();
+  const fil = page.getByRole("navigation", { name: "Fil d'Ariane" });
+  await expect(fil.getByRole("link", { name: cat })).toBeVisible();
+
+  await page.getByLabel("Nouvelle sous-catégorie").fill("Mini");
+  await page.getByRole("button", { name: "Ajouter la sous-catégorie" }).click();
+  await page.getByRole("link", { name: /^Mini/ }).click();
+  await expect(page.getByRole("heading", { name: "Mini" })).toBeVisible();
+  const miniId = Number(page.url().split("/").pop());
+
+  // Le petit-enfant hérite du champ de la racine, en lecture seule, lien vers elle.
+  const herites = page.getByTestId("champs-herites");
+  await expect(herites).toContainText("Hérité de");
+  await expect(herites.getByRole("link", { name: cat })).toHaveAttribute(
+    "href",
+    `/referentiel/categories/${racineId}`,
+  );
+  await expect(herites).toContainText("Puissance");
+  await expect(page.getByRole("button", { name: "Modifier Puissance" })).toHaveCount(0);
+
+  // Un modèle rangé dans Mini : compté sur la fiche de la racine, et ses specs
+  // proposent le champ hérité.
   const modele = await creer<{ id: number; nom: string }>(api, "modeles", {
     nom: `Beam ${s}`,
-    categorie_id: categorieId,
+    categorie_id: miniId,
   });
-  await page.reload();
-  await expect(page.getByText(/^Beam/).first()).toBeVisible();
-  await expect(page.getByText(/^Puissance/)).toBeVisible();
+  await page.goto(`/referentiel/categories/${racineId}`);
   await expect(page.getByText("Modèles (1)")).toBeVisible();
-  await expect(page.getByRole("link", { name: new RegExp(modele.nom) })).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(modele.nom) })).toContainText(
+    `${cat} › Beam › Mini`,
+  );
 
-  // Liste : recherche par nom de sous-catégorie ou de champ.
-  await page.getByRole("link", { name: "Référentiel" }).click();
+  await page.goto(`/modeles/${modele.id}`);
+  await page.getByRole("button", { name: "Éditer", exact: true }).click();
+  await expect(page.getByLabel("Puissance (W)")).toBeVisible();
+
+  // Liste : arbre dépliable, et recherche à plat avec le chemin des parentes.
+  await page.goto("/referentiel");
+  await page.getByRole("button", { name: `Déplier ${cat}` }).click();
+  await expect(page.getByRole("link", { name: /^Beam/ })).toBeVisible();
   await page.getByRole("searchbox", { name: "Rechercher une catégorie" }).fill(cat);
   await expect(page.getByRole("link", { name: new RegExp(cat) })).toContainText(
     "1 sous-catégorie · 1 champ",
   );
+  await page.getByRole("searchbox", { name: "Rechercher une catégorie" }).fill("Mini");
+  await expect(page.getByRole("link", { name: /Mini/ }).first()).toContainText(`${cat} › Beam`);
 
   await page.getByRole("tab", { name: "Connecteurs" }).click();
   await page.getByRole("button", { name: "Nouveau connecteur" }).click();

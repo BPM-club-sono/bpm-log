@@ -18,7 +18,7 @@ test("création d'équipement : modèle obligatoire, créé sur place", async ({
 
   await page.getByRole("button", { name: "Créer l'équipement" }).click();
   await expect(page).toHaveURL(/\/inventaire\/\d+$/);
-  await expect(page.getByText(nomModele)).toBeVisible();
+  await expect(page.getByText(nomModele).first()).toBeVisible();
 });
 
 test("modèles : recherche, filtre par catégorie et fiche avec ses unités", async ({

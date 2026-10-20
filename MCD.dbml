@@ -109,23 +109,24 @@ Table push_subscriptions {
   created_at timestamp
 }
 
+// Catégories en arbre de profondeur libre (Son > Ampli > …) : une catégorie hérite
+// des champs de spécification de tous ses ancêtres.
+// Vue récursive categories_lignee(categorie_id, ancetre_id, distance) : fermeture
+// transitive de parent_id, distance 0 = la catégorie elle-même. Sert aux champs
+// hérités, au filtre « catégorie + descendantes » et au chemin « Son › Ampli ».
 Table categories {
   id integer [primary key, increment]
   nom varchar // ex: 'Lumière', 'Son', 'Structure', 'Câblage'
   description text
-}
-
-Table sous_categories {
-  id integer [primary key, increment]
-  nom varchar [not null]
-  categorie_id integer [not null]
+  parent_id integer [null, note: 'Self-FK — NULL = racine. CHECK parent_id <> id ; pas de cycle (vérifié par l\'API)']
 
   indexes {
-    (categorie_id, nom) [unique]
+    (parent_id, nom) [unique, note: 'NULLS NOT DISTINCT : unicité entre sœurs, racines comprises']
   }
 }
 
-// Champ de spécification défini par l'admin pour une catégorie (ou une seule de ses sous-catégories)
+// Champ de spécification défini par l'admin pour une catégorie, hérité par toutes ses
+// descendantes. Nom unique sur une lignée (ancêtres + descendants), vérifié par l'API
 Table champs_specification {
   id integer [primary key, increment]
   nom varchar [not null]
@@ -133,7 +134,6 @@ Table champs_specification {
   unite varchar(20) [null, note: 'ex: W, dB']
   options jsonb [not null, default: '[]', note: 'list[str] — choix proposés quand type = choix']
   categorie_id integer [not null]
-  sous_categorie_id integer [null, note: 'NULL = vaut pour toute la catégorie']
   ordre integer [not null, default: 0]
 }
 
@@ -181,8 +181,7 @@ Table modeles {
   id integer [primary key, increment]
   nom varchar [unique, not null, note: 'Unicité exacte, sans normalisation : on veut des noms propres']
   marque varchar // ex: 'Robe', 'Yamaha'
-  categorie_id integer [note: 'Fait foi pour la catégorie des unités : la changer la répercute sur toutes']
-  sous_categorie_id integer [null, note: 'Sous-catégorie de la catégorie du modèle']
+  categorie_id integer [note: 'Catégorie la plus précise (feuille ou non). Fait foi pour la catégorie des unités : la changer la répercute sur toutes']
   poids numeric(8,2) [null, note: 'kg']
   longueur numeric(8,1) [null, note: 'cm']
   largeur numeric(8,1) [null, note: 'cm']
@@ -212,8 +211,7 @@ Table equipments {
   created_by_membre_id integer
   photo_chemin varchar [note: 'Chemin relatif de la photo de l\'équipement sur le VPS (optionnel), servi par /api/photos']
   archive boolean [note: 'Retiré du parc actif (location rendue, matériel réformé) : conservé pour l\'historique, masqué du Parc par défaut. Archiver un flight cascade sur tout son contenu ; le rangement est conservé pour rester réversible']
-  sous_categorie_id integer [null, note: 'Specs techniques utilisées seulement sans modèle : le modèle fait foi sinon']
-  poids numeric(8,2) [null, note: 'kg']
+  poids numeric(8,2) [null, note: 'kg — specs techniques propres utilisées seulement sans modèle : le modèle fait foi sinon']
   longueur numeric(8,1) [null, note: 'cm']
   largeur numeric(8,1) [null, note: 'cm']
   hauteur numeric(8,1) [null, note: 'cm']
@@ -354,11 +352,8 @@ Table allocations_presta {
 Ref: equipments.categorie_id > categories.id
 Ref: equipments.modele_id > modeles.id
 Ref: modeles.categorie_id > categories.id
-Ref: modeles.sous_categorie_id > sous_categories.id
-Ref: equipments.sous_categorie_id > sous_categories.id
-Ref: sous_categories.categorie_id > categories.id
+Ref: categories.parent_id > categories.id
 Ref: champs_specification.categorie_id > categories.id
-Ref: champs_specification.sous_categorie_id > sous_categories.id
 Ref: valeurs_specification.champ_id > champs_specification.id [delete: cascade]
 Ref: valeurs_specification.modele_id > modeles.id [delete: cascade]
 Ref: valeurs_specification.equipment_id > equipments.id [delete: cascade]

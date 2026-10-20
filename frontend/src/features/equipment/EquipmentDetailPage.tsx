@@ -30,6 +30,7 @@ import { useToast } from "@/shared/Toast";
 import { EquipmentSpecs } from "@/features/specs/EquipmentSpecs";
 import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 
 const STATUTS: { value: StatutEquipment; label: string }[] = [
   { value: "Fonctionnel", label: "Fonctionnel" },
@@ -1131,22 +1132,14 @@ function EditForm({
         </Field>
       )}
       <Field label="Catégorie">
-        <select
+        <CategorieSelect
+          categories={categories}
           // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
           value={modele ? (modele.categorie_id ?? "") : categorieId}
           disabled={!!modele}
-          onChange={(e) =>
-            setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-          }
+          onChange={setCategorieId}
           className={inputCls}
-        >
-          <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
+        />
       </Field>
       <RangementField
         mode={rangementMode}

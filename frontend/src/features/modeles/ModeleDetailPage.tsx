@@ -169,12 +169,11 @@ export function ModeleDetailPage() {
                     to={`/referentiel/categories/${modele.categorie_id}`}
                     className="font-medium hover:text-fg-muted"
                   >
-                    {modele.categorie_nom}
+                    {modele.categorie_chemin ?? modele.categorie_nom}
                   </Link>
                 ) : null
               }
             />
-            <Info label="Sous-catégorie" value={modele.sous_categorie_nom} />
             <Info label="Marque" value={modele.marque} />
             <Info label="Unités" value={nb} />
           </dl>
@@ -189,11 +188,6 @@ export function ModeleDetailPage() {
           onSaved={(s) => {
             setSpecs(s);
             setSpecsEdit(false);
-            setModele({
-              ...modele,
-              sous_categorie_id: s.sous_categorie_id,
-              sous_categorie_nom: s.sous_categorie_nom,
-            });
             toast("Spécifications enregistrées.", "success");
           }}
         />

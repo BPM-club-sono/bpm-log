@@ -25,21 +25,18 @@ export interface Equipment {
   created_at: string;
 }
 
+/** Catégorie en arbre : `parent_id` null = racine. Hérite des champs de ses ancêtres. */
 export interface Categorie {
   id: number;
   nom: string;
   description: string | null;
+  parent_id: number | null;
+  /** « Son › Ampli » : la catégorie précédée de ses ancêtres. */
+  chemin: string | null;
 }
 
 export type TypeChampSpec = "nombre" | "texte" | "choix" | "oui_non";
 export type SensConnectique = "entree" | "sortie";
-
-export interface SousCategorie {
-  id: number;
-  nom: string;
-  categorie_id: number;
-  nb_utilisations: number;
-}
 
 export interface ChampSpec {
   id: number;
@@ -48,7 +45,9 @@ export interface ChampSpec {
   unite: string | null;
   options: string[];
   categorie_id: number;
-  sous_categorie_id: number | null;
+  categorie_nom: string;
+  /** Défini sur un ancêtre (liste demandée avec `herites=true`). */
+  herite: boolean;
   ordre: number;
   nb_valeurs: number;
 }
@@ -75,6 +74,9 @@ export interface ValeurSpec {
   type: TypeChampSpec;
   unite: string | null;
   options: string[];
+  /** Catégorie (la cible ou l'un de ses ancêtres) qui définit le champ. */
+  categorie_id: number;
+  categorie_nom: string;
   valeur: string | null;
 }
 
@@ -83,8 +85,7 @@ export interface Specs {
   source: "modele" | "equipement";
   modele_id: number | null;
   categorie_id: number | null;
-  sous_categorie_id: number | null;
-  sous_categorie_nom: string | null;
+  categorie_chemin: string | null;
   poids: number | null;
   longueur: number | null;
   largeur: number | null;
@@ -96,7 +97,6 @@ export interface Specs {
 }
 
 export interface SpecsWrite {
-  sous_categorie_id?: number | null;
   poids?: number | null;
   longueur?: number | null;
   largeur?: number | null;
@@ -114,8 +114,7 @@ export interface Modele {
   marque: string | null;
   categorie_id: number | null;
   categorie_nom?: string | null;
-  sous_categorie_id?: number | null;
-  sous_categorie_nom?: string | null;
+  categorie_chemin?: string | null;
   nb_unites?: number;
 }
 

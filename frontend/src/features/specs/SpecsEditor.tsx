@@ -1,14 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type {
-  ChampSpec,
-  Connecteur,
-  ConnectiqueIn,
-  SensConnectique,
-  SousCategorie,
-  Specs,
-  SpecsWrite,
-} from "@/lib/types";
+import type { Connecteur, ConnectiqueIn, SensConnectique, Specs, SpecsWrite } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { inputCls, useFail } from "@/features/referentiel/shared";
@@ -53,10 +45,7 @@ export function SpecsEditor({
 }) {
   const fail = useFail();
   const [specs, setSpecs] = useState<Specs | null>(null);
-  const [sousCats, setSousCats] = useState<SousCategorie[]>([]);
-  const [champs, setChamps] = useState<ChampSpec[]>([]);
   const [connecteurs, setConnecteurs] = useState<Connecteur[]>([]);
-  const [sousCatId, setSousCatId] = useState<number | "">("");
   const [fixes, setFixes] = useState<Record<FixeKey, string>>({
     poids: "",
     longueur: "",
@@ -75,23 +64,13 @@ export function SpecsEditor({
     let annule = false;
     (async () => {
       try {
-        const s = await api<Specs>(`/${cible}/${id}/specs`);
-        const q = s.categorie_id !== null ? `?categorie_id=${s.categorie_id}` : "";
-        const [sc, ch, co] = await Promise.all([
-          s.categorie_id !== null
-            ? api<SousCategorie[]>(`/sous-categories${q}`)
-            : Promise.resolve([] as SousCategorie[]),
-          s.categorie_id !== null
-            ? api<ChampSpec[]>(`/champs-specification${q}`)
-            : Promise.resolve([] as ChampSpec[]),
+        const [s, co] = await Promise.all([
+          api<Specs>(`/${cible}/${id}/specs`),
           api<Connecteur[]>("/connecteurs"),
         ]);
         if (annule) return;
         setSpecs(s);
-        setSousCats(sc);
-        setChamps(ch);
         setConnecteurs(co);
-        setSousCatId(s.sous_categorie_id ?? "");
         setFixes({
           poids: texte(s.poids),
           longueur: texte(s.longueur),
@@ -119,14 +98,13 @@ export function SpecsEditor({
     };
   }, [cible, id]);
 
-  // Champs applicables : ceux de toute la catégorie + ceux de la sous-catégorie choisie.
+  // Champs applicables, renvoyés par l'API : ceux de la catégorie et de ses ancêtres,
+  // des plus généraux aux plus précis.
   const applicables = useMemo(
-    () =>
-      champs.filter(
-        (c) => c.sous_categorie_id === null || c.sous_categorie_id === sousCatId,
-      ),
-    [champs, sousCatId],
+    () => (specs?.valeurs ?? []).map((v) => ({ ...v, id: v.champ_id })),
+    [specs],
   );
+  const plusieursSources = new Set(applicables.map((c) => c.categorie_id)).size > 1;
 
   function majLigne(i: number, patch: Partial<LigneConnectique>) {
     setLignes((prev) => prev.map((l, k) => (k === i ? { ...l, ...patch } : l)));
@@ -134,9 +112,7 @@ export function SpecsEditor({
 
   async function save() {
     const e: Record<string, string> = {};
-    const body: SpecsWrite = {
-      sous_categorie_id: sousCatId === "" ? null : sousCatId,
-    };
+    const body: SpecsWrite = {};
     for (const { key } of FIXES) {
       const n = parseNombre(fixes[key]);
       if (n !== null && Number.isNaN(n)) e[key] = "Nombre invalide.";
@@ -186,24 +162,6 @@ export function SpecsEditor({
         </p>
       )}
 
-      {sousCats.length > 0 && (
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-fg-muted">Sous-catégorie</span>
-          <select
-            value={sousCatId}
-            onChange={(e) => setSousCatId(e.target.value === "" ? "" : Number(e.target.value))}
-            className={inputCls}
-          >
-            <option value="">—</option>
-            {sousCats.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.nom}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
       <div className="grid grid-cols-2 gap-3">
         {FIXES.map(({ key, label }) => (
           <label key={key} className="block space-y-1">
@@ -219,44 +177,55 @@ export function SpecsEditor({
         ))}
       </div>
 
-      {applicables.map((c) => (
-        <label key={c.id} className="block space-y-1">
-          <span className="text-xs font-medium text-fg-muted">
-            {c.nom}
-            {c.unite ? ` (${c.unite})` : ""}
-          </span>
-          {c.type === "choix" || c.type === "oui_non" ? (
-            <select
-              value={valeurs[c.id] ?? ""}
-              onChange={(e) => setValeurs((p) => ({ ...p, [c.id]: e.target.value }))}
-              className={inputCls}
-            >
-              <option value="">—</option>
-              {c.type === "oui_non" ? (
-                <>
-                  <option value="true">Oui</option>
-                  <option value="false">Non</option>
-                </>
-              ) : (
-                c.options.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))
-              )}
-            </select>
-          ) : (
-            <input
-              inputMode={c.type === "nombre" ? "decimal" : undefined}
-              value={valeurs[c.id] ?? ""}
-              onChange={(e) => setValeurs((p) => ({ ...p, [c.id]: e.target.value }))}
-              className={inputCls}
-            />
+      {specs.categorie_chemin && (
+        <p className="text-xs text-fg-muted">Catégorie : {specs.categorie_chemin}</p>
+      )}
+
+      {applicables.map((c, i) => (
+        <Fragment key={c.id}>
+          {plusieursSources && applicables[i - 1]?.categorie_id !== c.categorie_id && (
+            <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+              {c.categorie_nom}
+            </p>
           )}
-          {errs[`champ-${c.id}`] && (
-            <span className="block text-xs text-danger">{errs[`champ-${c.id}`]}</span>
-          )}
-        </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-fg-muted">
+              {c.nom}
+              {c.unite ? ` (${c.unite})` : ""}
+            </span>
+            {c.type === "choix" || c.type === "oui_non" ? (
+              <select
+                value={valeurs[c.id] ?? ""}
+                onChange={(e) => setValeurs((p) => ({ ...p, [c.id]: e.target.value }))}
+                className={inputCls}
+              >
+                <option value="">—</option>
+                {c.type === "oui_non" ? (
+                  <>
+                    <option value="true">Oui</option>
+                    <option value="false">Non</option>
+                  </>
+                ) : (
+                  c.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))
+                )}
+              </select>
+            ) : (
+              <input
+                inputMode={c.type === "nombre" ? "decimal" : undefined}
+                value={valeurs[c.id] ?? ""}
+                onChange={(e) => setValeurs((p) => ({ ...p, [c.id]: e.target.value }))}
+                className={inputCls}
+              />
+            )}
+            {errs[`champ-${c.id}`] && (
+              <span className="block text-xs text-danger">{errs[`champ-${c.id}`]}</span>
+            )}
+          </label>
+        </Fragment>
       ))}
 
       <div className="space-y-2">

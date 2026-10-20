@@ -1,39 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import type { Categorie, ChampSpec, Modele, SousCategorie } from "@/lib/types";
+import { ancetres, enArbre, SEPARATEUR } from "@/lib/categories";
+import type { Categorie, ChampSpec, Modele } from "@/lib/types";
 import { Icon } from "@/shared/Icon";
 import { SearchInput } from "@/shared/SearchInput";
 import { CategorieForm } from "./CategorieForm";
+import { CategorieRow } from "./CategorieRow";
 import { useCanManage } from "./shared";
+import { statsCategories } from "./stats";
 
-const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? "s" : ""}`;
-
-/** Liste des catégories, comme le Parc : recherche, lignes pleine largeur, chaque
- *  catégorie s'ouvre sur sa fiche (sous-catégories, champs, modèles). */
+/** Arbre des catégories, comme le Parc : catégories principales, chevron pour déplier
+ *  leurs sous-catégories. En recherche, liste à plat des correspondances, avec le
+ *  chemin de leurs parentes. Chaque catégorie s'ouvre sur sa fiche. */
 export function CategoriesTab() {
   const canManage = useCanManage();
   const navigate = useNavigate();
   const [categories, setCategories] = useState<Categorie[]>([]);
-  const [sousCats, setSousCats] = useState<SousCategorie[]>([]);
   const [champs, setChamps] = useState<ChampSpec[]>([]);
   const [modeles, setModeles] = useState<Modele[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [ouverts, setOuverts] = useState<Set<number>>(new Set());
   const [creating, setCreating] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
-      const [cat, sc, ch, mod] = await Promise.all([
+      const [cat, ch, mod] = await Promise.all([
         api<Categorie[]>("/categories"),
-        api<SousCategorie[]>("/sous-categories"),
         api<ChampSpec[]>("/champs-specification"),
         api<Modele[]>("/modeles"),
       ]);
       setCategories(cat);
-      setSousCats(sc);
       setChamps(ch);
       setModeles(mod);
       setError(null);
@@ -52,23 +52,44 @@ export function CategoriesTab() {
     if (creating) formRef.current?.scrollIntoView({ block: "start" });
   }, [creating]);
 
-  const lignes = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return categories
-      .map((c) => ({
-        categorie: c,
-        sousCats: sousCats.filter((s) => s.categorie_id === c.id),
-        champs: champs.filter((x) => x.categorie_id === c.id),
-        nbModeles: modeles.filter((m) => m.categorie_id === c.id).length,
-      }))
-      .filter(
-        (l) =>
-          !q ||
-          [l.categorie.nom, l.categorie.description ?? ""]
-            .concat(l.sousCats.map((s) => s.nom), l.champs.map((x) => x.nom))
-            .some((t) => t.toLowerCase().includes(q)),
+  const stats = useMemo(
+    () => statsCategories(categories, champs, modeles),
+    [categories, champs, modeles],
+  );
+
+  const q = query.trim().toLowerCase();
+
+  // Arbre : une ligne n'est visible que si tous ses ancêtres sont dépliés.
+  const lignesArbre = useMemo(() => {
+    const parId = new Map(categories.map((c) => [c.id, c]));
+    return enArbre(categories).filter(({ categorie }) => {
+      for (let p = parId.get(categorie.parent_id ?? NaN); p; p = parId.get(p.parent_id ?? NaN)) {
+        if (!ouverts.has(p.id)) return false;
+      }
+      return true;
+    });
+  }, [categories, ouverts]);
+
+  const resultats = useMemo(() => {
+    if (!q) return [];
+    return enArbre(categories)
+      .map(({ categorie }) => categorie)
+      .filter((c) =>
+        [c.nom, c.description ?? ""]
+          .concat(champs.filter((x) => x.categorie_id === c.id).map((x) => x.nom))
+          .some((t) => t.toLowerCase().includes(q)),
       );
-  }, [categories, sousCats, champs, modeles, query]);
+  }, [categories, champs, q]);
+
+  const basculer = (id: number) =>
+    setOuverts((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const vide = q ? resultats.length === 0 : categories.length === 0;
 
   return (
     <div className="space-y-4">
@@ -76,6 +97,7 @@ export function CategoriesTab() {
         <div ref={formRef}>
           <CategorieForm
             initial={null}
+            categories={categories}
             onCancel={() => setCreating(false)}
             onSaved={(c) => navigate(`/referentiel/categories/${c.id}`)}
           />
@@ -85,46 +107,49 @@ export function CategoriesTab() {
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Catégorie, sous-catégorie ou champ…"
+        placeholder="Catégorie ou champ…"
         aria-label="Rechercher une catégorie"
       />
 
       {loading && <p className="py-8 text-center text-sm text-fg-muted">Chargement…</p>}
       {error && !loading && <p className="py-8 text-center text-sm text-danger">{error}</p>}
-      {!loading && !error && lignes.length === 0 && (
+      {!loading && !error && vide && (
         <div className="flex flex-col items-center gap-2 py-12 text-fg-muted">
           <Icon name="tune" className="text-4xl" />
           <p className="text-sm">Aucune catégorie trouvée.</p>
         </div>
       )}
 
-      {!loading && !error && lignes.length > 0 && (
+      {!loading && !error && !vide && (
         <ul className="divide-y divide-line">
-          {lignes.map((l) => (
-            <li key={l.categorie.id}>
-              <Link
-                to={`/referentiel/categories/${l.categorie.id}`}
-                className="flex items-center gap-3.5 py-4 transition-opacity hover:opacity-70"
-              >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-bg-elev text-fg-muted">
-                  <Icon name="folder" className="text-xl" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="truncate font-medium">{l.categorie.nom}</p>
-                    <span className="shrink-0 text-xs tabular-nums text-fg-muted">
-                      {pluriel(l.nbModeles, "modèle")}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-xs text-fg-muted">
-                    {pluriel(l.sousCats.length, "sous-catégorie")} ·{" "}
-                    {pluriel(l.champs.length, "champ")}
-                    {l.categorie.description && ` · ${l.categorie.description}`}
-                  </p>
-                </div>
-              </Link>
-            </li>
-          ))}
+          {q
+            ? resultats.map((c) => (
+                <CategorieRow
+                  key={c.id}
+                  categorie={c}
+                  stats={stats.get(c.id)}
+                  surTitre={
+                    ancetres(categories, c.id)
+                      .slice(0, -1)
+                      .map((a) => a.nom)
+                      .join(SEPARATEUR) || undefined
+                  }
+                />
+              ))
+            : lignesArbre.map(({ categorie: c, niveau }) => {
+                const aDesEnfants = (stats.get(c.id)?.enfants ?? 0) > 0;
+                return (
+                  <CategorieRow
+                    key={c.id}
+                    categorie={c}
+                    stats={stats.get(c.id)}
+                    niveau={niveau}
+                    arbre
+                    ouvert={aDesEnfants ? ouverts.has(c.id) : undefined}
+                    onToggle={aDesEnfants ? () => basculer(c.id) : undefined}
+                  />
+                );
+              })}
         </ul>
       )}
 

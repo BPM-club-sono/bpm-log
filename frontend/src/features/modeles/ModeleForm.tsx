@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Categorie, Modele } from "@/lib/types";
 import { Button } from "@/shared/Button";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 import { useToast } from "@/shared/Toast";
 
 const inputCls =
@@ -54,7 +55,7 @@ export function ModeleForm({
   const changeCategorie =
     initial &&
     categorieId !== (initial.categorie_id ?? "") &&
-    ((initial.nb_unites ?? 0) > 0 || initial.sous_categorie_id != null);
+    (initial.nb_unites ?? 0) > 0;
 
   return (
     <div className="space-y-3 rounded-2xl border border-line bg-bg-soft p-4">
@@ -83,26 +84,15 @@ export function ModeleForm({
       </label>
       <label className="block space-y-1">
         <span className="text-xs font-medium text-fg-muted">Catégorie</span>
-        <select
+        <CategorieSelect
+          categories={categories}
           value={categorieId}
-          onChange={(e) =>
-            setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-          }
+          onChange={setCategorieId}
           className={inputCls}
-        >
-          <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
+        />
         {changeCategorie && (
           <span className="block text-xs text-warning">
-            {(initial.nb_unites ?? 0) > 0 &&
-              `S'applique aux ${initial.nb_unites} unités de ce modèle. `}
-            {initial.sous_categorie_id != null &&
-              "La sous-catégorie sera à choisir de nouveau."}
+            S'applique aux {initial.nb_unites} unités de ce modèle.
           </span>
         )}
       </label>
