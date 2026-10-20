@@ -31,20 +31,24 @@ async function preparerReferentiel(api: APIRequestContext) {
   return { cat, champ, connecteur, modele };
 }
 
-test("référentiel : sous-catégorie, champ et connecteur", async ({ page }) => {
+test("référentiel : arbre de catégories, champs hérités et connecteur", async ({
+  page,
+  api,
+}) => {
   const s = suffixe();
   const cat = `Lyres ${s}`;
   const connecteur = `PowerCon ${s}`;
 
+  // Catégorie principale, créée depuis la liste.
   await page.goto("/referentiel");
-  await page.getByLabel("Nouvelle catégorie", { exact: true }).fill(cat);
-  await page.getByRole("button", { name: "Ajouter la catégorie" }).click();
-  await page.locator("button[aria-expanded]").filter({ hasText: cat }).click();
+  await page.getByRole("button", { name: "Nouvelle catégorie" }).click();
+  await page.getByLabel("Nom", { exact: true }).fill(cat);
+  await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page).toHaveURL(/\/referentiel\/categories\/\d+$/);
+  await expect(page.getByRole("heading", { name: cat })).toBeVisible();
+  const racineId = Number(page.url().split("/").pop());
 
-  await page.getByLabel("Nouvelle sous-catégorie").fill("Beam");
-  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
-  await expect(page.getByText(/^Beam/)).toBeVisible();
-
+  // Un champ sur la racine, une sous-catégorie, puis une sous-sous-catégorie.
   await page.getByRole("button", { name: "Nouveau champ" }).click();
   await page.getByLabel("Nom", { exact: true }).fill("Puissance");
   await page.getByLabel("Type").selectOption("nombre");
@@ -52,16 +56,68 @@ test("référentiel : sous-catégorie, champ et connecteur", async ({ page }) =>
   await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByText("Champ créé.")).toBeVisible();
 
+  await page.getByLabel("Nouvelle sous-catégorie").fill("Beam");
+  await page.getByRole("button", { name: "Ajouter la sous-catégorie" }).click();
+  await page.getByRole("link", { name: /^Beam/ }).click();
+  await expect(page.getByRole("heading", { name: "Beam" })).toBeVisible();
+  const fil = page.getByRole("navigation", { name: "Fil d'Ariane" });
+  await expect(fil.getByRole("link", { name: cat })).toBeVisible();
+
+  await page.getByLabel("Nouvelle sous-catégorie").fill("Mini");
+  await page.getByRole("button", { name: "Ajouter la sous-catégorie" }).click();
+  await page.getByRole("link", { name: /^Mini/ }).click();
+  await expect(page.getByRole("heading", { name: "Mini" })).toBeVisible();
+  const miniId = Number(page.url().split("/").pop());
+
+  // Le petit-enfant hérite du champ de la racine, en lecture seule, lien vers elle.
+  const herites = page.getByTestId("champs-herites");
+  await expect(herites).toContainText("Hérité de");
+  await expect(herites.getByRole("link", { name: cat })).toHaveAttribute(
+    "href",
+    `/referentiel/categories/${racineId}`,
+  );
+  await expect(herites).toContainText("Puissance");
+  await expect(page.getByRole("button", { name: "Modifier Puissance" })).toHaveCount(0);
+
+  // Un modèle rangé dans Mini : compté sur la fiche de la racine, et ses specs
+  // proposent le champ hérité.
+  const modele = await creer<{ id: number; nom: string }>(api, "modeles", {
+    nom: `Beam ${s}`,
+    categorie_id: miniId,
+  });
+  await page.goto(`/referentiel/categories/${racineId}`);
+  await expect(page.getByText("Modèles (1)")).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(modele.nom) })).toContainText(
+    `${cat} › Beam › Mini`,
+  );
+
+  await page.goto(`/modeles/${modele.id}`);
+  await page.getByRole("button", { name: "Éditer", exact: true }).click();
+  await expect(page.getByLabel("Puissance (W)")).toBeVisible();
+
+  // Liste : arbre dépliable, et recherche à plat avec le chemin des parentes.
+  await page.goto("/referentiel");
+  await page.getByRole("button", { name: `Déplier ${cat}` }).click();
+  await expect(page.getByRole("link", { name: /^Beam/ })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Rechercher une catégorie" }).fill(cat);
+  await expect(page.getByRole("link", { name: new RegExp(cat) })).toContainText(
+    "1 sous-catégorie · 1 champ",
+  );
+  await page.getByRole("searchbox", { name: "Rechercher une catégorie" }).fill("Mini");
+  await expect(page.getByRole("link", { name: /Mini/ }).first()).toContainText(`${cat} › Beam`);
+
   await page.getByRole("tab", { name: "Connecteurs" }).click();
+  await page.getByRole("button", { name: "Nouveau connecteur" }).click();
   await page.getByLabel("Nouveau connecteur").fill(connecteur);
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   await expect(page.getByText(connecteur, { exact: true })).toBeVisible();
 
   await page.reload();
-  await page.locator("button[aria-expanded]").filter({ hasText: cat }).click();
-  await expect(page.getByText(/^Beam/)).toBeVisible();
-  await expect(page.getByText(/^Puissance/)).toBeVisible();
-  await page.getByRole("tab", { name: "Connecteurs" }).click();
+  await expect(page.getByRole("tab", { name: "Connecteurs" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("searchbox", { name: "Rechercher un connecteur" }).fill(connecteur);
   await expect(page.getByText(connecteur, { exact: true })).toBeVisible();
 });
 
@@ -74,26 +130,25 @@ test("spécifications d'un modèle et totaux de prestation", async ({ page, api 
     type: "Interne",
   });
 
-  await page.goto("/modeles");
-  const ligne = page.locator("li").filter({ hasText: modele.nom });
-  await ligne.getByRole("button", { name: "Voir les spécifications" }).click();
-  await ligne.getByRole("button", { name: "Éditer les spécifications" }).click();
-  await ligne.getByLabel("Poids (kg)").fill("12,5");
-  await ligne.getByLabel("Prix interne (€)").fill("30");
-  await ligne.getByLabel("Puissance (W)").fill("300");
-  await ligne.getByRole("button", { name: "Ajouter", exact: true }).click();
-  // Ligne de connectique : tient dans la carte sur téléphone, sélecteur de connecteur lisible.
-  const carte = await ligne.boundingBox();
+  await page.goto(`/modeles/${modele.id}`);
+  await page.getByRole("button", { name: "Éditer", exact: true }).click();
+  const fiche = page.locator("main");
+  await fiche.getByLabel("Poids (kg)").fill("12,5");
+  await fiche.getByLabel("Prix interne (€)").fill("30");
+  await fiche.getByLabel("Puissance (W)").fill("300");
+  await fiche.getByRole("button", { name: "Ajouter", exact: true }).click();
+  // Ligne de connectique : tient dans la page sur téléphone, sélecteur de connecteur lisible.
+  const carte = await fiche.boundingBox();
   for (const champ of ["Connecteur", "Sens", "Quantité", "Retirer"]) {
-    const box = await ligne.getByLabel(champ, { exact: true }).boundingBox();
+    const box = await fiche.getByLabel(champ, { exact: true }).boundingBox();
     expect(box!.x + box!.width, champ).toBeLessThanOrEqual(carte!.x + carte!.width);
   }
-  const selecteur = await ligne.getByLabel("Connecteur", { exact: true }).boundingBox();
+  const selecteur = await fiche.getByLabel("Connecteur", { exact: true }).boundingBox();
   expect(selecteur!.width).toBeGreaterThan(100);
-  await ligne.getByLabel("Connecteur", { exact: true }).selectOption({ label: connecteur.nom });
-  await ligne.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await fiche.getByLabel("Connecteur", { exact: true }).selectOption({ label: connecteur.nom });
+  await fiche.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByText("Spécifications enregistrées.")).toBeVisible();
-  await expect(ligne).toContainText("12,5 kg");
+  await expect(fiche).toContainText("12,5 kg");
 
   await page.goto(`/inventaire/${u1.id}`);
   await expect(page.getByText("12,5 kg")).toBeVisible();

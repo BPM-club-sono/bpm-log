@@ -54,9 +54,9 @@ export function EquipmentSpecs({
   }
 
   return (
-    <section className="space-y-3 rounded-2xl border border-line p-4">
+    <section className="space-y-3 border-t border-line pt-5">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Spécifications</h2>
+        <h2 className="text-sm font-semibold text-fg-muted">Spécifications</h2>
         {specs.source === "equipement" && canEdit && (
           <Button variant="ghost" className="h-9 px-3" onClick={() => setEditing(true)}>
             Éditer
@@ -66,7 +66,7 @@ export function EquipmentSpecs({
       {specs.source === "modele" && (
         <p className="text-xs text-fg-muted">
           Héritées du modèle «{" "}
-          <Link to="/modeles" className="underline">
+          <Link to={`/modeles/${specs.modele_id}`} className="underline">
             {modeleNom ?? "modèle"}
           </Link>
           {" "}»

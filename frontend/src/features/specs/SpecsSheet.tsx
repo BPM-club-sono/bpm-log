@@ -14,7 +14,6 @@ function valeurTexte(v: ValeurSpec): string | null {
 /** Fiche technique en lecture seule ; les sections vides sont masquées. */
 export function SpecsSheet({ specs }: { specs: Specs }) {
   const lignes: [string, string][] = [];
-  if (specs.sous_categorie_nom) lignes.push(["Sous-catégorie", specs.sous_categorie_nom]);
   if (specs.poids !== null) lignes.push(["Poids", formatNombre(specs.poids, "kg")]);
   if (specs.longueur !== null || specs.largeur !== null || specs.hauteur !== null) {
     const d = (n: number | null) => (n === null ? "—" : formatNombre(n));

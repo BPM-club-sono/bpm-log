@@ -19,7 +19,6 @@ from app.models import (
     Connectique,
     Membre,
     Modele,
-    SousCategorie,
     ValeurSpecification,
 )
 from app.models.enums import SensConnectique, TypeChampSpec
@@ -71,15 +70,15 @@ async def _modele(session, **kw) -> Modele:
 
 
 async def _modele_avec_specs(session, staff):
-    """Modèle complet : sous-catégorie, poids, prix, une valeur, deux connectiques."""
+    """Modèle complet, rangé dans une sous-catégorie : poids, prix, une valeur d'un champ
+    hérité de la catégorie parente, deux connectiques."""
     cat = await _categorie(session)
-    sc = await _ajouter(session, SousCategorie(nom=_nom("Beam"), categorie_id=cat.id))
+    sc = await _ajouter(session, Categorie(nom=_nom("Beam"), parent_id=cat.id))
     champ = await _champ(session, cat.id, unite="W")
     powercon = await _connecteur(session, "PowerCon")
     linecon = await _connecteur(session, "LineCon")
-    modele = await _modele(session, categorie_id=cat.id)
+    modele = await _modele(session, categorie_id=sc.id)
     data = SpecsWrite(
-        sous_categorie_id=sc.id,
         poids=12.5,
         longueur=200,
         prix_interne=30,
@@ -100,13 +99,13 @@ async def test_modele_specs_aller_retour(db_session, staff):
     specs = await lire_specs_modele(modele.id, staff, db_session)
     assert specs.source == "modele"
     assert specs.modele_id == modele.id
-    assert specs.categorie_id == cat.id
-    assert (specs.sous_categorie_id, specs.sous_categorie_nom) == (sc.id, sc.nom)
+    assert specs.categorie_id == sc.id
+    assert specs.categorie_chemin == f"{cat.nom} › {sc.nom}"
     assert (specs.poids, specs.longueur, specs.largeur, specs.hauteur) == (12.5, 200, None, None)
     assert (specs.prix_interne, specs.prix_externe) == (30, 60)
-    assert [(v.champ_id, v.nom, v.type, v.unite, v.valeur) for v in specs.valeurs] == [
-        (champ.id, champ.nom, TypeChampSpec.NOMBRE, "W", "300")
-    ]
+    assert [
+        (v.champ_id, v.nom, v.type, v.unite, v.categorie_nom, v.valeur) for v in specs.valeurs
+    ] == [(champ.id, champ.nom, TypeChampSpec.NOMBRE, "W", cat.nom, "300")]
     assert [
         (c.connecteur_id, c.connecteur_nom, c.sens, c.quantite) for c in specs.connectiques
     ] == [
@@ -116,19 +115,25 @@ async def test_modele_specs_aller_retour(db_session, staff):
 
 
 async def test_valeurs_listent_les_champs_applicables(db_session, staff):
-    """Champs de la catégorie + ceux de la sous-catégorie, triés (ordre, nom), vides à None."""
+    """Champs de la catégorie et de tous ses ancêtres, des plus généraux aux plus
+    précis puis par (ordre, nom), vides à None ; pas ceux des branches sœurs."""
     cat = await _categorie(db_session)
-    sc = await _ajouter(db_session, SousCategorie(nom=_nom("Beam"), categorie_id=cat.id))
-    autre_sc = await _ajouter(db_session, SousCategorie(nom=_nom("Wash"), categorie_id=cat.id))
+    sc = await _ajouter(db_session, Categorie(nom=_nom("Beam"), parent_id=cat.id))
+    petit = await _ajouter(db_session, Categorie(nom=_nom("Mini"), parent_id=sc.id))
+    autre_sc = await _ajouter(db_session, Categorie(nom=_nom("Wash"), parent_id=cat.id))
     general = await _champ(db_session, cat.id, ordre=2)
-    restreint = await _champ(db_session, cat.id, ordre=1, sous_categorie_id=sc.id)
-    await _champ(db_session, cat.id, sous_categorie_id=autre_sc.id)
-    modele = await _modele(db_session, categorie_id=cat.id, sous_categorie_id=sc.id)
+    precis_b = await _champ(db_session, sc.id, ordre=5)
+    precis_a = await _champ(db_session, sc.id, ordre=1)
+    feuille = await _champ(db_session, petit.id)
+    await _champ(db_session, autre_sc.id)
+    modele = await _modele(db_session, categorie_id=petit.id)
 
     specs = await lire_specs_modele(modele.id, staff, db_session)
     assert [(v.champ_id, v.valeur) for v in specs.valeurs] == [
-        (restreint.id, None),
         (general.id, None),
+        (precis_a.id, None),
+        (precis_b.id, None),
+        (feuille.id, None),
     ]
 
 
@@ -227,16 +232,6 @@ async def test_valeur_champ_non_applicable_refusee(db_session, staff):
     assert exc.value.status_code == 422
 
 
-async def test_sous_categorie_hors_categorie_refusee(db_session, staff):
-    cat, autre_cat = await _categorie(db_session), await _categorie(db_session)
-    sc = await _ajouter(db_session, SousCategorie(nom=_nom("Sub"), categorie_id=autre_cat.id))
-    modele = await _modele(db_session, categorie_id=cat.id)
-
-    with pytest.raises(HTTPException) as exc:
-        await ecrire_specs_modele(modele.id, SpecsWrite(sous_categorie_id=sc.id), staff, db_session)
-    assert exc.value.status_code == 422
-
-
 async def test_connectique_doublon_refuse(db_session, staff):
     powercon = await _connecteur(db_session, "PowerCon")
     modele = await _modele(db_session)
@@ -276,7 +271,6 @@ async def test_changement_categorie_masque_valeurs(db_session, staff):
 
     await update_modele(modele.id, ModeleUpdate(categorie_id=autre_cat.id), staff, db_session)
 
-    assert modele.sous_categorie_id is None
     specs = await lire_specs_modele(modele.id, staff, db_session)
     assert champ.id not in [v.champ_id for v in specs.valeurs]
     assert (
@@ -291,16 +285,14 @@ async def test_changement_categorie_masque_valeurs(db_session, staff):
 
 async def test_changement_categorie_item_sans_modele(db_session, staff):
     cat, autre_cat = await _categorie(db_session), await _categorie(db_session)
-    sc = await _ajouter(db_session, SousCategorie(nom=_nom("Bar"), categorie_id=cat.id))
     champ = await _champ(db_session, cat.id)
     flight = await make_equipment(db_session, "Flight cat", est_contenant=True, categorie_id=cat.id)
     await ecrire_specs_equipment(
-        flight.id, SpecsWrite(sous_categorie_id=sc.id, valeurs={champ.id: "2"}), staff, db_session
+        flight.id, SpecsWrite(valeurs={champ.id: "2"}), staff, db_session
     )
 
     await update_equipment(flight.id, EquipmentUpdate(categorie_id=autre_cat.id), staff, db_session)
 
-    assert flight.sous_categorie_id is None
     specs = await lire_specs_equipment(flight.id, staff, db_session)
     assert champ.id not in [v.champ_id for v in specs.valeurs]
     assert (
@@ -316,14 +308,12 @@ async def test_changement_categorie_item_sans_modele(db_session, staff):
 async def test_rattacher_modele_efface_specs_propres(db_session, staff):
     modele, *_ = await _modele_avec_specs(db_session, staff)
     cat = await _categorie(db_session)
-    sc = await _ajouter(db_session, SousCategorie(nom=_nom("Bar"), categorie_id=cat.id))
     champ = await _champ(db_session, cat.id)
     connecteur = await _connecteur(db_session, "DMX")
     item = await make_equipment(db_session, "Lyre orpheline", categorie_id=cat.id)
     await ecrire_specs_equipment(
         item.id,
         SpecsWrite(
-            sous_categorie_id=sc.id,
             poids=4,
             longueur=1,
             largeur=2,
@@ -342,14 +332,13 @@ async def test_rattacher_modele_efface_specs_propres(db_session, staff):
     await update_equipment(item.id, EquipmentUpdate(modele_id=modele.id), staff, db_session)
 
     assert (
-        item.sous_categorie_id,
         item.poids,
         item.longueur,
         item.largeur,
         item.hauteur,
         item.prix_interne,
         item.prix_externe,
-    ) == (None,) * 7
+    ) == (None,) * 6
     for table in (ValeurSpecification, Connectique):
         assert (
             await db_session.scalar(

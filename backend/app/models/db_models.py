@@ -90,25 +90,31 @@ class PushSubscription(Base):
 
 
 class Categorie(Base):
+    """Catégorie en arbre de profondeur libre (Son > Ampli > …). Une catégorie hérite
+    des champs de spécification de tous ses ancêtres (vue `categories_lignee`)."""
+
     __tablename__ = "categories"
+    __table_args__ = (
+        CheckConstraint("parent_id <> id", name="ck_categories_parent"),
+        # Unicité entre frères : « Contrôleur » peut exister sous Son et sous Vidéo.
+        UniqueConstraint(
+            "parent_id",
+            "nom",
+            name="uq_categories_parent_id_nom",
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text)
-
-
-class SousCategorie(Base):
-    __tablename__ = "sous_categories"
-    __table_args__ = (UniqueConstraint("categorie_id", "nom"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    nom: Mapped[str] = mapped_column(String(120))
-    categorie_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
+    # NULL = catégorie racine.
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), index=True)
 
 
 class ChampSpecification(Base):
-    """Champ de spécification défini par l'admin pour une catégorie (ou une seule
-    de ses sous-catégories). Les valeurs vivent dans `ValeurSpecification`."""
+    """Champ de spécification défini par l'admin pour une catégorie, hérité par toutes
+    ses descendantes. Les valeurs vivent dans `ValeurSpecification`."""
 
     __tablename__ = "champs_specification"
 
@@ -119,8 +125,6 @@ class ChampSpecification(Base):
     # Choix proposés quand type = choix ; vide sinon.
     options: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     categorie_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
-    # NULL = le champ vaut pour toute la catégorie.
-    sous_categorie_id: Mapped[int | None] = mapped_column(ForeignKey("sous_categories.id"))
     ordre: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
@@ -192,7 +196,6 @@ class Modele(Base):
     nom: Mapped[str] = mapped_column(String(120), unique=True)
     marque: Mapped[str | None] = mapped_column(String(120))
     categorie_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
-    sous_categorie_id: Mapped[int | None] = mapped_column(ForeignKey("sous_categories.id"))
     poids: Mapped[float | None] = mapped_column(Numeric(8, 2, asdecimal=False))
     longueur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))
     largeur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))
@@ -250,7 +253,6 @@ class Equipment(Base):
     # masqué du Parc par défaut pour ne pas le saturer.
     archive: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Specs techniques utilisées seulement sans modèle : sinon le modèle fait foi.
-    sous_categorie_id: Mapped[int | None] = mapped_column(ForeignKey("sous_categories.id"))
     poids: Mapped[float | None] = mapped_column(Numeric(8, 2, asdecimal=False))  # kg
     longueur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))  # cm
     largeur: Mapped[float | None] = mapped_column(Numeric(8, 1, asdecimal=False))  # cm

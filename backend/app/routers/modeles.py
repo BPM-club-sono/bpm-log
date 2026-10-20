@@ -11,6 +11,7 @@ from app.deps import CurrentUser, DbSession
 from app.models import Categorie, Equipment, Modele
 from app.schemas.equipment import ModeleCreate, ModeleRead, ModeleUpdate
 from app.security.rbac import RequireAdmin, RequireStaff
+from app.services.categories import chemin, chemins
 from app.services.erreurs import modele_or_404
 
 router = APIRouter(tags=["modeles"])
@@ -43,6 +44,7 @@ async def _read(db: DbSession, modele: Modele) -> ModeleRead:
         marque=modele.marque,
         categorie_id=modele.categorie_id,
         categorie_nom=categorie.nom if categorie else None,
+        categorie_chemin=await chemin(db, modele.categorie_id),
         nb_unites=nb or 0,
     )
 
@@ -64,6 +66,7 @@ async def list_modeles(
         like = f"%{q.strip()}%"
         stmt = stmt.where(Modele.nom.ilike(like) | Modele.marque.ilike(like))
     rows = await db.execute(stmt)
+    tous_chemins = await chemins(db)
     return [
         ModeleRead(
             id=m.id,
@@ -71,10 +74,16 @@ async def list_modeles(
             marque=m.marque,
             categorie_id=m.categorie_id,
             categorie_nom=cat_nom,
+            categorie_chemin=tous_chemins.get(m.categorie_id) if m.categorie_id else None,
             nb_unites=nb,
         )
         for m, cat_nom, nb in rows.all()
     ]
+
+
+@router.get("/modeles/{modele_id}", response_model=ModeleRead)
+async def get_modele(modele_id: int, _user: CurrentUser, db: DbSession) -> ModeleRead:
+    return await _read(db, await modele_or_404(db, modele_id))
 
 
 @router.post("/modeles", response_model=ModeleRead, status_code=status.HTTP_201_CREATED)
@@ -105,10 +114,9 @@ async def update_modele(
         modele.marque = (payload.marque or "").strip() or None
     if "categorie_id" in champs and payload.categorie_id != modele.categorie_id:
         await _verifier_categorie(db, payload.categorie_id)
+        # Les valeurs saisies restent en base, masquées tant que leurs champs ne
+        # s'appliquent plus (champ hors de la nouvelle lignée).
         modele.categorie_id = payload.categorie_id
-        # Une sous-catégorie appartient à une catégorie. Les valeurs saisies restent
-        # en base, masquées tant que leurs champs ne s'appliquent plus.
-        modele.sous_categorie_id = None
         # Le modèle fait foi : toutes ses unités suivent.
         await db.execute(
             update(Equipment)

@@ -1,9 +1,15 @@
-"""Référentiel des spécifications techniques : catégories, sous-catégories, champs
-de spécification et connecteurs. Lecture pour tous, écriture Admin+Staff.
+"""Référentiel des spécifications techniques : catégories (en arbre), champs de
+spécification et connecteurs. Lecture pour tous, écriture Admin+Staff.
+
+Une catégorie hérite des champs de tous ses ancêtres : un nom de champ est donc unique
+sur toute une lignée (ancêtres et descendants), sans quoi la fiche d'un modèle aurait
+deux champs homonymes.
 
 Supprimer un champ ou un connecteur est toujours permis et supprime en cascade ses
 valeurs / connectiques (l'UI demande confirmation avec le nombre d'usages).
 """
+
+from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import func, select
@@ -16,7 +22,6 @@ from app.models import (
     Connectique,
     Equipment,
     Modele,
-    SousCategorie,
     ValeurSpecification,
 )
 from app.models.enums import TypeChampSpec
@@ -30,18 +35,21 @@ from app.schemas.specs import (
     ConnecteurCreate,
     ConnecteurRead,
     ConnecteurUpdate,
-    SousCategorieCreate,
-    SousCategorieRead,
-    SousCategorieUpdate,
 )
 from app.security.rbac import RequireStaff
-from app.services.erreurs import conflit, introuvable, invalide, sous_categorie_or_404
+from app.services.categories import chemin, ids_descendants, lignee, verifier_parent
+from app.services.erreurs import conflit, introuvable, invalide
 
 router = APIRouter(tags=["referentiel"])
 
 
 async def _compter(db: DbSession, stmt) -> int:
     return await db.scalar(stmt) or 0
+
+
+def _ids_ancetres(categorie_id: int):
+    """Sous-requête : la catégorie et tous ses ancêtres."""
+    return select(lignee.c.ancetre_id).where(lignee.c.categorie_id == categorie_id)
 
 
 # --- Catégories -------------------------------------------------------------
@@ -54,50 +62,115 @@ async def _categorie_or_404(db: DbSession, categorie_id: int) -> Categorie:
     return cat
 
 
-async def _verifier_nom_categorie(db: DbSession, nom: str, categorie_id: int | None) -> None:
-    existing = await db.scalar(select(Categorie).where(Categorie.nom == nom))
+async def _read_categorie(db: DbSession, cat: Categorie) -> CategorieRead:
+    return CategorieRead(
+        id=cat.id,
+        nom=cat.nom,
+        description=cat.description,
+        parent_id=cat.parent_id,
+        chemin=await chemin(db, cat.id),
+    )
+
+
+async def _verifier_nom_categorie(
+    db: DbSession, nom: str, parent_id: int | None, categorie_id: int | None
+) -> None:
+    """Le nom est unique entre catégories sœurs (même parent)."""
+    existing = await db.scalar(
+        select(Categorie).where(
+            Categorie.nom == nom, Categorie.parent_id.is_not_distinct_from(parent_id)
+        )
+    )
     if existing is not None and existing.id != categorie_id:
-        raise conflit(f"La catégorie « {nom} » existe déjà.")
+        ou = "à la racine" if parent_id is None else "dans cette catégorie"
+        raise conflit(f"La catégorie « {nom} » existe déjà {ou}.")
+
+
+async def _verifier_heritage_deplacement(
+    db: DbSession, categorie_id: int, parent_id: int | None
+) -> None:
+    """En changeant de parent, la catégorie et ses descendantes héritent de nouveaux
+    champs : refusé si l'un porte le nom d'un champ du sous-arbre."""
+    if parent_id is None:
+        return
+    herites = set(
+        (
+            await db.scalars(
+                select(ChampSpecification.nom).where(
+                    ChampSpecification.categorie_id.in_(_ids_ancetres(parent_id))
+                )
+            )
+        ).all()
+    )
+    propres = set(
+        (
+            await db.scalars(
+                select(ChampSpecification.nom).where(
+                    ChampSpecification.categorie_id.in_(ids_descendants(categorie_id))
+                )
+            )
+        ).all()
+    )
+    if doublons := sorted(herites & propres):
+        raise conflit(
+            f"Champ(s) déjà défini(s) dans la nouvelle catégorie parente : {', '.join(doublons)}."
+        )
+
+
+@router.get("/categories/{categorie_id}", response_model=CategorieRead)
+async def get_categorie(categorie_id: int, _user: CurrentUser, db: DbSession) -> CategorieRead:
+    return await _read_categorie(db, await _categorie_or_404(db, categorie_id))
 
 
 @router.post("/categories", response_model=CategorieRead, status_code=status.HTTP_201_CREATED)
 async def create_categorie(
     payload: CategorieCreate, _user: RequireStaff, db: DbSession
-) -> Categorie:
-    await _verifier_nom_categorie(db, payload.nom, None)
-    cat = Categorie(nom=payload.nom, description=(payload.description or "").strip() or None)
+) -> CategorieRead:
+    await verifier_parent(db, None, payload.parent_id)
+    await _verifier_nom_categorie(db, payload.nom, payload.parent_id, None)
+    cat = Categorie(
+        nom=payload.nom,
+        description=(payload.description or "").strip() or None,
+        parent_id=payload.parent_id,
+    )
     db.add(cat)
     await db.commit()
     await db.refresh(cat)
-    return cat
+    return await _read_categorie(db, cat)
 
 
 @router.patch("/categories/{categorie_id}", response_model=CategorieRead)
 async def update_categorie(
     categorie_id: int, payload: CategorieUpdate, _user: RequireStaff, db: DbSession
-) -> Categorie:
+) -> CategorieRead:
     cat = await _categorie_or_404(db, categorie_id)
-    if payload.nom is not None:
-        await _verifier_nom_categorie(db, payload.nom, cat.id)
-        cat.nom = payload.nom
-    if "description" in payload.model_fields_set:
+    fournis = payload.model_fields_set
+    parent_id = payload.parent_id if "parent_id" in fournis else cat.parent_id
+    if parent_id != cat.parent_id:
+        await verifier_parent(db, cat.id, parent_id)
+        await _verifier_heritage_deplacement(db, cat.id, parent_id)
+    nom = payload.nom if payload.nom is not None else cat.nom
+    await _verifier_nom_categorie(db, nom, parent_id, cat.id)
+    cat.nom = nom
+    cat.parent_id = parent_id
+    if "description" in fournis:
         cat.description = (payload.description or "").strip() or None
     await db.commit()
     await db.refresh(cat)
-    return cat
+    return await _read_categorie(db, cat)
 
 
 @router.delete("/categories/{categorie_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_categorie(categorie_id: int, _user: RequireStaff, db: DbSession) -> None:
     cat = await _categorie_or_404(db, categorie_id)
     utilisations = {
+        "sous-catégorie": select(func.count())
+        .select_from(Categorie)
+        .where(Categorie.parent_id == cat.id),
         "modèle": select(func.count()).select_from(Modele).where(Modele.categorie_id == cat.id),
         "équipement": select(func.count())
         .select_from(Equipment)
         .where(Equipment.categorie_id == cat.id),
-        "sous-catégorie": select(func.count())
-        .select_from(SousCategorie)
-        .where(SousCategorie.categorie_id == cat.id),
         "champ": select(func.count())
         .select_from(ChampSpecification)
         .where(ChampSpecification.categorie_id == cat.id),
@@ -109,102 +182,6 @@ async def delete_categorie(categorie_id: int, _user: RequireStaff, db: DbSession
                 "détache-les avant de la supprimer."
             )
     await db.delete(cat)
-    await db.commit()
-
-
-# --- Sous-catégories --------------------------------------------------------
-
-
-async def _nb_usages_sous_categorie(db: DbSession, sous_categorie_id: int) -> int:
-    nb_modeles = await _compter(
-        db,
-        select(func.count())
-        .select_from(Modele)
-        .where(Modele.sous_categorie_id == sous_categorie_id),
-    )
-    nb_equipements = await _compter(
-        db,
-        select(func.count())
-        .select_from(Equipment)
-        .where(Equipment.sous_categorie_id == sous_categorie_id),
-    )
-    return nb_modeles + nb_equipements
-
-
-async def _verifier_nom_sous_categorie(
-    db: DbSession, nom: str, categorie_id: int, sous_categorie_id: int | None
-) -> None:
-    existing = await db.scalar(
-        select(SousCategorie).where(
-            SousCategorie.categorie_id == categorie_id, SousCategorie.nom == nom
-        )
-    )
-    if existing is not None and existing.id != sous_categorie_id:
-        raise conflit(f"La sous-catégorie « {nom} » existe déjà dans cette catégorie.")
-
-
-async def _read_sous_categorie(db: DbSession, sc: SousCategorie) -> SousCategorieRead:
-    return SousCategorieRead(
-        id=sc.id,
-        nom=sc.nom,
-        categorie_id=sc.categorie_id,
-        nb_utilisations=await _nb_usages_sous_categorie(db, sc.id),
-    )
-
-
-@router.get("/sous-categories", response_model=list[SousCategorieRead])
-async def list_sous_categories(
-    _user: CurrentUser, db: DbSession, categorie_id: int | None = Query(default=None)
-) -> list[SousCategorieRead]:
-    stmt = select(SousCategorie).order_by(SousCategorie.nom)
-    if categorie_id is not None:
-        stmt = stmt.where(SousCategorie.categorie_id == categorie_id)
-    return [await _read_sous_categorie(db, sc) for sc in (await db.scalars(stmt)).all()]
-
-
-@router.post(
-    "/sous-categories", response_model=SousCategorieRead, status_code=status.HTTP_201_CREATED
-)
-async def create_sous_categorie(
-    payload: SousCategorieCreate, _user: RequireStaff, db: DbSession
-) -> SousCategorieRead:
-    await _categorie_or_404(db, payload.categorie_id)
-    await _verifier_nom_sous_categorie(db, payload.nom, payload.categorie_id, None)
-    sc = SousCategorie(nom=payload.nom, categorie_id=payload.categorie_id)
-    db.add(sc)
-    await db.commit()
-    await db.refresh(sc)
-    return await _read_sous_categorie(db, sc)
-
-
-@router.patch("/sous-categories/{sous_categorie_id}", response_model=SousCategorieRead)
-async def update_sous_categorie(
-    sous_categorie_id: int, payload: SousCategorieUpdate, _user: RequireStaff, db: DbSession
-) -> SousCategorieRead:
-    sc = await sous_categorie_or_404(db, sous_categorie_id)
-    await _verifier_nom_sous_categorie(db, payload.nom, sc.categorie_id, sc.id)
-    sc.nom = payload.nom
-    await db.commit()
-    await db.refresh(sc)
-    return await _read_sous_categorie(db, sc)
-
-
-@router.delete("/sous-categories/{sous_categorie_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_sous_categorie(sous_categorie_id: int, _user: RequireStaff, db: DbSession) -> None:
-    sc = await sous_categorie_or_404(db, sous_categorie_id)
-    if nb := await _nb_usages_sous_categorie(db, sc.id):
-        raise conflit(
-            f"Sous-catégorie utilisée par {nb} modèle{'s' if nb > 1 else ''} / équipement"
-            f"{'s' if nb > 1 else ''} : détache-les avant de la supprimer."
-        )
-    if await _compter(
-        db,
-        select(func.count())
-        .select_from(ChampSpecification)
-        .where(ChampSpecification.sous_categorie_id == sc.id),
-    ):
-        raise conflit("Des champs de spécification sont restreints à cette sous-catégorie.")
-    await db.delete(sc)
     await db.commit()
 
 
@@ -227,7 +204,10 @@ async def _nb_valeurs(db: DbSession, champ_id: int) -> int:
     )
 
 
-async def _read_champ(db: DbSession, champ: ChampSpecification) -> ChampSpecRead:
+async def _read_champ(
+    db: DbSession, champ: ChampSpecification, herite: bool = False
+) -> ChampSpecRead:
+    categorie = await db.get(Categorie, champ.categorie_id)
     return ChampSpecRead(
         id=champ.id,
         nom=champ.nom,
@@ -235,19 +215,31 @@ async def _read_champ(db: DbSession, champ: ChampSpecification) -> ChampSpecRead
         unite=champ.unite,
         options=list(champ.options or []),
         categorie_id=champ.categorie_id,
-        sous_categorie_id=champ.sous_categorie_id,
+        categorie_nom=categorie.nom if categorie else "",
+        herite=herite,
         ordre=champ.ordre,
         nb_valeurs=await _nb_valeurs(db, champ.id),
     )
 
 
-async def _verifier_portee(db: DbSession, categorie_id: int, sous_categorie_id: int | None) -> None:
-    await _categorie_or_404(db, categorie_id)
-    if sous_categorie_id is None:
-        return
-    sc = await sous_categorie_or_404(db, sous_categorie_id)
-    if sc.categorie_id != categorie_id:
-        raise invalide("La sous-catégorie n'appartient pas à la catégorie du champ.")
+async def _verifier_nom_champ(
+    db: DbSession, nom: str, categorie_id: int, champ_id: int | None
+) -> None:
+    """Unicité du nom sur la lignée : ancêtres (champs hérités) et descendants (qui
+    hériteraient de celui-ci)."""
+    lignee_ids = _ids_ancetres(categorie_id).union(ids_descendants(categorie_id))
+    existing = await db.scalar(
+        select(ChampSpecification).where(
+            ChampSpecification.nom == nom,
+            ChampSpecification.categorie_id.in_(lignee_ids),
+            ChampSpecification.id != (champ_id or 0),
+        )
+    )
+    if existing is not None:
+        categorie = await db.get(Categorie, existing.categorie_id)
+        raise conflit(
+            f"Le champ « {nom} » existe déjà dans la lignée (catégorie « {categorie.nom} »)."
+        )
 
 
 def _verifier_options(type_: TypeChampSpec, options: list[str]) -> list[str]:
@@ -260,8 +252,26 @@ def _verifier_options(type_: TypeChampSpec, options: list[str]) -> list[str]:
 
 @router.get("/champs-specification", response_model=list[ChampSpecRead])
 async def list_champs(
-    _user: CurrentUser, db: DbSession, categorie_id: int | None = Query(default=None)
+    _user: CurrentUser,
+    db: DbSession,
+    categorie_id: int | None = Query(default=None),
+    herites: Annotated[bool, Query(description="Ajoute les champs des ancêtres")] = False,
 ) -> list[ChampSpecRead]:
+    """Champs d'une catégorie (ou de toutes). Avec `herites`, ceux de ses ancêtres
+    aussi, les plus généraux d'abord."""
+    if categorie_id is not None and herites:
+        stmt = (
+            select(ChampSpecification, lignee.c.distance)
+            .join(lignee, lignee.c.ancetre_id == ChampSpecification.categorie_id)
+            .where(lignee.c.categorie_id == categorie_id)
+            .order_by(
+                lignee.c.distance.desc(),
+                ChampSpecification.ordre,
+                ChampSpecification.nom,
+                ChampSpecification.id,
+            )
+        )
+        return [await _read_champ(db, c, d > 0) for c, d in (await db.execute(stmt)).all()]
     stmt = select(ChampSpecification).order_by(
         ChampSpecification.ordre, ChampSpecification.nom, ChampSpecification.id
     )
@@ -276,14 +286,14 @@ async def list_champs(
 async def create_champ(
     payload: ChampSpecCreate, _user: RequireStaff, db: DbSession
 ) -> ChampSpecRead:
-    await _verifier_portee(db, payload.categorie_id, payload.sous_categorie_id)
+    await _categorie_or_404(db, payload.categorie_id)
+    await _verifier_nom_champ(db, payload.nom, payload.categorie_id, None)
     champ = ChampSpecification(
         nom=payload.nom,
         type=payload.type,
         unite=(payload.unite or "").strip() or None,
         options=_verifier_options(payload.type, payload.options),
         categorie_id=payload.categorie_id,
-        sous_categorie_id=payload.sous_categorie_id,
         ordre=payload.ordre,
     )
     db.add(champ)
@@ -308,12 +318,11 @@ async def update_champ(
         )
 
     categorie_id = payload.categorie_id if payload.categorie_id is not None else champ.categorie_id
-    sous_categorie_id = (
-        payload.sous_categorie_id if "sous_categorie_id" in fournis else champ.sous_categorie_id
-    )
-    if categorie_id != champ.categorie_id and "sous_categorie_id" not in fournis:
-        sous_categorie_id = None
-    await _verifier_portee(db, categorie_id, sous_categorie_id)
+    if categorie_id != champ.categorie_id:
+        await _categorie_or_404(db, categorie_id)
+    nom = payload.nom if payload.nom is not None else champ.nom
+    if (nom, categorie_id) != (champ.nom, champ.categorie_id):
+        await _verifier_nom_champ(db, nom, categorie_id, champ.id)
 
     options = payload.options if payload.options is not None else list(champ.options or [])
     options = _verifier_options(type_, options)
@@ -328,8 +337,7 @@ async def update_champ(
         for valeur in sorted(set(utilisees) - set(options)):
             raise conflit(f"L'option « {valeur} » est encore utilisée par des valeurs.")
 
-    if payload.nom is not None:
-        champ.nom = payload.nom
+    champ.nom = nom
     if "unite" in fournis:
         champ.unite = (payload.unite or "").strip() or None
     if payload.ordre is not None:
@@ -337,7 +345,6 @@ async def update_champ(
     champ.type = type_
     champ.options = options
     champ.categorie_id = categorie_id
-    champ.sous_categorie_id = sous_categorie_id
     await db.commit()
     await db.refresh(champ)
     return await _read_champ(db, champ)

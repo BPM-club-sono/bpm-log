@@ -76,9 +76,20 @@ const FournisseursPage = lazy(() =>
 const ModelesPage = lazy(() =>
   import("@/features/modeles/ModelesPage").then((m) => ({ default: m.ModelesPage })),
 );
+const ModeleDetailPage = lazy(() =>
+  import("@/features/modeles/ModeleDetailPage").then((m) => ({
+    default: m.ModeleDetailPage,
+  })),
+);
 const ReferentielPage = lazy(() =>
   import("@/features/referentiel/ReferentielPage").then((m) => ({
     default: m.ReferentielPage,
+  })),
+);
+
+const CategorieDetailPage = lazy(() =>
+  import("@/features/referentiel/CategorieDetailPage").then((m) => ({
+    default: m.CategorieDetailPage,
   })),
 );
 
@@ -115,7 +126,12 @@ const router = createBrowserRouter([
           { path: "/emplacements", element: lazyRoute(<EmplacementsPage />) },
           { path: "/fournisseurs", element: lazyRoute(<FournisseursPage />) },
           { path: "/modeles", element: lazyRoute(<ModelesPage />) },
+          { path: "/modeles/:id", element: lazyRoute(<ModeleDetailPage />) },
           { path: "/referentiel", element: lazyRoute(<ReferentielPage />) },
+          {
+            path: "/referentiel/categories/:id",
+            element: lazyRoute(<CategorieDetailPage />),
+          },
           { path: "/profil", element: lazyRoute(<ProfilePage />) },
         ],
       },

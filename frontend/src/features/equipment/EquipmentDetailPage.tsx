@@ -30,6 +30,7 @@ import { useToast } from "@/shared/Toast";
 import { EquipmentSpecs } from "@/features/specs/EquipmentSpecs";
 import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 
 const STATUTS: { value: StatutEquipment; label: string }[] = [
   { value: "Fonctionnel", label: "Fonctionnel" },
@@ -192,7 +193,23 @@ export function EquipmentDetailPage() {
           )}
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          {eq.modele_nom && <Info label="Modèle" value={eq.modele_nom} />}
+          {eq.modele_nom && (
+            <Info
+              label="Modèle"
+              value={
+                eq.modele_id ? (
+                  <Link
+                    to={`/modeles/${eq.modele_id}`}
+                    className="font-medium hover:text-fg-muted"
+                  >
+                    {eq.modele_nom}
+                  </Link>
+                ) : (
+                  eq.modele_nom
+                )
+              }
+            />
+          )}
           <Info label="Catégorie" value={eq.categorie_nom} />
           <Info
             label="Rangement"
@@ -305,7 +322,7 @@ function ContenuBlock({ contenu }: { contenu: ContenuChild[] }) {
     toast(`${contenu.length} étiquette(s) ajoutée(s) au panier`, "success");
   }
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 border-t border-line pt-5">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-fg-muted">
           Contenu · {contenu.length} élément{contenu.length > 1 ? "s" : ""}
@@ -522,7 +539,7 @@ function VracBlock({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 border-t border-line pt-5">
       <h2 className="text-sm font-semibold text-fg-muted">Inventaire vrac</h2>
       {err && <p className="text-sm text-danger">{err}</p>}
 
@@ -651,7 +668,7 @@ function ConsoBlock({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 border-t border-line pt-5">
       <h2 className="text-sm font-semibold text-fg-muted">Stock consommable</h2>
       <div className="py-2 text-center">
         <p className="text-xs uppercase tracking-wide text-fg-muted">Stock actuel</p>
@@ -799,7 +816,7 @@ function ActivityTimeline({
 
   if (events.length === 0) {
     return (
-      <section className="space-y-2">
+      <section className="space-y-2 border-t border-line pt-5">
         <h2 className="text-sm font-semibold text-fg-muted">Activité</h2>
         <p className="text-sm text-fg-muted">Aucune activité enregistrée.</p>
       </section>
@@ -807,7 +824,7 @@ function ActivityTimeline({
   }
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 border-t border-line pt-5">
       <h2 className="text-sm font-semibold text-fg-muted">Activité</h2>
       <ol className="relative ml-1">
         {events.map((ev, i) => {
@@ -1115,22 +1132,14 @@ function EditForm({
         </Field>
       )}
       <Field label="Catégorie">
-        <select
+        <CategorieSelect
+          categories={categories}
           // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
           value={modele ? (modele.categorie_id ?? "") : categorieId}
           disabled={!!modele}
-          onChange={(e) =>
-            setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-          }
+          onChange={setCategorieId}
           className={inputCls}
-        >
-          <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
+        />
       </Field>
       <RangementField
         mode={rangementMode}

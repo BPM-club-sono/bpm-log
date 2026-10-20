@@ -3,7 +3,7 @@
 from fastapi import HTTPException, status
 
 from app.deps import DbSession
-from app.models import Modele, SousCategorie
+from app.models import Modele
 
 
 def conflit(detail: str) -> HTTPException:
@@ -24,9 +24,3 @@ async def modele_or_404(db: DbSession, modele_id: int) -> Modele:
         raise introuvable("Modèle introuvable.")
     return modele
 
-
-async def sous_categorie_or_404(db: DbSession, sous_categorie_id: int) -> SousCategorie:
-    sc = await db.get(SousCategorie, sous_categorie_id)
-    if sc is None:
-        raise introuvable("Sous-catégorie introuvable.")
-    return sc

@@ -17,6 +17,7 @@ import { Icon } from "@/shared/Icon";
 import { ExterneFields, Field } from "./EquipmentDetailPage";
 import { ModeleField } from "./ModeleField";
 import { RangementField, type RangementMode } from "./RangementField";
+import { CategorieSelect } from "@/shared/CategorieSelect";
 
 const inputCls =
   "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
@@ -34,6 +35,8 @@ const TYPES: { value: FormType; label: string }[] = [
 interface EquipmentFormProps {
   /** Coche « location externe » par défaut (contexte presta externe). */
   externeDefault?: boolean;
+  /** Modèle pré-choisi (lien « Ajouter des unités » de la fiche modèle). */
+  modeleDefault?: Modele | null;
   /** Contexte prestation : crée et alloue directement à cette prestation. */
   prestaId?: number;
   submitLabel?: string;
@@ -48,14 +51,15 @@ interface EquipmentFormProps {
  */
 export function EquipmentForm({
   externeDefault = false,
+  modeleDefault = null,
   prestaId,
   submitLabel = "Créer l'équipement",
   onCreated,
 }: EquipmentFormProps) {
-  const [nom, setNom] = useState("");
+  const [nom, setNom] = useState(modeleDefault?.nom ?? "");
   const [type, setType] = useState<FormType>("standard");
   const [categorieId, setCategorieId] = useState<number | "">("");
-  const [modele, setModele] = useState<Modele | null>(null);
+  const [modele, setModele] = useState<Modele | null>(modeleDefault);
   const [rangementMode, setRangementMode] =
     useState<RangementMode>("emplacement");
   const [emplacementId, setEmplacementId] = useState<number | "">("");
@@ -310,24 +314,16 @@ export function EquipmentForm({
       )}
 
       <Field label="Catégorie">
-        <select
+        <CategorieSelect
+          categories={categories}
           // Avec un modèle, la catégorie est la sienne (on la change sur le modèle).
           value={
             avecModele && modele ? (modele.categorie_id ?? "") : categorieId
           }
           disabled={avecModele && !!modele}
-          onChange={(e) =>
-            setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-          }
+          onChange={setCategorieId}
           className={inputCls}
-        >
-          <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
+        />
       </Field>
       <RangementField
         mode={rangementMode}

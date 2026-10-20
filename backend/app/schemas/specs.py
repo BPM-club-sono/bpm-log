@@ -1,5 +1,5 @@
-"""Schémas du référentiel des spécifications techniques (catégories, sous-catégories,
-champs, connecteurs) et des spécifications d'un modèle ou d'un équipement."""
+"""Schémas du référentiel des spécifications techniques (catégories en arbre, champs,
+connecteurs) et des spécifications d'un modèle ou d'un équipement."""
 
 from typing import Annotated, Literal
 
@@ -32,27 +32,15 @@ Options = Annotated[list[str], BeforeValidator(_options_propres)]
 class CategorieCreate(BaseModel):
     nom: Nom
     description: str | None = None
+    parent_id: int | None = None
 
 
 class CategorieUpdate(BaseModel):
+    """Champs absents = inchangés ; `parent_id` à null = remonter à la racine."""
+
     nom: Nom | None = None
     description: str | None = None
-
-
-class SousCategorieRead(BaseModel):
-    id: int
-    nom: str
-    categorie_id: int
-    nb_utilisations: int = 0
-
-
-class SousCategorieCreate(BaseModel):
-    nom: Nom
-    categorie_id: int
-
-
-class SousCategorieUpdate(BaseModel):
-    nom: Nom
+    parent_id: int | None = None
 
 
 class ChampSpecRead(BaseModel):
@@ -62,7 +50,9 @@ class ChampSpecRead(BaseModel):
     unite: str | None
     options: list[str]
     categorie_id: int
-    sous_categorie_id: int | None
+    categorie_nom: str
+    # Défini sur un ancêtre de la catégorie demandée (liste avec `herites=true`).
+    herite: bool = False
     ordre: int
     nb_valeurs: int = 0
 
@@ -73,7 +63,6 @@ class ChampSpecCreate(BaseModel):
     unite: Annotated[str | None, Field(max_length=20)] = None
     options: Options = []
     categorie_id: int
-    sous_categorie_id: int | None = None
     ordre: int = 0
 
 
@@ -83,7 +72,6 @@ class ChampSpecUpdate(BaseModel):
     unite: Annotated[str | None, Field(max_length=20)] = None
     options: Options | None = None
     categorie_id: int | None = None
-    sous_categorie_id: int | None = None
     ordre: int | None = None
 
 
@@ -133,6 +121,9 @@ class ValeurSpecRead(BaseModel):
     type: TypeChampSpec
     unite: str | None
     options: list[str]
+    # Catégorie (la cible ou l'un de ses ancêtres) qui définit le champ.
+    categorie_id: int
+    categorie_nom: str
     valeur: str | None
 
 
@@ -142,8 +133,7 @@ class SpecsRead(BaseModel):
     source: Literal["modele", "equipement"]
     modele_id: int | None
     categorie_id: int | None
-    sous_categorie_id: int | None
-    sous_categorie_nom: str | None
+    categorie_chemin: str | None
     poids: float | None
     longueur: float | None
     largeur: float | None
@@ -155,10 +145,9 @@ class SpecsRead(BaseModel):
 
 
 class SpecsWrite(BaseModel):
-    """Remplace les champs fixes, la sous-catégorie et toute la connectique ; pour
-    `valeurs`, seules les clés fournies sont touchées (None ou blanc = effacer)."""
+    """Remplace les champs fixes et toute la connectique ; pour `valeurs`, seules
+    les clés fournies sont touchées (None ou blanc = effacer)."""
 
-    sous_categorie_id: int | None = None
     poids: Poids = None
     longueur: Dimension = None
     largeur: Dimension = None

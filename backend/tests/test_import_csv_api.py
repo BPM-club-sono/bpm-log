@@ -51,7 +51,7 @@ async def test_import_complet(api_import, tmp_path):
     assert (eurolite["nb_unites"], sub["nb_unites"]) == (2, 1)
 
     specs = (await api.get(f"modeles/{eurolite['id']}/specs")).json()
-    assert specs["sous_categorie_nom"] == "Strobe"
+    assert specs["categorie_chemin"] == "Lights › Strobe"
     assert len(specs["connectiques"]) == 2
     assert {c["sens"] for c in specs["connectiques"]} == {"entree"}
     assert (await api.get(f"modeles/{sub['id']}/specs")).json()["poids"] == 47
@@ -75,15 +75,13 @@ async def test_import_complet(api_import, tmp_path):
     )
 
     champs = (await api.get("champs-specification")).json()
-    cats = {c["id"]: c["nom"] for c in (await api.get("categories")).json()}
-    scs = {c["id"]: c["nom"] for c in (await api.get("sous-categories")).json()}
+    cats = {c["id"]: c["chemin"] for c in (await api.get("categories")).json()}
     assert any(c["nom"] == "Puissance" and cats[c["categorie_id"]] == "Lights" for c in champs)
     assert any(
-        c["nom"] == "Hauteur rack"
-        and cats[c["categorie_id"]] == "Son"
-        and scs.get(c["sous_categorie_id"]) == "Rack"
-        for c in champs
+        c["nom"] == "Hauteur rack" and cats[c["categorie_id"]] == "Son › Rack" for c in champs
     )
+    # Le modèle, rangé dans Lights › Strobe, hérite des champs de Lights.
+    assert any(v["nom"] == "Puissance" and v["categorie_nom"] == "Lights" for v in specs["valeurs"])
     assert r.crees["unites"] == 3 and r.crees["tickets"] == 2
 
 
@@ -111,7 +109,6 @@ async def test_reimport_garde_valeurs_saisies(api_import, tmp_path):
         k: specs[k]
         for k in ("poids", "longueur", "largeur", "hauteur", "prix_interne", "prix_externe")
     }
-    corps["sous_categorie_id"] = specs["sous_categorie_id"]
     corps["connectiques"] = [
         {k: c[k] for k in ("connecteur_id", "sens", "quantite")} for c in specs["connectiques"]
     ]
@@ -323,9 +320,7 @@ async def test_rejeu_garde_specs_fixes_sauf_reappliquer(api_import, tmp_path):
     plan = lire_dossier(tmp_path)
     await importer(api, plan, appliquer=True)
     modele = (await _modeles(api, s))[f"Eurolite led {s}"]
-    specs = (await api.get(f"modeles/{modele['id']}/specs")).json()
     corps = {
-        "sous_categorie_id": specs["sous_categorie_id"],
         "poids": 12.5,
         "valeurs": {},
         "connectiques": [],

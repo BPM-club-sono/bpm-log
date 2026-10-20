@@ -1,33 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { api, ApiError } from "@/lib/api";
-import type { Categorie, Modele, Specs } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { api } from "@/lib/api";
+import { cheminDe, descendantsIds, enfants } from "@/lib/categories";
+import type { Categorie, Modele } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
-import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
-import { useToast } from "@/shared/Toast";
-import { SpecsEditor } from "@/features/specs/SpecsEditor";
-import { SpecsSheet } from "@/features/specs/SpecsSheet";
+import { SearchInput } from "@/shared/SearchInput";
+import { ModeleForm } from "./ModeleForm";
+import { ModeleRow } from "./ModeleRow";
 
-const inputCls =
-  "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
+/** Filtre de catégorie : id, « aucune » (modèles sans catégorie) ou tous. */
+type Filtre = "tous" | "aucune" | number;
 
-/** Modèles d'équipement (MH-100…) : Staff crée et renomme, Admin supprime un
- *  modèle sans unité. La catégorie d'un modèle s'applique à toutes ses unités. */
+function lireFiltre(v: string | null): Filtre {
+  if (v === "aucune") return "aucune";
+  const n = Number(v);
+  return v && Number.isInteger(n) ? n : "tous";
+}
+
+/** Modèles d'équipement (MH-100…) : recherche et filtre par catégorie, comme le
+ *  Parc. Un modèle s'ouvre sur sa fiche (infos, spécifications, unités). */
 export function ModelesPage() {
   const { user } = useAuth();
-  const { toast } = useToast();
+  const navigate = useNavigate();
   const canManage = user?.role === "Admin" || user?.role === "Staff";
-  const isAdmin = user?.role === "Admin";
+  const [params, setParams] = useSearchParams();
 
   const [items, setItems] = useState<Modele[]>([]);
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Modele | null>(null);
   const [creating, setCreating] = useState(false);
-  const [ouvert, setOuvert] = useState<number | null>(null);
-  const [specsEdit, setSpecsEdit] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const filtre = lireFiltre(params.get("categorie"));
+  const formRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -49,257 +55,123 @@ export function ModelesPage() {
     void load();
   }, [load]);
 
-  async function remove(m: Modele) {
-    if (!window.confirm(`Supprimer le modèle « ${m.nom} » ?`)) return;
-    try {
-      await api(`/modeles/${m.id}`, { method: "DELETE" });
-      setItems((prev) => prev.filter((x) => x.id !== m.id));
-      toast("Modèle supprimé.", "success");
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : "Suppression impossible.", "error");
-    }
+  useEffect(() => {
+    if (creating) formRef.current?.scrollIntoView({ block: "start" });
+  }, [creating]);
+
+  function selectFiltre(f: Filtre) {
+    setParams(f === "tous" ? {} : { categorie: String(f) }, { replace: true });
   }
 
+  const sansCategorie = items.some((m) => m.categorie_id == null);
+
+  // Puces : les catégories racines, plus la catégorie filtrée si elle est plus
+  // profonde (lien « Voir dans Modèles » d'une fiche catégorie).
+  const puces = useMemo(() => {
+    const racines = enfants(categories, null).map((c) => ({ value: c.id as Filtre, label: c.nom }));
+    const choisie = categories.find((c) => c.id === filtre);
+    if (choisie && choisie.parent_id !== null) {
+      racines.push({ value: choisie.id, label: cheminDe(categories, choisie.id) });
+    }
+    return racines;
+  }, [categories, filtre]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    // Une catégorie couvre aussi ses sous-catégories, à toute profondeur.
+    const dans = typeof filtre === "number" ? descendantsIds(categories, filtre) : null;
+    return items.filter((m) => {
+      if (filtre === "aucune" && m.categorie_id != null) return false;
+      if (dans && (m.categorie_id == null || !dans.has(m.categorie_id))) return false;
+      if (
+        q &&
+        !m.nom.toLowerCase().includes(q) &&
+        !(m.marque ?? "").toLowerCase().includes(q) &&
+        !(m.categorie_chemin ?? "").toLowerCase().includes(q)
+      )
+        return false;
+      return true;
+    });
+  }, [items, categories, query, filtre]);
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <Link to="/inventaire" className="inline-flex items-center gap-1 text-sm text-fg-muted">
-          <Icon name="arrow_back" className="text-base" /> Parc
-        </Link>
-        {canManage && !creating && !editing && (
-          <Button className="h-9 px-3" onClick={() => setCreating(true)}>
-            <Icon name="add" className="text-base" />
-            Nouveau
-          </Button>
-        )}
+    <div className="space-y-4">
+      <Link to="/inventaire" className="inline-flex items-center gap-1 text-sm text-fg-muted">
+        <Icon name="arrow_back" className="text-base" /> Parc
+      </Link>
+
+      <header className="space-y-1">
+        <h1 className="text-2xl font-bold">Modèles</h1>
+        <p className="text-sm text-fg-muted">
+          {filtered.length} modèle{filtered.length > 1 ? "s" : ""}
+        </p>
+      </header>
+
+      {creating && canManage && (
+        <div ref={formRef}>
+          <ModeleForm
+            initial={null}
+            categories={categories}
+            onCancel={() => setCreating(false)}
+            onSaved={(m) => navigate(`/modeles/${m.id}`)}
+          />
+        </div>
+      )}
+
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        placeholder="Nom, marque ou catégorie…"
+        aria-label="Rechercher un modèle"
+      />
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Catégorie">
+        {[
+          { value: "tous" as Filtre, label: "Tous" },
+          ...puces,
+          ...(sansCategorie ? [{ value: "aucune" as Filtre, label: "Sans catégorie" }] : []),
+        ].map((f) => (
+          <button
+            key={String(f.value)}
+            type="button"
+            onClick={() => selectFiltre(f.value)}
+            data-on={filtre === f.value}
+            aria-pressed={filtre === f.value}
+            className="shrink-0 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-fg-muted data-[on=true]:border-fg data-[on=true]:bg-bg-elev data-[on=true]:text-fg"
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
-      <h1 className="text-2xl font-bold">Modèles</h1>
-
-      {(creating || editing) && canManage && (
-        <ModeleForm
-          initial={editing}
-          categories={categories}
-          onCancel={() => {
-            setCreating(false);
-            setEditing(null);
-          }}
-          onSaved={async () => {
-            setCreating(false);
-            setEditing(null);
-            await load();
-          }}
-        />
-      )}
-
       {loading && <p className="py-8 text-center text-sm text-fg-muted">Chargement…</p>}
-      {error && <p className="text-sm text-danger">{error}</p>}
+      {error && !loading && <p className="py-8 text-center text-sm text-danger">{error}</p>}
 
-      {!loading && items.length === 0 && (
-        <p className="text-sm text-fg-muted">Aucun modèle enregistré.</p>
+      {!loading && !error && filtered.length === 0 && (
+        <div className="flex flex-col items-center gap-2 py-12 text-fg-muted">
+          <Icon name="category" className="text-4xl" />
+          <p className="text-sm">Aucun modèle trouvé.</p>
+        </div>
       )}
 
-      {items.length > 0 && (
-        <ul className="divide-y divide-line rounded-2xl border border-line bg-bg-soft">
-          {items.map((m) => (
-            <li key={m.id} className="px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Link
-                  to={`/inventaire?modele=${m.id}`}
-                  className="min-w-0 flex-1 hover:opacity-70"
-                >
-                  <p className="truncate text-sm font-medium">
-                    {m.nom}
-                    {m.marque && <span className="text-fg-muted"> · {m.marque}</span>}
-                  </p>
-                  <p className="truncate text-xs text-fg-muted">
-                    {m.nb_unites ?? 0} unité{(m.nb_unites ?? 0) > 1 ? "s" : ""}
-                    {m.categorie_nom ? ` · ${m.categorie_nom}` : ""}
-                  </p>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setOuvert(ouvert === m.id ? null : m.id)}
-                  className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-fg-muted"
-                  aria-label="Voir les spécifications"
-                  aria-expanded={ouvert === m.id}
-                >
-                  <Icon name={ouvert === m.id ? "expand_less" : "expand_more"} className="text-lg" />
-                </button>
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => setEditing(m)}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-fg-muted"
-                    aria-label="Modifier"
-                  >
-                    <Icon name="edit" className="text-lg" />
-                  </button>
-                )}
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => void remove(m)}
-                    disabled={(m.nb_unites ?? 0) > 0}
-                    title={(m.nb_unites ?? 0) > 0 ? "Utilisé par du matériel" : undefined}
-                    className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-danger disabled:opacity-40"
-                    aria-label="Supprimer"
-                  >
-                    <Icon name="delete" className="text-lg" />
-                  </button>
-                )}
-              </div>
-              {ouvert === m.id && (
-                <div className="pt-3">
-                  {specsEdit === m.id ? (
-                    <SpecsEditor
-                      cible="modeles"
-                      id={m.id}
-                      onCancel={() => setSpecsEdit(null)}
-                      onSaved={() => {
-                        setSpecsEdit(null);
-                        toast("Spécifications enregistrées.", "success");
-                      }}
-                    />
-                  ) : (
-                    <div className="space-y-3">
-                      {canManage && (
-                        <Button
-                          variant="ghost"
-                          className="h-9 px-3"
-                          onClick={() => setSpecsEdit(m.id)}
-                        >
-                          Éditer les spécifications
-                        </Button>
-                      )}
-                      <ModeleSpecs key={m.id} id={m.id} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </li>
+      {!loading && !error && filtered.length > 0 && (
+        <ul className="divide-y divide-line">
+          {filtered.map((m) => (
+            <ModeleRow key={m.id} modele={m} />
           ))}
         </ul>
       )}
-    </div>
-  );
-}
 
-function ModeleSpecs({ id }: { id: number }) {
-  const [specs, setSpecs] = useState<Specs | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    api<Specs>(`/modeles/${id}/specs`).then(setSpecs, () => setError(true));
-  }, [id]);
-  if (error) return <p className="text-sm text-danger">Spécifications indisponibles.</p>;
-  if (!specs) return <p className="text-sm text-fg-muted">Chargement…</p>;
-  return <SpecsSheet specs={specs} />;
-}
-
-function ModeleForm({
-  initial,
-  categories,
-  onCancel,
-  onSaved,
-}: {
-  initial: Modele | null;
-  categories: Categorie[];
-  onCancel: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const { toast } = useToast();
-  const [nom, setNom] = useState(initial?.nom ?? "");
-  const [marque, setMarque] = useState(initial?.marque ?? "");
-  const [categorieId, setCategorieId] = useState<number | "">(initial?.categorie_id ?? "");
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function save() {
-    if (!nom.trim()) {
-      setErr("Le nom est requis.");
-      return;
-    }
-    setSaving(true);
-    setErr(null);
-    try {
-      const body = {
-        nom: nom.trim(),
-        marque: marque.trim() || null,
-        categorie_id: categorieId === "" ? null : categorieId,
-      };
-      if (initial) {
-        await api(`/modeles/${initial.id}`, { method: "PATCH", body });
-      } else {
-        await api("/modeles", { method: "POST", body });
-      }
-      toast(initial ? "Modèle modifié." : "Modèle créé.", "success");
-      await onSaved();
-    } catch (e) {
-      setErr(e instanceof ApiError ? e.message : "Enregistrement impossible.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const changeCategorie =
-    initial && (initial.nb_unites ?? 0) > 0 && categorieId !== (initial.categorie_id ?? "");
-
-  return (
-    <div className="space-y-3 rounded-2xl border border-line bg-bg-soft p-4">
-      <h2 className="text-sm font-semibold">
-        {initial ? "Modifier le modèle" : "Nouveau modèle"}
-      </h2>
-      <label className="block space-y-1">
-        <span className="text-xs font-medium text-fg-muted">Nom</span>
-        <input
-          value={nom}
-          onChange={(e) => setNom(e.target.value)}
-          placeholder="MH-100, H30V-L250…"
-          className={inputCls}
-        />
-      </label>
-      <label className="block space-y-1">
-        <span className="text-xs font-medium text-fg-muted">
-          Marque <span className="font-normal">(facultatif)</span>
-        </span>
-        <input
-          value={marque}
-          onChange={(e) => setMarque(e.target.value)}
-          placeholder="Robe, Yamaha…"
-          className={inputCls}
-        />
-      </label>
-      <label className="block space-y-1">
-        <span className="text-xs font-medium text-fg-muted">Catégorie</span>
-        <select
-          value={categorieId}
-          onChange={(e) =>
-            setCategorieId(e.target.value === "" ? "" : Number(e.target.value))
-          }
-          className={inputCls}
+      {canManage && !creating && (
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="fixed bottom-20 right-4 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-fg text-bg shadow-lg"
+          aria-label="Nouveau modèle"
         >
-          <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nom}
-            </option>
-          ))}
-        </select>
-        {changeCategorie && (
-          <span className="block text-xs text-warning">
-            S'applique aux {initial?.nb_unites} unités de ce modèle.
-          </span>
-        )}
-      </label>
-      {err && <p className="text-sm text-danger">{err}</p>}
-      <div className="flex gap-2">
-        <Button variant="ghost" className="flex-1" onClick={onCancel}>
-          Annuler
-        </Button>
-        <Button className="flex-1" loading={saving} onClick={() => void save()}>
-          Enregistrer
-        </Button>
-      </div>
+          <Icon name="add" className="text-2xl" />
+        </button>
+      )}
     </div>
   );
 }

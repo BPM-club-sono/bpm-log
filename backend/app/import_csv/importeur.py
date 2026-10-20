@@ -190,14 +190,11 @@ class _Import:
         plan, rap = self.plan, self.rap
 
         # 1. État actuel
-        categories = {c["nom"]: c["id"] for c in await self.lire("categories")}
-        sous_cats = {
-            (s["categorie_id"], s["nom"]): s["id"] for s in await self.lire("sous-categories")
-        }
-        champs = {
-            (c["categorie_id"], c["sous_categorie_id"], c["nom"])
-            for c in await self.lire("champs-specification")
-        }
+        # Les catégories du CSV sont des racines, ses sous-catégories leurs enfants.
+        lues = await self.lire("categories")
+        categories = {c["nom"]: c["id"] for c in lues if c["parent_id"] is None}
+        sous_cats = {(c["parent_id"], c["nom"]): c["id"] for c in lues if c["parent_id"]}
+        champs = {(c["categorie_id"], c["nom"]) for c in await self.lire("champs-specification")}
         connecteurs = {c["nom"]: c["id"] for c in await self.lire("connecteurs")}
         modeles = {m["nom"]: m for m in await self.lire("modeles")}
         for t in sorted(await self.lire("tickets", statut="tous"), key=lambda t: t["id"]):
@@ -219,8 +216,8 @@ class _Import:
                 else:
                     sous_cats[cle] = await self.creer(
                         "sous_categories",
-                        "sous-categories",
-                        {"nom": nom, "categorie_id": categories[cat]},
+                        "categories",
+                        {"nom": nom, "parent_id": categories[cat]},
                     )
 
         for nom in plan.connecteurs:
@@ -231,8 +228,9 @@ class _Import:
 
         for c in plan.champs:
             cat_id = categories[c.categorie]
-            sc_id = sous_cats[(cat_id, c.sous_categorie)] if c.sous_categorie else None
-            if (cat_id, sc_id, c.nom) in champs:
+            if c.sous_categorie:
+                cat_id = sous_cats[(cat_id, c.sous_categorie)]
+            if (cat_id, c.nom) in champs:
                 rap.existants["champs"] += 1
                 continue
             await self.creer(
@@ -244,7 +242,6 @@ class _Import:
                     "unite": c.unite,
                     "options": list(c.options),
                     "categorie_id": cat_id,
-                    "sous_categorie_id": sc_id,
                     "ordre": c.ordre,
                 },
             )
@@ -264,7 +261,8 @@ class _Import:
         connecteurs: dict[str, int],
         existant: dict | None,
     ) -> None:
-        cat_id = categories[m.categorie]
+        # Le modèle est rangé dans la sous-catégorie, qui hérite des champs de la racine.
+        cat_id = sous_cats[(categories[m.categorie], m.sous_categorie)]
         prevues = len(m.unites)
         deja = existant["nb_unites"] if existant else 0
         if existant is None:
@@ -281,8 +279,7 @@ class _Import:
                 await _appel(
                     self.http, "PATCH", f"modeles/{modele_id}", json={"categorie_id": cat_id}
                 )
-            sc_id = sous_cats[(cat_id, m.sous_categorie)]
-            await _ecrire_specs(self.http, m, modele_id, sc_id, connecteurs)
+            await _ecrire_specs(self.http, m, modele_id, connecteurs)
 
         unites = await self.unites(m, modele_id, deja)
         if unites is not None:
@@ -407,13 +404,11 @@ async def _ecrire_specs(
     http: httpx.AsyncClient,
     m: ModelePrevu,
     modele_id: int,
-    sous_categorie_id: int,
     connecteurs: dict[str, int],
 ) -> None:
     """PUT des specs fixes et de la connectique (écrasées depuis le CSV) ; `valeurs` vide :
     les valeurs des champs de spécification ne sont pas touchées."""
     corps = {
-        "sous_categorie_id": sous_categorie_id,
         **m.specs,
         "valeurs": {},
         "connectiques": [

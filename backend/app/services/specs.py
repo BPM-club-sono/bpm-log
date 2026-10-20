@@ -1,32 +1,32 @@
 """Spécifications techniques d'un modèle, ou d'un équipement sans modèle.
 
 Une unité rattachée à un modèle n'a pas de specs propres : le modèle fait foi
-(lecture des specs du modèle, écriture refusée). Les valeurs des champs qui ne
-s'appliquent plus (catégorie ou sous-catégorie changée) restent en base mais ne
-sont plus renvoyées.
+(lecture des specs du modèle, écriture refusée). Les champs applicables sont ceux
+de la catégorie et de tous ses ancêtres. Les valeurs des champs qui ne s'appliquent
+plus (catégorie changée) restent en base mais ne sont plus renvoyées.
 """
 
 import re
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, select
 
 from app.deps import DbSession
 from app.models import (
+    Categorie,
     ChampSpecification,
     Connecteur,
     Connectique,
     Equipment,
     Modele,
-    SousCategorie,
     ValeurSpecification,
 )
 from app.models.enums import TypeChampSpec
 from app.schemas.specs import ConnectiqueRead, SpecsRead, SpecsWrite, ValeurSpecRead
-from app.services.erreurs import conflit, introuvable, invalide, sous_categorie_or_404
+from app.services.categories import chemin, lignee
+from app.services.erreurs import conflit, introuvable, invalide
 
 _NOMBRE = re.compile(r"-?\d+(\.\d+)?")
 _COLONNES = (
-    "sous_categorie_id",
     "poids",
     "longueur",
     "largeur",
@@ -49,30 +49,33 @@ async def _cible_effective(db: DbSession, cible: Modele | Equipment) -> Modele |
     return cible
 
 
-async def _champs_applicables(
-    db: DbSession, categorie_id: int | None, sous_categorie_id: int | None
-) -> list[ChampSpecification]:
-    """Champs de la catégorie (sans sous-catégorie) + ceux de la sous-catégorie."""
+async def champs_applicables(
+    db: DbSession, categorie_id: int | None
+) -> list[tuple[ChampSpecification, str, int]]:
+    """Champs de la catégorie et de tous ses ancêtres, avec le nom de la catégorie
+    qui les définit et sa distance (0 = la catégorie elle-même). Les plus généraux
+    d'abord : on lit la fiche de la racine vers la feuille."""
     if categorie_id is None:
         return []
-    portee = ChampSpecification.sous_categorie_id.is_(None)
-    if sous_categorie_id is not None:
-        portee = or_(portee, ChampSpecification.sous_categorie_id == sous_categorie_id)
     stmt = (
-        select(ChampSpecification)
-        .where(ChampSpecification.categorie_id == categorie_id, portee)
-        .order_by(ChampSpecification.ordre, ChampSpecification.nom, ChampSpecification.id)
+        select(ChampSpecification, Categorie.nom, lignee.c.distance)
+        .join(lignee, lignee.c.ancetre_id == ChampSpecification.categorie_id)
+        .join(Categorie, Categorie.id == ChampSpecification.categorie_id)
+        .where(lignee.c.categorie_id == categorie_id)
+        .order_by(
+            lignee.c.distance.desc(),
+            ChampSpecification.ordre,
+            ChampSpecification.nom,
+            ChampSpecification.id,
+        )
     )
-    return list((await db.scalars(stmt)).all())
+    return [(c, nom, distance) for c, nom, distance in (await db.execute(stmt)).all()]
 
 
 async def lire_specs(db: DbSession, cible: Modele | Equipment) -> SpecsRead:
     """Specs effectives : celles du modèle pour une unité qui en a un."""
     cible = await _cible_effective(db, cible)
-    sous_categorie = (
-        await db.get(SousCategorie, cible.sous_categorie_id) if cible.sous_categorie_id else None
-    )
-    champs = await _champs_applicables(db, cible.categorie_id, cible.sous_categorie_id)
+    champs = await champs_applicables(db, cible.categorie_id)
     valeurs = dict(
         (
             await db.execute(
@@ -95,8 +98,7 @@ async def lire_specs(db: DbSession, cible: Modele | Equipment) -> SpecsRead:
         source="modele" if est_modele else "equipement",
         modele_id=cible.id if est_modele else None,
         categorie_id=cible.categorie_id,
-        sous_categorie_id=cible.sous_categorie_id,
-        sous_categorie_nom=sous_categorie.nom if sous_categorie else None,
+        categorie_chemin=await chemin(db, cible.categorie_id),
         poids=cible.poids,
         longueur=cible.longueur,
         largeur=cible.largeur,
@@ -110,9 +112,11 @@ async def lire_specs(db: DbSession, cible: Modele | Equipment) -> SpecsRead:
                 type=c.type,
                 unite=c.unite,
                 options=list(c.options or []),
+                categorie_id=c.categorie_id,
+                categorie_nom=categorie_nom,
                 valeur=valeurs.get(c.id),
             )
-            for c in champs
+            for c, categorie_nom, _distance in champs
         ],
         connectiques=[
             ConnectiqueRead(
@@ -143,25 +147,13 @@ def normaliser_valeur(champ: ChampSpecification, brut: str) -> str:
     return valeur
 
 
-async def _verifier_sous_categorie(
-    db: DbSession, categorie_id: int | None, sous_categorie_id: int | None
-) -> None:
-    if sous_categorie_id is None:
-        return
-    sc = await sous_categorie_or_404(db, sous_categorie_id)
-    if sc.categorie_id != categorie_id:
-        raise invalide("La sous-catégorie n'appartient pas à la catégorie.")
-
-
 async def _valeurs_normalisees(
     db: DbSession, cible: Modele | Equipment, data: SpecsWrite
 ) -> dict[int, str | None]:
     """Valeurs fournies, validées et normalisées ; None = ligne à supprimer."""
     if not data.valeurs:
         return {}
-    champs = {
-        c.id: c for c in await _champs_applicables(db, cible.categorie_id, data.sous_categorie_id)
-    }
+    champs = {c.id: c for c, _nom, _distance in await champs_applicables(db, cible.categorie_id)}
     if hors_portee := sorted(set(data.valeurs) - set(champs)):
         raise invalide(f"Champ(s) non applicable(s) ici : {', '.join(map(str, hors_portee))}.")
     return {
@@ -189,7 +181,6 @@ async def ecrire_specs(db: DbSession, cible: Modele | Equipment, data: SpecsWrit
     écriture. 409 sur une unité rattachée à un modèle."""
     if isinstance(cible, Equipment) and cible.modele_id is not None:
         raise conflit("Les spécifications se modifient sur le modèle.")
-    await _verifier_sous_categorie(db, cible.categorie_id, data.sous_categorie_id)
     valeurs = await _valeurs_normalisees(db, cible, data)
     await _verifier_connectiques(db, data)
 

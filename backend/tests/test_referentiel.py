@@ -1,4 +1,4 @@
-"""Référentiel des spécifications : catégories, sous-catégories, champs, connecteurs.
+"""Référentiel des spécifications : catégories en arbre, champs, connecteurs.
 
 Session non commitée (rollback en teardown) ; les routeurs sont appelés en direct.
 """
@@ -16,27 +16,27 @@ from app.models import (
     ChampSpecification,
     Membre,
     Modele,
-    SousCategorie,
     ValeurSpecification,
 )
 from app.models.enums import TypeChampSpec
 from app.routers.referentiel import (
     create_categorie,
     create_champ,
-    create_sous_categorie,
     delete_categorie,
     delete_champ,
-    delete_sous_categorie,
+    get_categorie,
     list_champs,
+    update_categorie,
     update_champ,
 )
 from app.schemas.specs import (
     CategorieCreate,
+    CategorieUpdate,
     ChampSpecCreate,
     ChampSpecUpdate,
-    SousCategorieCreate,
 )
 from app.security.rbac import RequireStaff
+from app.services.categories import ids_descendants
 
 
 @pytest.fixture
@@ -48,8 +48,8 @@ def _nom(prefixe: str = "Cat") -> str:
     return f"{prefixe} {uuid.uuid4().hex[:6]}"
 
 
-async def _categorie(session) -> Categorie:
-    c = Categorie(nom=_nom())
+async def _categorie(session, parent_id: int | None = None) -> Categorie:
+    c = Categorie(nom=_nom(), parent_id=parent_id)
     session.add(c)
     await session.flush()
     return c
@@ -57,7 +57,8 @@ async def _categorie(session) -> Categorie:
 
 async def _champ(session, categorie_id: int, **kw) -> ChampSpecification:
     kw.setdefault("type", TypeChampSpec.TEXTE)
-    c = ChampSpecification(nom=_nom("Champ"), categorie_id=categorie_id, **kw)
+    kw.setdefault("nom", _nom("Champ"))
+    c = ChampSpecification(categorie_id=categorie_id, **kw)
     session.add(c)
     await session.flush()
     return c
@@ -95,48 +96,105 @@ async def test_suppression_categorie_utilisee_refusee(db_session, staff):
     assert await db_session.get(Categorie, vide.id) is None
 
 
-async def test_sous_categorie_doublon_par_categorie(db_session, staff):
-    a, b = await _categorie(db_session), await _categorie(db_session)
-    await create_sous_categorie(
-        SousCategorieCreate(nom="Beam", categorie_id=a.id), staff, db_session
-    )
+async def test_suppression_categorie_avec_enfant_refusee(db_session, staff):
+    parent = await _categorie(db_session)
+    await _categorie(db_session, parent.id)
     with pytest.raises(HTTPException) as exc:
-        await create_sous_categorie(
-            SousCategorieCreate(nom="Beam", categorie_id=a.id), staff, db_session
-        )
+        await delete_categorie(parent.id, staff, db_session)
     assert exc.value.status_code == 409
-    autre = await create_sous_categorie(
-        SousCategorieCreate(nom="Beam", categorie_id=b.id), staff, db_session
-    )
-    assert autre.categorie_id == b.id
+    assert "sous-catégorie" in exc.value.detail
 
 
-async def test_suppression_sous_categorie_utilisee_refusee(db_session, staff):
-    cat = await _categorie(db_session)
-    sc = SousCategorie(nom="Beam", categorie_id=cat.id)
-    db_session.add(sc)
-    await db_session.flush()
-    db_session.add(Modele(nom=_nom("MH"), categorie_id=cat.id, sous_categorie_id=sc.id))
-    await db_session.flush()
-    with pytest.raises(HTTPException) as exc:
-        await delete_sous_categorie(sc.id, staff, db_session)
-    assert exc.value.status_code == 409
-
-
-async def test_champ_sous_categorie_hors_categorie(db_session, staff):
+async def test_nom_unique_entre_soeurs(db_session, staff):
     a, b = await _categorie(db_session), await _categorie(db_session)
-    sc = SousCategorie(nom="Beam", categorie_id=a.id)
-    db_session.add(sc)
-    await db_session.flush()
+    await create_categorie(CategorieCreate(nom="Beam", parent_id=a.id), staff, db_session)
     with pytest.raises(HTTPException) as exc:
-        await create_champ(
-            ChampSpecCreate(
-                nom="Poids", type=TypeChampSpec.NOMBRE, categorie_id=b.id, sous_categorie_id=sc.id
-            ),
-            staff,
-            db_session,
-        )
-    assert exc.value.status_code == 422
+        await create_categorie(CategorieCreate(nom="Beam", parent_id=a.id), staff, db_session)
+    assert exc.value.status_code == 409
+    autre = await create_categorie(CategorieCreate(nom="Beam", parent_id=b.id), staff, db_session)
+    assert (autre.parent_id, autre.chemin) == (b.id, f"{b.nom} › Beam")
+
+
+async def test_parent_introuvable(db_session, staff):
+    with pytest.raises(HTTPException) as exc:
+        await create_categorie(CategorieCreate(nom=_nom(), parent_id=10**9), staff, db_session)
+    assert exc.value.status_code == 404
+
+
+async def test_deplacement_anti_cycle(db_session, staff):
+    racine = await _categorie(db_session)
+    enfant = await _categorie(db_session, racine.id)
+    petit = await _categorie(db_session, enfant.id)
+    for parent_id in (racine.id, petit.id):
+        with pytest.raises(HTTPException) as exc:
+            await update_categorie(
+                racine.id, CategorieUpdate(parent_id=parent_id), staff, db_session
+            )
+        assert exc.value.status_code == 422
+
+    autre = await _categorie(db_session)
+    res = await update_categorie(enfant.id, CategorieUpdate(parent_id=autre.id), staff, db_session)
+    assert res.chemin == f"{autre.nom} › {enfant.nom}"
+    assert (await get_categorie(petit.id, staff, db_session)).chemin == (
+        f"{autre.nom} › {enfant.nom} › {petit.nom}"
+    )
+    # parent_id à null : remonte à la racine.
+    res = await update_categorie(enfant.id, CategorieUpdate(parent_id=None), staff, db_session)
+    assert (res.parent_id, res.chemin) == (None, enfant.nom)
+
+
+async def test_champs_herites_sur_trois_niveaux(db_session, staff):
+    racine = await _categorie(db_session)
+    enfant = await _categorie(db_session, racine.id)
+    petit = await _categorie(db_session, enfant.id)
+    a = await _champ(db_session, racine.id)
+    b = await _champ(db_session, enfant.id)
+    c = await _champ(db_session, petit.id)
+    await _champ(db_session, (await _categorie(db_session, racine.id)).id)  # branche sœur
+
+    lus = await list_champs(staff, db_session, categorie_id=petit.id, herites=True)
+    assert [(x.id, x.herite, x.categorie_nom) for x in lus] == [
+        (a.id, True, racine.nom),
+        (b.id, True, enfant.nom),
+        (c.id, False, petit.nom),
+    ]
+    propres = await list_champs(staff, db_session, categorie_id=petit.id)
+    assert [x.id for x in propres] == [c.id]
+
+
+async def test_nom_de_champ_unique_sur_la_lignee(db_session, staff):
+    racine = await _categorie(db_session)
+    enfant = await _categorie(db_session, racine.id)
+    soeur = await _categorie(db_session, racine.id)
+    await create_champ(
+        ChampSpecCreate(nom="Angle", type=TypeChampSpec.NOMBRE, categorie_id=enfant.id),
+        staff,
+        db_session,
+    )
+    # Ancêtre ou descendant : refusé ; branche sœur : permis.
+    for categorie_id in (racine.id, enfant.id):
+        with pytest.raises(HTTPException) as exc:
+            await create_champ(
+                ChampSpecCreate(nom="Angle", type=TypeChampSpec.NOMBRE, categorie_id=categorie_id),
+                staff,
+                db_session,
+            )
+        assert exc.value.status_code == 409
+    await create_champ(
+        ChampSpecCreate(nom="Angle", type=TypeChampSpec.NOMBRE, categorie_id=soeur.id),
+        staff,
+        db_session,
+    )
+
+
+async def test_deplacement_refuse_si_champ_homonyme(db_session, staff):
+    a, b = await _categorie(db_session), await _categorie(db_session)
+    champ = await _champ(db_session, a.id)
+    await _champ(db_session, b.id, nom=champ.nom)
+    with pytest.raises(HTTPException) as exc:
+        await update_categorie(b.id, CategorieUpdate(parent_id=a.id), staff, db_session)
+    assert exc.value.status_code == 409
+    assert champ.nom in exc.value.detail
 
 
 async def test_champ_choix_sans_option(db_session, staff):
@@ -200,7 +258,6 @@ async def test_suppression_champ_cascade(db_session, staff):
 def test_ecritures_exigent_staff():
     prefixes = (
         "/api/categories",
-        "/api/sous-categories",
         "/api/champs-specification",
         "/api/connecteurs",
     )
@@ -210,4 +267,21 @@ def test_ecritures_exigent_staff():
             hints = typing.get_type_hints(endpoint, include_extras=True)
             assert hints["_user"] is RequireStaff, path
             vues += 1
-    assert vues == 12
+    assert vues == 9
+
+
+async def test_fiche_categorie(db_session, staff):
+    c = await _categorie(db_session)
+    assert (await get_categorie(c.id, staff, db_session)).nom == c.nom
+    with pytest.raises(HTTPException) as exc:
+        await get_categorie(10**9, staff, db_session)
+    assert exc.value.status_code == 404
+
+
+async def test_descendants_pour_filtre_du_parc(db_session):
+    racine = await _categorie(db_session)
+    enfant = await _categorie(db_session, racine.id)
+    petit = await _categorie(db_session, enfant.id)
+    await _categorie(db_session)  # hors arbre
+    ids = set((await db_session.scalars(ids_descendants(racine.id))).all())
+    assert ids == {racine.id, enfant.id, petit.id}

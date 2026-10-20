@@ -1,27 +1,20 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { ChampSpec, SousCategorie, TypeChampSpec } from "@/lib/types";
+import type { ChampSpec, TypeChampSpec } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { useToast } from "@/shared/Toast";
-import { inputCls, useCanManage, useFail } from "./shared";
+import { inputCls, resumeChamp, TYPES, useCanManage, useFail } from "./shared";
 
-const TYPES: Record<TypeChampSpec, string> = {
-  nombre: "Nombre",
-  texte: "Texte",
-  choix: "Choix",
-  oui_non: "Oui / non",
-};
-
+/** Champs propres d'une catégorie (Staff : ajout, édition, suppression). Les champs
+ *  hérités des ancêtres sont affichés à part par la fiche. */
 export function Champs({
   categorieId,
   items,
-  sousCats,
   onChange,
 }: {
   categorieId: number;
   items: ChampSpec[];
-  sousCats: SousCategorie[];
   onChange: () => Promise<void>;
 }) {
   const canManage = useCanManage();
@@ -47,12 +40,11 @@ export function Champs({
     }
   }
 
-  const sousNom = (id: number | null) => sousCats.find((s) => s.id === id)?.nom;
-
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Champs</h3>
-      {items.length === 0 && !creating && <p className="text-sm text-fg-muted">Aucun.</p>}
+      {items.length === 0 && !creating && (
+        <p className="text-sm text-fg-muted">Aucun champ propre à cette catégorie.</p>
+      )}
       <ul className="space-y-2">
         {[...items]
           .sort((a, b) => a.ordre - b.ordre || a.nom.localeCompare(b.nom))
@@ -61,10 +53,7 @@ export function Champs({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{c.nom}</p>
                 <p className="truncate text-xs text-fg-muted">
-                  {TYPES[c.type]}
-                  {c.unite ? ` (${c.unite})` : ""}
-                  {c.type === "choix" && c.options.length > 0 ? ` : ${c.options.join(", ")}` : ""}
-                  {sousNom(c.sous_categorie_id) ? ` · ${sousNom(c.sous_categorie_id)}` : ""}
+                  {resumeChamp(c)}
                   {` · ordre ${c.ordre} · ${c.nb_valeurs} valeur${c.nb_valeurs > 1 ? "s" : ""}`}
                 </p>
               </div>
@@ -99,7 +88,6 @@ export function Champs({
           key={editing?.id ?? "new"}
           initial={editing}
           categorieId={categorieId}
-          sousCats={sousCats}
           onCancel={() => {
             setCreating(false);
             setEditing(null);
@@ -125,13 +113,11 @@ export function Champs({
 function ChampForm({
   initial,
   categorieId,
-  sousCats,
   onCancel,
   onSaved,
 }: {
   initial: ChampSpec | null;
   categorieId: number;
-  sousCats: SousCategorie[];
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -140,7 +126,6 @@ function ChampForm({
   const [type, setType] = useState<TypeChampSpec>(initial?.type ?? "texte");
   const [unite, setUnite] = useState(initial?.unite ?? "");
   const [options, setOptions] = useState((initial?.options ?? []).join("\n"));
-  const [sousId, setSousId] = useState<number | "">(initial?.sous_categorie_id ?? "");
   const [ordre, setOrdre] = useState(String(initial?.ordre ?? 0));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -167,7 +152,6 @@ function ChampForm({
         unite: type === "nombre" && unite.trim() ? unite.trim() : null,
         options: type === "choix" ? opts : [],
         categorie_id: categorieId,
-        sous_categorie_id: sousId === "" ? null : sousId,
         ordre: Number.parseInt(ordre, 10) || 0,
       };
       if (initial) {
@@ -231,23 +215,6 @@ function ChampForm({
           />
         </label>
       )}
-      <label className="block space-y-1">
-        <span className="text-xs font-medium text-fg-muted">
-          Sous-catégorie <span className="font-normal">(facultatif)</span>
-        </span>
-        <select
-          value={sousId}
-          onChange={(e) => setSousId(e.target.value === "" ? "" : Number(e.target.value))}
-          className={inputCls}
-        >
-          <option value="">Toute la catégorie</option>
-          {sousCats.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nom}
-            </option>
-          ))}
-        </select>
-      </label>
       <label className="block space-y-1">
         <span className="text-xs font-medium text-fg-muted">Ordre</span>
         <input

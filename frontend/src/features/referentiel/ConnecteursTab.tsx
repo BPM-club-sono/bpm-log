@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { Connecteur } from "@/lib/types";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
+import { SearchInput } from "@/shared/SearchInput";
 import { useToast } from "@/shared/Toast";
 import { inputCls, useCanManage, useFail } from "./shared";
 
+/** Catalogue des connecteurs : recherche, lignes pleine largeur, renommage en place. */
 export function ConnecteursTab() {
   const { toast } = useToast();
   const canManage = useCanManage();
@@ -15,6 +17,8 @@ export function ConnecteursTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nouveau, setNouveau] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editNom, setEditNom] = useState("");
 
@@ -38,6 +42,7 @@ export function ConnecteursTab() {
     try {
       await api("/connecteurs", { method: "POST", body: { nom: nouveau.trim() } });
       setNouveau("");
+      setCreating(false);
       toast("Connecteur ajouté.", "success");
       await load();
     } catch (err) {
@@ -72,9 +77,14 @@ export function ConnecteursTab() {
     }
   }
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? items.filter((c) => c.nom.toLowerCase().includes(q)) : items;
+  }, [items, query]);
+
   return (
     <div className="space-y-4">
-      {canManage && (
+      {canManage && creating && (
         <div className="flex gap-2">
           <input
             value={nouveau}
@@ -83,23 +93,42 @@ export function ConnecteursTab() {
             placeholder="Nouveau connecteur (XLR 3, PowerCon…)"
             aria-label="Nouveau connecteur"
             className={inputCls}
+            autoFocus
           />
           <Button className="flex-none" onClick={() => void add()} aria-label="Ajouter">
             <Icon name="add" className="text-base" />
           </Button>
+          <Button
+            variant="ghost"
+            className="flex-none"
+            onClick={() => setCreating(false)}
+            aria-label="Annuler"
+          >
+            <Icon name="close" className="text-base" />
+          </Button>
         </div>
       )}
 
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        placeholder="Rechercher un connecteur…"
+        aria-label="Rechercher un connecteur"
+      />
+
       {loading && <p className="py-8 text-center text-sm text-fg-muted">Chargement…</p>}
       {error && <p className="text-sm text-danger">{error}</p>}
-      {!loading && !error && items.length === 0 && (
-        <p className="text-sm text-fg-muted">Aucun connecteur.</p>
+      {!loading && !error && filtered.length === 0 && (
+        <div className="flex flex-col items-center gap-2 py-12 text-fg-muted">
+          <Icon name="cable" className="text-4xl" />
+          <p className="text-sm">Aucun connecteur trouvé.</p>
+        </div>
       )}
 
-      {items.length > 0 && (
-        <ul className="divide-y divide-line rounded-2xl border border-line bg-bg-soft">
-          {items.map((c) => (
-            <li key={c.id} className="flex items-center gap-3 px-4 py-3">
+      {filtered.length > 0 && (
+        <ul className="divide-y divide-line">
+          {filtered.map((c) => (
+            <li key={c.id} className="flex items-center gap-3 py-3">
               {editId === c.id ? (
                 <>
                   <input
@@ -129,8 +158,11 @@ export function ConnecteursTab() {
                 </>
               ) : (
                 <>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-bg-elev text-fg-muted">
+                    <Icon name="cable" className="text-lg" />
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{c.nom}</p>
+                    <p className="truncate font-medium">{c.nom}</p>
                     <p className="text-xs text-fg-muted">
                       {c.nb_utilisations} utilisation{c.nb_utilisations > 1 ? "s" : ""}
                     </p>
@@ -163,6 +195,17 @@ export function ConnecteursTab() {
             </li>
           ))}
         </ul>
+      )}
+
+      {canManage && !creating && (
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="fixed bottom-20 right-4 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-fg text-bg shadow-lg"
+          aria-label="Nouveau connecteur"
+        >
+          <Icon name="add" className="text-2xl" />
+        </button>
       )}
     </div>
   );

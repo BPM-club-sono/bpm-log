@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "@/shared/Icon";
 import { CategoriesTab } from "./CategoriesTab";
 import { ConnecteursTab } from "./ConnecteursTab";
@@ -9,10 +8,14 @@ type Onglet = "categories" | "connecteurs";
 /** Référentiel des spécifications : champs par catégorie et connecteurs.
  *  Staff modifie ; Tech consulte en lecture seule. */
 export function ReferentielPage() {
-  const [onglet, setOnglet] = useState<Onglet>("categories");
+  // Onglet dans l'URL : le retour depuis une fiche catégorie retrouve le bon onglet.
+  const [params, setParams] = useSearchParams();
+  const onglet: Onglet = params.get("onglet") === "connecteurs" ? "connecteurs" : "categories";
+  const setOnglet = (o: Onglet) =>
+    setParams(o === "categories" ? {} : { onglet: o }, { replace: true });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <Link to="/inventaire" className="inline-flex items-center gap-1 text-sm text-fg-muted">
         <Icon name="arrow_back" className="text-base" /> Parc
       </Link>

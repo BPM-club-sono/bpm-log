@@ -23,6 +23,9 @@ class CategorieRead(BaseModel):
     id: int
     nom: str
     description: str | None
+    parent_id: int | None = None
+    # « Son › Ampli » : la catégorie précédée de ses ancêtres.
+    chemin: str | None = None
 
 
 #: Nom de modèle : espaces de bord retirés, jamais vide. Pas d'autre normalisation
@@ -40,6 +43,7 @@ class ModeleRead(BaseModel):
     marque: str | None
     categorie_id: int | None
     categorie_nom: str | None = None
+    categorie_chemin: str | None = None
     nb_unites: int = 0
 
 
