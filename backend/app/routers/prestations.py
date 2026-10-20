@@ -52,6 +52,7 @@ from app.security.rbac import RequireStaff
 from app.services import contenants, disponibilite
 from app.services.locations_rendues import TriLocations, trier_locations_rendues
 from app.services.prestation_statut import recalculer_statut, statut_derive
+from app.services.totaux_presta import calculer_totaux, defiger_allocations, figer_allocations
 
 router = APIRouter(prefix="/prestations", tags=["prestations"])
 
@@ -60,9 +61,11 @@ def _allocation_read(
     alloc: AllocationPresta,
     loc: tuple[int, str] | None = None,
     modele: Modele | None = None,
+    unitaires: tuple[float | None, float | None] = (None, None),
 ) -> AllocationRead:
     """`loc` = (fournisseur_id, fournisseur_nom) si l'équipement est loué, sinon None ;
-    `modele` = le modèle de l'équipement, pour regrouper les unités à l'affichage."""
+    `modele` = le modèle de l'équipement, pour regrouper les unités à l'affichage ;
+    `unitaires` = (prix_unitaire, poids_unitaire) calculés par `calculer_totaux`."""
     eq = alloc.equipment if "equipment" in alloc.__dict__ else None
     return AllocationRead(
         id=alloc.id,
@@ -83,6 +86,8 @@ def _allocation_read(
         equipment_modele_id=modele.id if modele is not None else None,
         equipment_modele_nom=modele.nom if modele is not None else None,
         equipment_modele_marque=modele.marque if modele is not None else None,
+        prix_unitaire=unitaires[0],
+        poids_unitaire=unitaires[1],
     )
 
 
@@ -228,14 +233,19 @@ async def _detail_response(db: DbSession, presta: Prestation) -> PrestationDetai
         if modele_ids
         else {}
     )
+    totaux, unitaires = await calculer_totaux(db, presta, rows)
     return PrestationDetail(
         **PrestationRead.model_validate(presta).model_dump(),
         allocations=[
             _allocation_read(
-                a, loc_map.get(a.equipment_id), modele_map.get(a.equipment.modele_id)
+                a,
+                loc_map.get(a.equipment_id),
+                modele_map.get(a.equipment.modele_id),
+                unitaires[a.id],
             )
             for a in rows
         ],
+        totaux=totaux,
     )
 
 
@@ -255,6 +265,16 @@ async def update_prestation(
     _user: RequireStaff,
 ) -> Prestation:
     presta = await _get_presta_or_404(db, presta_id)
+    # Les prix sont figés au tarif du type à la clôture : en changer mélangerait deux tarifs.
+    if (
+        presta.statut == StatutPrestation.TERMINEE
+        and data.type is not None
+        and data.type != presta.type
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Prestation clôturée : rouvre-la pour changer son type.",
+        )
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(presta, field, value)
     # Un PATCH partiel (une seule borne) doit rester cohérent avec la valeur déjà
@@ -765,6 +785,7 @@ async def cloturer_prestation(
 ) -> PrestationDetail:
     """Tranche les items non retournés et termine la prestation."""
     presta = await _get_presta_or_404(db, presta_id)
+    deja_terminee = presta.statut == StatutPrestation.TERMINEE
     allocs = list(
         (
             await db.scalars(
@@ -828,6 +849,10 @@ async def cloturer_prestation(
                 )
         # "ouvert" : on ne touche à rien, l'écart reste visible.
 
+    # Clôture rejouée sur une presta déjà terminée (double envoi) : les valeurs
+    # figées restent celles de la première clôture.
+    if not deja_terminee:
+        await figer_allocations(db, presta)
     presta.statut = StatutPrestation.TERMINEE
     await db.commit()
     return await _detail_response(db, presta)
@@ -844,9 +869,12 @@ async def rouvrir_prestation(
     Sortie de secours quand du matériel a été oublié après la clôture. On ne
     défait pas les effets de la clôture (matériel marqué perdu/en panne, tickets
     créés) : rouvrir sert à compléter la prestation, pas à réécrire son histoire.
+    Seuls les prix et poids figés sont relâchés : les totaux repartent du catalogue
+    jusqu'à la prochaine clôture.
     Idempotent : rappeler la route ne fait que réaligner le statut.
     """
     presta = await _get_presta_or_404(db, presta_id)
+    await defiger_allocations(db, presta.id)
     presta.statut = await statut_derive(db, presta.id)
     await db.commit()
     return await _detail_response(db, presta)

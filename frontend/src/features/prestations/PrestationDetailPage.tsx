@@ -20,6 +20,8 @@ import { Icon } from "@/shared/Icon";
 import { EquipmentForm } from "@/features/equipment/EquipmentForm";
 import { ChecklistView, type ChecklistSens } from "./ChecklistView";
 import { LocationsRendues } from "./LocationsRendues";
+import { TotauxCard } from "./TotauxCard";
+import { formatPrix } from "@/features/specs/format";
 import { ModeleSearch } from "./ModeleSearch";
 import {
   ecrireModeRecherche,
@@ -489,6 +491,7 @@ function InfoView({
       {a.quantite === 1
         ? STATUT_ALLOC_LABEL[a.statut]
         : `Prévu ${a.quantite} · sorti ${a.quantite_sortie} · retourné ${a.quantite_retournee}`}
+      {a.prix_unitaire != null && ` · ${formatPrix(a.prix_unitaire)}/u`}
     </p>
   );
   // Unité tombée en panne (ou perdue) depuis son allocation : à remplacer à la main.
@@ -549,6 +552,7 @@ function InfoView({
 
   return (
     <div className="space-y-4">
+      <TotauxCard totaux={detail.totaux} />
       {detail.statut === "Terminee" && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-line bg-bg-soft p-3">
           <div className="min-w-0">

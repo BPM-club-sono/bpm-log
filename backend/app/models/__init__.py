@@ -3,6 +3,9 @@
 from app.models.db_models import (
     AllocationPresta,
     Categorie,
+    ChampSpecification,
+    Connecteur,
+    Connectique,
     Emplacement,
     Equipment,
     EquipmentConsommable,
@@ -18,13 +21,18 @@ from app.models.db_models import (
     PhotoPanne,
     Prestation,
     PushSubscription,
+    SousCategorie,
     TicketReparation,
     UserAuth,
+    ValeurSpecification,
 )
 
 __all__ = [
     "AllocationPresta",
     "Categorie",
+    "ChampSpecification",
+    "Connecteur",
+    "Connectique",
     "Emplacement",
     "Equipment",
     "EquipmentConsommable",
@@ -40,6 +48,8 @@ __all__ = [
     "PhotoPanne",
     "Prestation",
     "PushSubscription",
+    "SousCategorie",
     "TicketReparation",
     "UserAuth",
+    "ValeurSpecification",
 ]

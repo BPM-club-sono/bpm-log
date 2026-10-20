@@ -5,8 +5,10 @@ bord (création du dossier photos dans /var, démarrage du scheduler, etc.).
 """
 
 import os
+import re
 import tempfile
 import uuid
+from contextlib import contextmanager
 
 import pytest
 
@@ -26,6 +28,8 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.config import settings  # noqa: E402
+from app.database import get_db  # noqa: E402
+from app.deps import get_current_user  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Equipment, Membre  # noqa: E402
 from app.models.enums import RoleMembre  # noqa: E402
@@ -75,7 +79,7 @@ async def membre_id(db_session) -> int:
     Ne jamais supposer qu'un membre d'id 1 existe : c'est vrai sur la base de dev,
     pas sur la base vierge de la CI.
     """
-    membre = Membre(email=f"test-{uuid.uuid4().hex[:8]}@test.local", role=RoleMembre.STAFF)
+    membre = Membre(email=f"test-{uuid.uuid4().hex[:8]}@bpm.example", role=RoleMembre.STAFF)
     db_session.add(membre)
     await db_session.flush()
     return membre.id
@@ -94,3 +98,86 @@ async def make_equipment(session, nom: str, **kw) -> Equipment:
     session.add(eq)
     await session.flush()
     return eq
+
+
+def routes_montees():
+    """(chemin complet, méthodes, endpoint) des routes de l'app.
+
+    FastAPI garde les routeurs inclus imbriqués : on parcourt `original_router`.
+    """
+    for incl in app.routes:
+        routeur = getattr(incl, "original_router", None)
+        if routeur is None:
+            continue
+        prefixe = incl.include_context.prefix
+        for route in routeur.routes:
+            yield prefixe + route.path, route.methods or set(), route.endpoint
+
+
+@contextmanager
+def surcharger_app(session, membre):
+    """Branche l'app sur `session` et authentifie `membre`, sans jeton ni commit réel.
+
+    Ne retire à la sortie que les deux surcharges posées ici.
+    """
+
+    async def _get_db():
+        yield session
+
+    async def _get_current_user():
+        return membre
+
+    app.dependency_overrides[get_db] = _get_db
+    app.dependency_overrides[get_current_user] = _get_current_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+async def staff_import(db_session, membre_id) -> Membre:
+    """Le membre Staff jetable de `membre_id`, utilisé par les tests d'import."""
+    return await db_session.get(Membre, membre_id)
+
+
+@pytest.fixture
+async def api_import(db_session, staff_import):
+    """Client HTTP (base `/api`) branché sur `db_session`, connecté en Staff."""
+    with surcharger_app(db_session, staff_import):
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test/api") as c:
+            yield c
+
+
+class TransportEnPanne(httpx.AsyncBaseTransport):
+    """Transport ASGI qui simule une panne sur la `n`-ième requête vérifiant `quand`.
+
+    La requête fautive n'atteint pas l'app : elle lève `httpx.ConnectError`, ou renvoie
+    `statut` (ex. 401) si donné. Les autres requêtes passent normalement.
+    """
+
+    def __init__(self, quand, n: int = 1, statut: int | None = None):
+        self.interne = ASGITransport(app=app)
+        self.quand, self.n, self.statut = quand, n, statut
+        self.vus = 0
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if self.quand(request):
+            self.vus += 1
+            if self.vus == self.n:
+                if self.statut is None:
+                    raise httpx.ConnectError("coupure simulée", request=request)
+                return httpx.Response(self.statut, json={"detail": "Panne simulée"})
+        return await self.interne.handle_async_request(request)
+
+
+def requete(methode: str, motif: str):
+    """Prédicat pour TransportEnPanne : méthode exacte, chemin `/api/<motif>` (regex)."""
+    regex = re.compile(rf"/api/{motif}")
+
+    def quand(request: httpx.Request) -> bool:
+        return request.method == methode and regex.fullmatch(request.url.path) is not None
+
+    return quand

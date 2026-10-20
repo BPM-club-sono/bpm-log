@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
-import type { Categorie, Modele } from "@/lib/types";
+import type { Categorie, Modele, Specs } from "@/lib/types";
 import { useAuth } from "@/app/AuthContext";
 import { Button } from "@/shared/Button";
 import { Icon } from "@/shared/Icon";
 import { useToast } from "@/shared/Toast";
+import { SpecsEditor } from "@/features/specs/SpecsEditor";
+import { SpecsSheet } from "@/features/specs/SpecsSheet";
 
 const inputCls =
   "h-11 w-full rounded-xl border border-line bg-bg-soft px-3 text-sm outline-none focus:border-fg";
@@ -24,6 +26,8 @@ export function ModelesPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Modele | null>(null);
   const [creating, setCreating] = useState(false);
+  const [ouvert, setOuvert] = useState<number | null>(null);
+  const [specsEdit, setSpecsEdit] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -98,41 +102,80 @@ export function ModelesPage() {
       {items.length > 0 && (
         <ul className="divide-y divide-line rounded-2xl border border-line bg-bg-soft">
           {items.map((m) => (
-            <li key={m.id} className="flex items-center gap-3 px-4 py-3">
-              <Link
-                to={`/inventaire?modele=${m.id}`}
-                className="min-w-0 flex-1 hover:opacity-70"
-              >
-                <p className="truncate text-sm font-medium">
-                  {m.nom}
-                  {m.marque && <span className="text-fg-muted"> · {m.marque}</span>}
-                </p>
-                <p className="truncate text-xs text-fg-muted">
-                  {m.nb_unites ?? 0} unité{(m.nb_unites ?? 0) > 1 ? "s" : ""}
-                  {m.categorie_nom ? ` · ${m.categorie_nom}` : ""}
-                </p>
-              </Link>
-              {canManage && (
+            <li key={m.id} className="px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Link
+                  to={`/inventaire?modele=${m.id}`}
+                  className="min-w-0 flex-1 hover:opacity-70"
+                >
+                  <p className="truncate text-sm font-medium">
+                    {m.nom}
+                    {m.marque && <span className="text-fg-muted"> · {m.marque}</span>}
+                  </p>
+                  <p className="truncate text-xs text-fg-muted">
+                    {m.nb_unites ?? 0} unité{(m.nb_unites ?? 0) > 1 ? "s" : ""}
+                    {m.categorie_nom ? ` · ${m.categorie_nom}` : ""}
+                  </p>
+                </Link>
                 <button
                   type="button"
-                  onClick={() => setEditing(m)}
+                  onClick={() => setOuvert(ouvert === m.id ? null : m.id)}
                   className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-fg-muted"
-                  aria-label="Modifier"
+                  aria-label="Voir les spécifications"
+                  aria-expanded={ouvert === m.id}
                 >
-                  <Icon name="edit" className="text-lg" />
+                  <Icon name={ouvert === m.id ? "expand_less" : "expand_more"} className="text-lg" />
                 </button>
-              )}
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => void remove(m)}
-                  disabled={(m.nb_unites ?? 0) > 0}
-                  title={(m.nb_unites ?? 0) > 0 ? "Utilisé par du matériel" : undefined}
-                  className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-danger disabled:opacity-40"
-                  aria-label="Supprimer"
-                >
-                  <Icon name="delete" className="text-lg" />
-                </button>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(m)}
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-fg-muted"
+                    aria-label="Modifier"
+                  >
+                    <Icon name="edit" className="text-lg" />
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => void remove(m)}
+                    disabled={(m.nb_unites ?? 0) > 0}
+                    title={(m.nb_unites ?? 0) > 0 ? "Utilisé par du matériel" : undefined}
+                    className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-line text-danger disabled:opacity-40"
+                    aria-label="Supprimer"
+                  >
+                    <Icon name="delete" className="text-lg" />
+                  </button>
+                )}
+              </div>
+              {ouvert === m.id && (
+                <div className="pt-3">
+                  {specsEdit === m.id ? (
+                    <SpecsEditor
+                      cible="modeles"
+                      id={m.id}
+                      onCancel={() => setSpecsEdit(null)}
+                      onSaved={() => {
+                        setSpecsEdit(null);
+                        toast("Spécifications enregistrées.", "success");
+                      }}
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      {canManage && (
+                        <Button
+                          variant="ghost"
+                          className="h-9 px-3"
+                          onClick={() => setSpecsEdit(m.id)}
+                        >
+                          Éditer les spécifications
+                        </Button>
+                      )}
+                      <ModeleSpecs key={m.id} id={m.id} />
+                    </div>
+                  )}
+                </div>
               )}
             </li>
           ))}
@@ -140,6 +183,17 @@ export function ModelesPage() {
       )}
     </div>
   );
+}
+
+function ModeleSpecs({ id }: { id: number }) {
+  const [specs, setSpecs] = useState<Specs | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    api<Specs>(`/modeles/${id}/specs`).then(setSpecs, () => setError(true));
+  }, [id]);
+  if (error) return <p className="text-sm text-danger">Spécifications indisponibles.</p>;
+  if (!specs) return <p className="text-sm text-fg-muted">Chargement…</p>;
+  return <SpecsSheet specs={specs} />;
 }
 
 function ModeleForm({

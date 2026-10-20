@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import (
     DecisionCloture,
+    SensConnectique,
     StatutAllocation,
     StatutEquipment,
     StatutPrestation,
@@ -113,6 +114,10 @@ class AllocationRead(BaseModel):
     equipment_modele_id: int | None = None
     equipment_modele_nom: str | None = None
     equipment_modele_marque: str | None = None
+    # Prix (au tarif du type de la presta) et poids d'une unité de la ligne : ceux
+    # du modèle s'il y en a un, figés à la clôture. None = non renseigné.
+    prix_unitaire: float | None = None
+    poids_unitaire: float | None = None
     # Réponse d'ajout d'un flight seulement : nombre d'items du contenu non alloués
     # car hors service ou déjà pris par une autre prestation.
     contenu_ignore: int = 0
@@ -141,8 +146,32 @@ class ModeleStepIn(BaseModel):
     fournisseur_id: int | None = None
 
 
+class TotalConnectique(BaseModel):
+    connecteur_id: int
+    connecteur_nom: str
+    sens: SensConnectique
+    quantite: int
+
+
+class TotauxPresta(BaseModel):
+    """Totaux de la prestation : chaque ligne compte pour `unité × quantité`.
+
+    Les lignes sans poids (sans prix) ne comptent pas et sont dénombrées à part.
+    Figés à la clôture (`fige`), sauf les connectiques, toujours lues au catalogue.
+    """
+
+    tarif: Literal["interne", "externe"]
+    fige: bool
+    poids_total: float
+    nb_sans_poids: int
+    prix_total: float
+    nb_sans_prix: int
+    connectiques: list[TotalConnectique]
+
+
 class PrestationDetail(PrestationRead):
     allocations: list[AllocationRead] = Field(default_factory=list)
+    totaux: TotauxPresta
 
 
 # --- Clôture de prestation -------------------------------------------------

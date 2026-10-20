@@ -258,6 +258,7 @@ class EquipmentDetail(BaseModel):
     type: EquipmentType
     externe: bool
     archive: bool = False
+    remarque: str | None = None
     created_at: datetime
     vrac: VracDetailInfo | None = None
     conso: ConsoPreview | None = None
@@ -280,6 +281,8 @@ class EquipmentCreate(BaseModel):
     # Flight : équipement contenant (rangement). Réservé au type standard.
     est_contenant: bool = False
     statut_actuel: StatutEquipment = StatutEquipment.FONCTIONNEL
+    # Note libre propre à l'unité (lampe faible, rayure…).
+    remarque: str | None = None
     # Laisser vide pour une référence attribuée automatiquement.
     barcode_uid: BarcodeCustom | None = None
     # Vrac
@@ -314,6 +317,8 @@ class EquipmentUpdate(BaseModel):
     est_contenant: bool | None = None
     statut_actuel: StatutEquipment | None = None
     barcode_uid: BarcodeCustom | None = None
+    # Fournie (même vide) : remplace la remarque ; blanc = l'effacer.
+    remarque: str | None = None
     # Vrac
     quantite_theorique: int | None = None
     # Consommable
